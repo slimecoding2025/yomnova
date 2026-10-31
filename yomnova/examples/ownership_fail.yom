@@ -1,0 +1,12 @@
+module test_negative
+
+fn consume(payload: Text) -> Unit {
+    emit(payload)
+}
+
+fn main() -> Int {
+    let msg: Text = "Important network packet"
+    consume(msg)
+    emit(msg)
+    return 0
+}

@@ -1,0 +1,7 @@
+== yomnova/examples/hello.yom ==
+0000    4 OP_CONSTANT 0 ('Hello from YOMNOVA — One Language. Every System.')
+0003    | OP_EMIT
+0004    | OP_POP
+0005    5 OP_CONSTANT 1 ('0')
+0008    | OP_RETURN
+0009    0 OP_HALT

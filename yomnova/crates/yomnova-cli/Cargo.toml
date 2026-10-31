@@ -1,0 +1,23 @@
+[package]
+name = "yomnova-cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "yomnova"
+path = "src/main.rs"
+
+[dependencies]
+yomnova-diagnostics = { path = "../yomnova-diagnostics" }
+yomnova-ast = { path = "../yomnova-ast" }
+yomnova-lexer = { path = "../yomnova-lexer" }
+yomnova-parser = { path = "../yomnova-parser" }
+yomnova-sema = { path = "../yomnova-sema" }
+yomnova-ownership = { path = "../yomnova-ownership" }
+yomnova-bytecode = { path = "../yomnova-bytecode" }
+yomnova-vm = { path = "../yomnova-vm" }
+yomnova-compiler = { path = "../yomnova-compiler" }
+clap = { workspace = true }
+colored = { workspace = true }

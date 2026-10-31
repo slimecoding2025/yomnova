@@ -1,0 +1,10 @@
+module dataflow_demo
+
+fn main() -> Int {
+    flow packet_sizes = [64, 128, 256, 512, 1024, 1500]
+
+    emit("Streaming network packet buffer sizes:")
+    emit(packet_sizes)
+
+    return 0
+}

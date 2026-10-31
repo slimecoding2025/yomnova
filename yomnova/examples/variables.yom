@@ -1,0 +1,15 @@
+module variables_demo
+
+fn main() -> Int {
+    let language: Text = "YOMNOVA"
+    let version: Text = "0.1.0"
+    mut counter: Int = 10
+
+    counter = counter + 5
+
+    emit(language)
+    emit(version)
+    emit(counter)
+
+    return 0
+}

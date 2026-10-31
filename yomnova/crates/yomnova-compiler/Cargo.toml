@@ -1,0 +1,26 @@
+[package]
+name = "yomnova-compiler"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+yomnova-diagnostics = { path = "../yomnova-diagnostics" }
+yomnova-ast = { path = "../yomnova-ast" }
+yomnova-lexer = { path = "../yomnova-lexer" }
+yomnova-parser = { path = "../yomnova-parser" }
+yomnova-types = { path = "../yomnova-types" }
+yomnova-sema = { path = "../yomnova-sema" }
+yomnova-ownership = { path = "../yomnova-ownership" }
+yomnova-ir = { path = "../yomnova-ir" }
+yomnova-bytecode = { path = "../yomnova-bytecode" }
+yomnova-vm = { path = "../yomnova-vm" }
+yomnova-network-core = { path = "../yomnova-network-core" }
+yomnova-stdlib = { path = "../yomnova-stdlib" }
+thiserror = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[features]
+default = []
+serde = ["dep:serde"]

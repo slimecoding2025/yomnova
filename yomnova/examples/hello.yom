@@ -1,0 +1,6 @@
+module genesis
+
+fn main() -> Int {
+    emit("Hello from YOMNOVA — One Language. Every System.")
+    return 0
+}

@@ -1,0 +1,15 @@
+[package]
+name = "yomnova-vm"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+yomnova-bytecode = { path = "../yomnova-bytecode" }
+thiserror = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[features]
+default = []
+serde = ["dep:serde", "yomnova-bytecode/serde"]

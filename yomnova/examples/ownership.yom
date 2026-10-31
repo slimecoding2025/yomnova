@@ -1,0 +1,16 @@
+module ownership_demo
+
+fn consume(payload: Text) -> Unit {
+    emit("Consumed payload successfully:")
+    emit(payload)
+}
+
+fn main() -> Int {
+    let packet_data: Text = "SYN_PACKET_HEADER_DATA"
+    
+    emit("Preparing to consume packet:")
+    consume(packet_data)
+
+    // packet_data is moved to consume(); ownership checker guarantees safety!
+    return 0
+}

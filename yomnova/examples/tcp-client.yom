@@ -1,0 +1,12 @@
+module tcp_client_demo
+
+fn main() -> Int {
+    let server_ip: IPv4 = IPv4("127.0.0.1")
+    let server_port: Port = Port(8080)
+    let remote: Endpoint = Endpoint(server_ip, server_port)
+
+    emit("Configured YOMNOVA protocol endpoint:")
+    emit(remote)
+
+    return 0
+}
