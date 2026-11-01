@@ -34,7 +34,7 @@ It is also **much less complete than its documentation and UI claim**, and it co
 | Area | Verdict |
 |---|---|
 | Lexer / parser / diagnostics | **PASS** for the supported subset; clear errors with line/column |
-| Type checker | **PASS** for 11/11 basic type-error cases; inference limited |
+| Type checker | **PARTIAL** — 10/10 core static checks pass, but **call argument types are not checked at all** (H8) |
 | Ownership checker | **PARTIAL** — move-after-call works; aliasing/loop holes; no borrows |
 | Bytecode + VM | **PARTIAL** — straight-line code, functions, simple loops OK; stack-leak, overflow panics, no memory cap |
 | Network types (`IPv4`, `Port`, `Endpoint`) | **PARTIAL** — constructible & validated (one bypass); `IPv6`, `TCP`, `UDP`, `Packet` **not usable** |
@@ -121,8 +121,8 @@ Missing brace, unterminated string, illegal character, `for`/`match`/`import` mi
 
 ### 3.4 Semantic analysis / type checking — **PASS (basic)**
 
-Rejected correctly (all exit 1, with positions): `let x: Int = "hello"`, undefined variable, undefined function, wrong arity, wrong argument type, wrong return type, assignment to immutable, non-Bool condition, `Int + Text`, duplicate binding, duplicate function, mixed `==`, mixed array element, `&&` on Int, unannotated-int vs Text mismatch, oversized integer literal.
-**Gaps:** (H7) non-`Unit` function with no `return` is accepted and yields `()`; `fn main(x: Int)` accepted then fails at runtime; missing `main` and empty files are accepted silently; `5 |> nothere` (undefined stage) is accepted (C2).
+Rejected correctly and **statically** (all exit 1, with positions): `let x: Int = "hello"`, undefined variable, undefined function, wrong arity, wrong return type, assignment to immutable, non-Bool condition, `Int + Text`, duplicate binding, duplicate function, mixed `==`, mixed array element, `&&` on Int, unannotated-int vs Text mismatch, oversized integer literal.
+**Gaps:** (**H8**) argument **types** of calls are never checked: `show("not an int")` for `fn show(n: Int)` passes `check` and runs (prints the text); `Port("80")`, `IPv4(5)` are likewise only caught, if at all, by the VM at runtime. An earlier "wrong argument type rejected" observation (`add(1, "two")`) was only a runtime VM failure. (H7) non-`Unit` function with no `return` is accepted and yields `()`; `fn main(x: Int)` accepted then fails at runtime; missing `main` and empty files are accepted silently; `5 |> nothere` (undefined stage) is accepted (C2).
 
 ### 3.5 Ownership checker — **PARTIAL**
 
@@ -301,7 +301,7 @@ Totals: battery 1 = 68 programs, battery 2 = 29 programs + 1 real-CRLF file + 2 
 
 * Valid programs expected to run (battery 1, labelled): **16 / 20** pass. Failures: `f_recursion` (C1), `f_const` (H2), `f_net_types` and `o_move_emit` (H3).
 * Invalid programs expected to be rejected (battery 1, labelled): **23 / 26** rejected with a clean diagnostic. Wrongly accepted: `o_move_alias` and `o_move_in_loop` (H4), `r_index_neg` (M4). In battery 2, `s_missing_return` is also wrongly accepted (H7).
-* The 11 core type/scope-error programs (`e_type_mismatch`, `e_undefined_var`, `e_undefined_fn`, `e_wrong_arity`, `e_wrong_arg_type`, `e_return_type`, `e_assign_immutable`, `e_assign_const`, `e_cond_not_bool`, `e_add_int_text`, `e_dup_binding`): **11 / 11** rejected.
+* The 10 core static type/scope-error programs (`e_type_mismatch`, `e_undefined_var`, `e_undefined_fn`, `e_wrong_arity`, `e_return_type`, `e_assign_immutable`, `e_assign_const`, `e_cond_not_bool`, `e_add_int_text`, `e_dup_binding`): **10 / 10** rejected statically. `e_wrong_arg_type` also exits 1, but **only through a runtime VM error**, not the type checker (H8).
 * Runtime-safety cases: division/modulo by zero **safe**, index out of range **safe**, step limit **safe**; **unsafe**: overflow ×4 (panic), 20,000-deep nesting ×2 (abort), memory doubling (abort), 200k-iteration loop (stack overflow).
 * Spec-listed but unimplemented, each probed: `for`, `match`, `import`, tuples, array assignment, `IPv6`, `TCP` → rejected/absent; `struct`, `enum`, effects, top-level statements, `.len` → accepted and **silently ignored**.
 
@@ -311,7 +311,7 @@ The full program set is preserved as a regression suite after fixes (see FINAL_A
 
 ## 11. Critical bugs (summary)
 
-C1 stack leak on `if`/`while` · C2 pipeline stages discarded · C3 overflow panics · C4 unbounded parser recursion · M-mem no memory cap · H1 block scoping · H2 `const` · H3 `emit` moves · H4 ownership holes · H5 `Endpoint` truncation · H6 no short-circuit · H7 missing-return accepted.
+C1 stack leak on `if`/`while` · C2 pipeline stages discarded · H8 call argument types unchecked · C3 overflow panics · C4 unbounded parser recursion · M-mem no memory cap · H1 block scoping · H2 `const` · H3 `emit` moves · H4 ownership holes · H5 `Endpoint` truncation · H6 no short-circuit · H7 missing-return accepted.
 
 ## 12. Security concerns (summary)
 
@@ -340,7 +340,7 @@ Landing experience and all 10 chapters · logo, favicon, social image · GSAP/Sc
 |---|---|---|
 | P0 | Git checkpoint; untrack `target/`; remove traces | safety + hygiene |
 | P0 | Fix C1, C3, H5 (VM), parser depth (C4) | programs must run correctly and not crash |
-| P1 | Scoping (H1), `const` (H2), `emit` borrow (H3), ownership aliasing/loops (H4), short-circuit (H6), missing-return (H7) | semantic correctness |
+| P1 | Scoping (H1), `const` (H2), `emit` borrow (H3), ownership aliasing/loops (H4), short-circuit (H6), missing-return (H7), argument type checking (H8) | semantic correctness |
 | P1 | Honest `flow`/`\|>` (C2) or explicit "unsupported" diagnostics | no silent no-ops |
 | P1 | CLI: `tokens`/`ast`, real `build`, `version`, `fmt` | Playground needs real data |
 | P2 | Regression suite from this audit's 100 programs + unit tests per crate | keep it fixed |
@@ -348,3 +348,9 @@ Landing experience and all 10 chapters · logo, favicon, social image · GSAP/Sc
 | P2 | Logo set, design system, GSAP site, Playground | brief |
 | P3 | README + docs set, CHANGELOG, CONTRIBUTING | brief |
 | P3 | `FINAL_AUDIT.md` comparing every row above | brief |
+
+---
+
+## Errata (added during the work, before any compiler change)
+
+* **2026-11-01 — H8 added; one claim corrected.** The first draft of §3.4 and §10 listed "wrong argument type" among the *statically* rejected programs. A direct probe (`show("not an int")` → `check` exit 0, `run` prints it) showed that call-argument types are never checked by sema; the earlier rejection of `add(1, "two")` came from the VM at runtime. §1, §3.4, §10, §11 and §15 were corrected accordingly. All other numbers in this report were recomputed from the recorded result files.
