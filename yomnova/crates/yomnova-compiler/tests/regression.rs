@@ -237,3 +237,20 @@ fn unsupported_syntax_is_reported_not_miscompiled() {
         "not supported",
     );
 }
+
+#[test]
+fn float_modulo_is_a_static_error() {
+    err("fn main() -> Int {\n emit(5.0 % 2.0)\n return 0\n}", "Mod");
+    ok(
+        "fn main() -> Int {\n emit(5.5 + 2.0)\n return 0\n}",
+        &["7.5"],
+    );
+}
+
+#[test]
+fn bare_return_and_else_if_chain() {
+    ok(
+        "fn pick(n: Int) -> Unit {\n if n < 0 {\n emit(\"neg\")\n return\n } else if n == 0 {\n emit(\"zero\")\n } else {\n emit(\"pos\")\n }\n}\nfn main() -> Int {\n pick(-1)\n pick(0)\n pick(1)\n return 0\n}",
+        &["neg", "zero", "pos"],
+    );
+}

@@ -1,0 +1,25 @@
+module demo
+
+const GREETING: Text = "YOMNOVA"
+
+fn inc(n: Int) -> Int {
+    return n + 1
+}
+
+fn scale(n: Int, k: Int) -> Int {
+    return n * k
+}
+
+fn main() -> Int {
+    emit(GREETING)
+
+    let server: Endpoint = Endpoint(IPv4("127.0.0.1"), Port(8080))
+    emit(server)
+
+    flow total = 5 |> inc |> scale(10)
+    emit(total)
+
+    let message: Text = "owned once"
+    emit(message)
+    return 0
+}

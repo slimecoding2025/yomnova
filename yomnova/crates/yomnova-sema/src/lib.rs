@@ -488,7 +488,10 @@ impl SemanticAnalyzer {
                     | BinaryOp::Mod => {
                         if left_ty == Type::Int && right_ty == Type::Int {
                             Type::Int
-                        } else if left_ty == Type::Float && right_ty == Type::Float {
+                        } else if left_ty == Type::Float
+                            && right_ty == Type::Float
+                            && *op != BinaryOp::Mod
+                        {
                             Type::Float
                         } else if *op == BinaryOp::Add
                             && left_ty == Type::Text
