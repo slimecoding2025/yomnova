@@ -22,7 +22,7 @@ version = "0.1.0"
 authors = ["Mouhamed Salim Bousmina"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/yomnova/yomnova"
+repository = "https://github.com/slimecoding2025/yomnova"
 
 [workspace.dependencies]
 thiserror = "2.0"
