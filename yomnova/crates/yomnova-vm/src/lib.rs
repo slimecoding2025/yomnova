@@ -22,6 +22,10 @@ pub enum VmError {
     StepLimitExceeded { limit: usize },
     #[error("Network protocol error: {0}")]
     ProtocolError(String),
+    #[error("Integer overflow in {0}")]
+    IntegerOverflow(String),
+    #[error("Resource limit exceeded: {0}")]
+    ResourceLimit(String),
 }
 
 pub struct CallFrame {
@@ -43,6 +47,8 @@ pub struct Vm {
 impl Vm {
     pub const DEFAULT_MAX_STEPS: usize = 1_000_000;
     pub const MAX_STACK_SIZE: usize = 65_536;
+    pub const MAX_CALL_DEPTH: usize = 10_000;
+    pub const MAX_TEXT_BYTES: usize = 16 * 1024 * 1024;
 
     pub fn new() -> Self {
         let mut vm = Self {
@@ -102,11 +108,9 @@ impl Vm {
             let op_byte = chunk.code[frame.ip];
             frame.ip += 1;
 
-            if op_byte > OpCode::Halt as u8 {
+            let Some(op) = OpCode::from_u8(op_byte) else {
                 return Err(VmError::InvalidIp { ip: frame.ip });
-            }
-
-            let op: OpCode = unsafe { std::mem::transmute(op_byte) };
+            };
 
             match op {
                 OpCode::Constant => {
@@ -209,9 +213,17 @@ impl Vm {
                     let b = self.pop()?;
                     let a = self.pop()?;
                     match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.push(Value::Int(x + y))?,
+                        (Value::Int(x), Value::Int(y)) => self.push(Value::Int(x.checked_add(y).ok_or_else(|| VmError::IntegerOverflow(format!("{x} + {y}")))?))?,
                         (Value::Float(x), Value::Float(y)) => self.push(Value::Float(x + y))?,
-                        (Value::Text(x), Value::Text(y)) => self.push(Value::Text(format!("{x}{y}")))?,
+                        (Value::Text(x), Value::Text(y)) => {
+                            if x.len() + y.len() > Self::MAX_TEXT_BYTES {
+                                return Err(VmError::ResourceLimit(format!(
+                                    "text longer than {} bytes",
+                                    Self::MAX_TEXT_BYTES
+                                )));
+                            }
+                            self.push(Value::Text(format!("{x}{y}")))?
+                        }
                         (x, y) => return Err(VmError::TypeError(format!("Cannot add {x:?} and {y:?}"))),
                     }
                 }
@@ -219,7 +231,7 @@ impl Vm {
                     let b = self.pop()?;
                     let a = self.pop()?;
                     match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.push(Value::Int(x - y))?,
+                        (Value::Int(x), Value::Int(y)) => self.push(Value::Int(x.checked_sub(y).ok_or_else(|| VmError::IntegerOverflow(format!("{x} - {y}")))?))?,
                         (Value::Float(x), Value::Float(y)) => self.push(Value::Float(x - y))?,
                         (x, y) => return Err(VmError::TypeError(format!("Cannot subtract {y:?} from {x:?}"))),
                     }
@@ -228,7 +240,7 @@ impl Vm {
                     let b = self.pop()?;
                     let a = self.pop()?;
                     match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.push(Value::Int(x * y))?,
+                        (Value::Int(x), Value::Int(y)) => self.push(Value::Int(x.checked_mul(y).ok_or_else(|| VmError::IntegerOverflow(format!("{x} * {y}")))?))?,
                         (Value::Float(x), Value::Float(y)) => self.push(Value::Float(x * y))?,
                         (x, y) => return Err(VmError::TypeError(format!("Cannot multiply {x:?} by {y:?}"))),
                     }
@@ -241,7 +253,7 @@ impl Vm {
                             if y == 0 {
                                 return Err(VmError::DivisionByZero);
                             }
-                            self.push(Value::Int(x / y))?;
+                            self.push(Value::Int(x.checked_div(y).ok_or_else(|| VmError::IntegerOverflow(format!("{x} / {y}")))?))?;
                         }
                         (Value::Float(x), Value::Float(y)) => {
                             if y == 0.0 {
@@ -260,7 +272,7 @@ impl Vm {
                             if y == 0 {
                                 return Err(VmError::DivisionByZero);
                             }
-                            self.push(Value::Int(x % y))?;
+                            self.push(Value::Int(x.checked_rem(y).ok_or_else(|| VmError::IntegerOverflow(format!("{x} % {y}")))?))?;
                         }
                         (x, y) => return Err(VmError::TypeError(format!("Cannot modulo {x:?} by {y:?}"))),
                     }
@@ -282,7 +294,7 @@ impl Vm {
                 OpCode::Negate => {
                     let val = self.pop()?;
                     match val {
-                        Value::Int(n) => self.push(Value::Int(-n))?,
+                        Value::Int(n) => self.push(Value::Int(n.checked_neg().ok_or_else(|| VmError::IntegerOverflow(format!("-{n}")))?))?,
                         Value::Float(f) => self.push(Value::Float(-f))?,
                         _ => return Err(VmError::TypeError(format!("Cannot negate {val:?}"))),
                     }
@@ -293,7 +305,7 @@ impl Vm {
                 }
                 OpCode::JumpIfFalse => {
                     let target = self.read_u16()? as usize;
-                    let cond = self.peek(0)?;
+                    let cond = self.pop()?;
                     if !cond.is_truthy() {
                         self.current_frame_mut().ip = target;
                     }
@@ -323,13 +335,8 @@ impl Vm {
                     let col_val = self.pop()?;
                     match (col_val, idx_val) {
                         (Value::Array(arr), Value::Int(idx)) => {
-                            let i = if idx < 0 {
-                                arr.len() as i64 + idx
-                            } else {
-                                idx
-                            };
-                            if i >= 0 && (i as usize) < arr.len() {
-                                self.push(arr[i as usize].clone())?;
+                            if idx >= 0 && (idx as usize) < arr.len() {
+                                self.push(arr[idx as usize].clone())?;
                             } else {
                                 return Err(VmError::TypeError(format!(
                                     "Index out of bounds: index {idx} in array of length {}",
@@ -359,7 +366,7 @@ impl Vm {
     }
 
     fn call_value(&mut self, arg_count: usize) -> Result<(), VmError> {
-        let callee_idx = self.stack.len() - 1 - arg_count;
+        let callee_idx = (self.stack.len().checked_sub(1 + arg_count)).ok_or(VmError::StackUnderflow)?;
         let callee = self.stack[callee_idx].clone();
 
         match callee {
@@ -374,6 +381,12 @@ impl Vm {
                 args.reverse();
                 self.pop()?; // pop callee
 
+                if self.frames.len() >= Self::MAX_CALL_DEPTH {
+                    return Err(VmError::ResourceLimit(format!(
+                        "call depth exceeds {}",
+                        Self::MAX_CALL_DEPTH
+                    )));
+                }
                 self.frames.push(CallFrame {
                     chunk_index,
                     ip: 0,
@@ -389,6 +402,17 @@ impl Vm {
                 args.reverse();
                 self.pop()?; // pop callee
 
+                let expected = match name.as_str() {
+                    "IPv4" | "Port" => 1,
+                    "Endpoint" => 2,
+                    other => return Err(VmError::TypeError(format!("Unknown native function '{other}'"))),
+                };
+                if args.len() != expected {
+                    return Err(VmError::TypeError(format!(
+                        "{name} expects {expected} argument(s), but {} were provided",
+                        args.len()
+                    )));
+                }
                 let result = match name.as_str() {
                     "IPv4" => {
                         let text = match &args[0] {
@@ -417,7 +441,10 @@ impl Vm {
                         };
                         let port = match args[1] {
                             Value::Port(p) => p,
-                            Value::Int(n) => n as u16,
+                            Value::Int(n) if (1..=65535).contains(&n) => n as u16,
+                            Value::Int(n) => {
+                                return Err(VmError::ProtocolError(format!("Port out of range (1-65535): {n}")))
+                            }
                             _ => return Err(VmError::TypeError("Endpoint arg 2 must be Port".to_string())),
                         };
                         Value::Endpoint(ip_bytes, port)

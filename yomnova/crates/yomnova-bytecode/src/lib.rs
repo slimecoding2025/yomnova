@@ -39,6 +39,49 @@ pub enum OpCode {
     Halt,
 }
 
+impl OpCode {
+    /// Every opcode, in discriminant order. `ALL[op as usize] == op`.
+    pub const ALL: [OpCode; 32] = [
+        OpCode::Constant,
+        OpCode::Nil,
+        OpCode::True,
+        OpCode::False,
+        OpCode::Pop,
+        OpCode::GetLocal,
+        OpCode::SetLocal,
+        OpCode::GetGlobal,
+        OpCode::SetGlobal,
+        OpCode::Equal,
+        OpCode::NotEqual,
+        OpCode::Greater,
+        OpCode::GreaterEqual,
+        OpCode::Less,
+        OpCode::LessEqual,
+        OpCode::Add,
+        OpCode::Subtract,
+        OpCode::Multiply,
+        OpCode::Divide,
+        OpCode::Modulo,
+        OpCode::And,
+        OpCode::Or,
+        OpCode::Not,
+        OpCode::Negate,
+        OpCode::Jump,
+        OpCode::JumpIfFalse,
+        OpCode::Call,
+        OpCode::Return,
+        OpCode::Emit,
+        OpCode::Array,
+        OpCode::Index,
+        OpCode::Halt,
+    ];
+
+    /// Safe byte -> opcode decoding (no `unsafe`).
+    pub fn from_u8(byte: u8) -> Option<OpCode> {
+        Self::ALL.get(byte as usize).copied()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Int(i64),
@@ -138,6 +181,13 @@ impl Chunk {
         self.write_byte((val & 0xFF) as u8, line);
     }
 
+    /// Add a constant, or return `None` if the 16-bit constant index space is full.
+    pub fn try_add_constant(&mut self, value: Value) -> Option<u16> {
+        let idx = u16::try_from(self.constants.len()).ok()?;
+        self.constants.push(value);
+        Some(idx)
+    }
+
     pub fn add_constant(&mut self, value: Value) -> u16 {
         self.constants.push(value);
         (self.constants.len() - 1) as u16
@@ -164,12 +214,9 @@ impl Chunk {
         }
 
         let op_byte = self.code[offset];
-        if op_byte > OpCode::Halt as u8 {
+        let Some(op) = OpCode::from_u8(op_byte) else {
             return (format!("{out}Unknown opcode {op_byte}"), offset + 1);
-        }
-
-        // Safe conversion since byte <= OpCode::Halt
-        let op: OpCode = unsafe { std::mem::transmute(op_byte) };
+        };
         match op {
             OpCode::Constant => {
                 let const_idx = ((self.code[offset + 1] as u16) << 8) | (self.code[offset + 2] as u16);
@@ -234,5 +281,21 @@ impl Chunk {
             OpCode::Return => (format!("{out}OP_RETURN"), offset + 1),
             OpCode::Halt => (format!("{out}OP_HALT"), offset + 1),
         }
+    }
+}
+
+#[cfg(test)]
+mod opcode_tests {
+    use super::*;
+
+    #[test]
+    fn all_table_matches_discriminants() {
+        for (i, op) in OpCode::ALL.iter().enumerate() {
+            assert_eq!(*op as usize, i);
+            assert_eq!(OpCode::from_u8(i as u8), Some(*op));
+        }
+        assert_eq!(OpCode::ALL[OpCode::ALL.len() - 1], OpCode::Halt);
+        assert_eq!(OpCode::from_u8(OpCode::ALL.len() as u8), None);
+        assert_eq!(OpCode::from_u8(255), None);
     }
 }

@@ -14,6 +14,8 @@ pub enum ParserError {
     UnexpectedEof { expected: String, span: Span },
     #[error("Invalid assignment target at {span}")]
     InvalidAssignmentTarget { span: Span },
+    #[error("Nesting too deep at {span} (limit is {limit})")]
+    NestingTooDeep { limit: usize, span: Span },
 }
 
 impl ParserError {
@@ -24,6 +26,10 @@ impl ParserError {
             }
             ParserError::UnexpectedEof { span, .. } => {
                 Diagnostic::error(self.to_string(), Some(*span))
+            }
+            ParserError::NestingTooDeep { span, .. } => {
+                Diagnostic::error(self.to_string(), Some(*span))
+                    .with_hint("Split the expression or block into smaller parts")
             }
             ParserError::InvalidAssignmentTarget { span } => {
                 Diagnostic::error(self.to_string(), Some(*span))
@@ -36,11 +42,31 @@ impl ParserError {
 pub struct Parser {
     tokens: Vec<Token>,
     cursor: usize,
+    depth: usize,
 }
 
 impl Parser {
+    /// Maximum syntactic nesting (blocks, expressions, types). Prevents stack
+    /// exhaustion on adversarial input.
+    pub const MAX_NESTING: usize = 150;
+
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, cursor: 0 }
+        Self { tokens, cursor: 0, depth: 0 }
+    }
+
+    fn enter(&mut self) -> Result<(), ParserError> {
+        if self.depth >= Self::MAX_NESTING {
+            return Err(ParserError::NestingTooDeep {
+                limit: Self::MAX_NESTING,
+                span: self.current_span(),
+            });
+        }
+        self.depth += 1;
+        Ok(())
+    }
+
+    fn leave(&mut self) {
+        self.depth -= 1;
     }
 
     pub fn parse_program(&mut self) -> Result<Program, ParserError> {
@@ -244,6 +270,13 @@ impl Parser {
     }
 
     fn parse_block(&mut self) -> Result<Block, ParserError> {
+        self.enter()?;
+        let result = self.parse_block_inner();
+        self.leave();
+        result
+    }
+
+    fn parse_block_inner(&mut self) -> Result<Block, ParserError> {
         let start_span = self.current_span();
         self.consume(&TokenKind::OpenBrace, "'{'")?;
 
@@ -259,9 +292,20 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
+        self.enter()?;
+        let result = self.parse_statement_inner();
+        self.leave();
+        result
+    }
+
+    fn parse_statement_inner(&mut self) -> Result<Stmt, ParserError> {
         let start_span = self.current_span();
 
-        if self.check(&TokenKind::Let) {
+        if self.check(&TokenKind::Const) {
+            // A local `const` is an immutable binding.
+            let decl = self.parse_const()?;
+            Ok(Stmt::Let { name: decl.name, ty: decl.ty, init: decl.value, span: decl.span })
+        } else if self.check(&TokenKind::Let) {
             self.advance();
             let name = self.consume_identifier("variable name")?;
             let mut ty = None;
@@ -394,6 +438,13 @@ impl Parser {
     }
 
     pub fn parse_expr(&mut self) -> Result<Expr, ParserError> {
+        self.enter()?;
+        let result = self.parse_expr_inner();
+        self.leave();
+        result
+    }
+
+    fn parse_expr_inner(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.parse_binary_expr(0)?;
 
         if self.check(&TokenKind::PipeGreater) {
@@ -474,6 +525,13 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ParserError> {
+        self.enter()?;
+        let result = self.parse_unary_inner();
+        self.leave();
+        result
+    }
+
+    fn parse_unary_inner(&mut self) -> Result<Expr, ParserError> {
         let start_span = self.current_span();
         if self.check(&TokenKind::Minus) {
             self.advance();
@@ -755,6 +813,13 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<TypeAnnotation, ParserError> {
+        self.enter()?;
+        let result = self.parse_type_inner();
+        self.leave();
+        result
+    }
+
+    fn parse_type_inner(&mut self) -> Result<TypeAnnotation, ParserError> {
         let span = self.current_span();
         if let Some(kind) = self.peek_kind() {
             let ty = match kind {
