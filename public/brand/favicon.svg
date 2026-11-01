@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="YOMNOVA">
+  <title>YOMNOVA</title>
+  <rect width="64" height="64" rx="14" fill="#07080B"/>
+  <g transform="translate(4 4) scale(0.875)">
+    <path d="M13.00 11.00 L32.0 35.0" stroke="#F2EEE6" stroke-width="7.0" stroke-linecap="round" fill="none"/>
+    <path d="M51.00 11.00 L32.0 35.0" stroke="#19E3FF" stroke-width="7.0" stroke-linecap="round" fill="none"/>
+    <path d="M32.0 35.0 L32.0 53.0" stroke="#F2EEE6" stroke-width="7.0" stroke-linecap="round" fill="none"/>
+    <circle cx="13.0" cy="11.0" r="6.5" fill="#F2EEE6"/>
+    <circle cx="51.0" cy="11.0" r="6.5" fill="#19E3FF"/>
+    <circle cx="32.0" cy="54.0" r="7.5" fill="#19E3FF"/>
+  </g>
+</svg>

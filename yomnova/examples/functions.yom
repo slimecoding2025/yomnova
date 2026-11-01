@@ -1,0 +1,26 @@
+module functions
+
+// Recursion, loops, mutation and short-circuit logic.
+fn fib(n: Int) -> Int {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fn main() -> Int {
+    mut i: Int = 0
+    mut total: Int = 0
+    while i < 10 {
+        total = total + fib(i)
+        i = i + 1
+    }
+    emit(total)
+
+    if total > 50 && total % 2 == 1 {
+        emit("odd and large")
+    } else {
+        emit("not odd-and-large")
+    }
+    return 0
+}

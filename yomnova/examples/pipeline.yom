@@ -1,0 +1,17 @@
+module pipeline
+
+// `x |> f` calls f(x); `x |> f(a)` calls f(x, a).
+fn inc(n: Int) -> Int {
+    return n + 1
+}
+
+fn scale(n: Int, factor: Int) -> Int {
+    return n * factor
+}
+
+fn main() -> Int {
+    flow result = 5 |> inc |> scale(10)
+    emit(result)
+    5 |> inc |> emit
+    return 0
+}

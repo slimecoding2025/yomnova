@@ -1,202 +1,271 @@
-import express from "express";
-import { exec, spawn } from "child_process";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+/**
+ * YOMNOVA Playground server.
+ *
+ * A small dependency-free HTTP server (node:http) that
+ *   - exposes the real `yomnova` CLI as a JSON API (/api/*), and
+ *   - serves the web app (Vite middleware in development, dist/ in production).
+ *
+ * SECURITY NOTE: the CLI runs as a child process with a timeout, an output cap and a
+ * concurrency limit, but there is NO operating-system sandbox. The language has no file or
+ * network I/O, yet you should still run this behind container isolation if you expose it
+ * publicly.
+ */
+import { execFile } from "node:child_process";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isProd = process.argv.includes("--prod") || process.env.NODE_ENV === "production";
+const PORT = Number.parseInt(process.env.PORT ?? "3000", 10);
 
-const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const isProd = process.env.NODE_ENV === "production";
+const MAX_BODY_BYTES = 64 * 1024;
+const RUN_TIMEOUT_MS = 5_000;
+const MAX_OUTPUT_BYTES = 1024 * 1024;
+const MAX_CONCURRENT = 4;
+let running = 0;
 
-app.use(express.json({ limit: "5mb" }));
+const EXAMPLES_DIR = path.join(__dirname, "yomnova", "examples");
 
-const YOMNOVA_BIN = path.join(__dirname, "yomnova", "target", "debug", "yomnova");
+function resolveBinary(): string | null {
+  const exe = process.platform === "win32" ? "yomnova.exe" : "yomnova";
+  const candidates = [
+    process.env.YOMNOVA_BIN,
+    path.join(__dirname, "yomnova", "target", "release", exe),
+    path.join(__dirname, "yomnova", "target", "debug", exe),
+  ].filter((p): p is string => Boolean(p));
+  return candidates.find((p) => fs.existsSync(p)) ?? null;
+}
 
-// API: Run code
-app.post("/api/run", async (req, res) => {
-  const { code } = req.body;
-  if (typeof code !== "string") {
-    return res.status(400).json({ error: "Missing or invalid 'code' field" });
-  }
+interface CliResult {
+  ok: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  timedOut: boolean;
+}
 
-  const tmpFile = path.join("/tmp", `yomnova_run_${Date.now()}_${Math.random().toString(36).substring(7)}.yom`);
-  try {
-    await fs.promises.writeFile(tmpFile, code, "utf-8");
-
-    exec(`${YOMNOVA_BIN} run "${tmpFile}" --disassemble`, { timeout: 10000 }, async (err, stdout, stderr) => {
-      // Clean up tmp file
-      fs.promises.unlink(tmpFile).catch(() => {});
-
-      return res.json({
-        success: !err,
-        exitCode: err ? (err.code || 1) : 0,
-        stdout,
-        stderr,
-      });
-    });
-  } catch (error: any) {
-    fs.promises.unlink(tmpFile).catch(() => {});
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-// API: Check code (verification only)
-app.post("/api/check", async (req, res) => {
-  const { code } = req.body;
-  if (typeof code !== "string") {
-    return res.status(400).json({ error: "Missing or invalid 'code' field" });
-  }
-
-  const tmpFile = path.join("/tmp", `yomnova_chk_${Date.now()}_${Math.random().toString(36).substring(7)}.yom`);
-  try {
-    await fs.promises.writeFile(tmpFile, code, "utf-8");
-
-    exec(`${YOMNOVA_BIN} check "${tmpFile}"`, { timeout: 10000 }, async (err, stdout, stderr) => {
-      fs.promises.unlink(tmpFile).catch(() => {});
-
-      return res.json({
-        success: !err,
-        exitCode: err ? (err.code || 1) : 0,
-        stdout,
-        stderr,
-      });
-    });
-  } catch (error: any) {
-    fs.promises.unlink(tmpFile).catch(() => {});
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-// API: Disassemble code
-app.post("/api/disassemble", async (req, res) => {
-  const { code } = req.body;
-  if (typeof code !== "string") {
-    return res.status(400).json({ error: "Missing or invalid 'code' field" });
-  }
-
-  const tmpFile = path.join("/tmp", `yomnova_dis_${Date.now()}_${Math.random().toString(36).substring(7)}.yom`);
-  try {
-    await fs.promises.writeFile(tmpFile, code, "utf-8");
-
-    exec(`${YOMNOVA_BIN} build "${tmpFile}"`, { timeout: 10000 }, async (err, stdout, stderr) => {
-      const yomcFile = tmpFile.replace(/\.yom$/, ".yomc");
-      let bytecodeListing = "";
-      try {
-        bytecodeListing = await fs.promises.readFile(yomcFile, "utf-8");
-        await fs.promises.unlink(yomcFile);
-      } catch (_) {}
-      fs.promises.unlink(tmpFile).catch(() => {});
-
-      return res.json({
-        success: !err,
-        bytecode: bytecodeListing || stdout,
-        stderr,
-      });
-    });
-  } catch (error: any) {
-    fs.promises.unlink(tmpFile).catch(() => {});
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-// API: Format code
-app.post("/api/fmt", async (req, res) => {
-  const { code } = req.body;
-  if (typeof code !== "string") {
-    return res.status(400).json({ error: "Missing or invalid 'code' field" });
-  }
-
-  const tmpFile = path.join("/tmp", `yomnova_fmt_${Date.now()}_${Math.random().toString(36).substring(7)}.yom`);
-  try {
-    await fs.promises.writeFile(tmpFile, code, "utf-8");
-
-    exec(`${YOMNOVA_BIN} fmt "${tmpFile}"`, { timeout: 10000 }, async (err, stdout, stderr) => {
-      let formatted = code;
-      try {
-        formatted = await fs.promises.readFile(tmpFile, "utf-8");
-      } catch (_) {}
-      fs.promises.unlink(tmpFile).catch(() => {});
-
-      return res.json({
-        success: !err,
-        formatted,
-        stderr,
-      });
-    });
-  } catch (error: any) {
-    fs.promises.unlink(tmpFile).catch(() => {});
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-// API: Run workspace cargo tests
-app.post("/api/test-suite", (req, res) => {
-  exec(`cargo test --manifest-path ${path.join(__dirname, "yomnova", "Cargo.toml")}`, { timeout: 30000 }, (err, stdout, stderr) => {
-    return res.json({
-      success: !err,
-      stdout,
-      stderr,
-    });
-  });
-});
-
-// API: Get version and metadata
-app.get("/api/version", (req, res) => {
-  exec(`${YOMNOVA_BIN} version`, (err, stdout) => {
-    res.json({
-      version: "0.1.0-dev",
-      details: stdout.trim(),
-      language: "YOMNOVA",
-      tagline: "ONE LANGUAGE. EVERY SYSTEM.",
-      creator: "Mouhamed Salim Bousmina",
-    });
-  });
-});
-
-// Examples API
-app.get("/api/examples", async (req, res) => {
-  const examplesDir = path.join(__dirname, "yomnova", "examples");
-  try {
-    const files = await fs.promises.readdir(examplesDir);
-    const examples = [];
-    for (const f of files) {
-      if (f.endsWith(".yom")) {
-        const content = await fs.promises.readFile(path.join(examplesDir, f), "utf-8");
-        examples.push({
-          id: f.replace(/\.yom$/, ""),
-          filename: f,
-          content,
+function runCli(bin: string, args: string[], cwd?: string): Promise<CliResult> {
+  const started = Date.now();
+  return new Promise((resolve) => {
+    execFile(
+      bin,
+      args,
+      { timeout: RUN_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_BYTES, cwd, env: { ...process.env, NO_COLOR: "1" } },
+      (err, stdout, stderr) => {
+        const e = err as (NodeJS.ErrnoException & { killed?: boolean; code?: number | string }) | null;
+        resolve({
+          ok: !e,
+          exitCode: e ? (typeof e.code === "number" ? e.code : 1) : 0,
+          stdout: String(stdout),
+          stderr: String(stderr) || (e?.killed ? `Terminated: exceeded ${RUN_TIMEOUT_MS / 1000}s time limit` : ""),
+          durationMs: Date.now() - started,
+          timedOut: Boolean(e?.killed),
         });
-      }
-    }
-    return res.json(examples);
-  } catch (e: any) {
-    return res.status(500).json({ error: e.message });
-  }
-});
-
-// Vite Middleware for dev, or express.static for prod
-async function startServer() {
-  if (!isProd) {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`YOMNOVA Server listening on port ${PORT} (prod=${isProd})`);
+      },
+    );
   });
 }
 
-startServer();
+/** Write `code` to a private temp dir, run a CLI command on it, and clean up. */
+async function withSource(
+  bin: string,
+  code: string,
+  makeArgs: (file: string) => string[],
+  readBack = false,
+): Promise<CliResult & { file?: string }> {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "yomnova-"));
+  const file = path.join(dir, "main.yom");
+  try {
+    await fs.promises.writeFile(file, code, "utf-8");
+    const result = await runCli(bin, makeArgs(file), dir);
+    const sanitize = (s: string) => s.split(file).join("main.yom");
+    const out = { ...result, stdout: sanitize(result.stdout), stderr: sanitize(result.stderr) };
+    if (readBack) return { ...out, file: await fs.promises.readFile(file, "utf-8") };
+    return out;
+  } finally {
+    fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function sendJson(res: http.ServerResponse, status: number, body: unknown) {
+  const data = JSON.stringify(body);
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.end(data);
+}
+
+function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(Object.assign(new Error(`Request body exceeds ${MAX_BODY_BYTES} bytes`), { status: 413 }));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8") || "{}"));
+      } catch {
+        reject(Object.assign(new Error("Invalid JSON body"), { status: 400 }));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+const COMMANDS: Record<string, (file: string) => string[]> = {
+  "/api/run": (f) => ["run", f],
+  "/api/check": (f) => ["check", f],
+  "/api/tokens": (f) => ["tokens", f],
+  "/api/ast": (f) => ["ast", f],
+  "/api/disassemble": (f) => ["disasm", f],
+  "/api/fmt": (f) => ["fmt", f],
+};
+
+async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
+  const bin = resolveBinary();
+
+  if (req.method === "GET" && url.pathname === "/api/version") {
+    if (!bin) {
+      return sendJson(res, 503, {
+        available: false,
+        error: "The yomnova binary was not found. Build it with `npm run build:compiler` or set YOMNOVA_BIN.",
+      });
+    }
+    const r = await runCli(bin, ["version"]);
+    return sendJson(res, r.ok ? 200 : 500, { available: r.ok, version: r.stdout.split("\n")[0]?.trim() ?? "" });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/examples") {
+    try {
+      const names = (await fs.promises.readdir(EXAMPLES_DIR)).filter((n) => n.endsWith(".yom")).sort();
+      const examples = await Promise.all(
+        names.map(async (name) => ({
+          id: name.replace(/\.yom$/, ""),
+          filename: name,
+          code: await fs.promises.readFile(path.join(EXAMPLES_DIR, name), "utf-8"),
+        })),
+      );
+      return sendJson(res, 200, { examples });
+    } catch {
+      return sendJson(res, 200, { examples: [] });
+    }
+  }
+
+  const makeArgs = COMMANDS[url.pathname];
+  if (req.method === "POST" && makeArgs) {
+    if (!bin) {
+      return sendJson(res, 503, { error: "The yomnova binary was not found. Build the compiler first." });
+    }
+    let body: unknown;
+    try {
+      body = await readJsonBody(req);
+    } catch (e) {
+      const err = e as Error & { status?: number };
+      return sendJson(res, err.status ?? 400, { error: err.message });
+    }
+    const code = (body as { code?: unknown }).code;
+    if (typeof code !== "string") {
+      return sendJson(res, 400, { error: "Missing or invalid 'code' field" });
+    }
+    if (running >= MAX_CONCURRENT) {
+      return sendJson(res, 429, { error: "Server is busy. Please retry in a moment." });
+    }
+    running += 1;
+    try {
+      const isFmt = url.pathname === "/api/fmt";
+      const r = await withSource(bin, code, makeArgs, isFmt);
+      return sendJson(res, 200, isFmt ? { ...r, formatted: r.file } : r);
+    } catch (e) {
+      return sendJson(res, 500, { error: (e as Error).message });
+    } finally {
+      running -= 1;
+    }
+  }
+
+  return sendJson(res, 404, { error: "Unknown API route" });
+}
+
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".json": "application/json; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".woff2": "font/woff2",
+};
+
+async function serveStatic(_req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
+  const dist = path.join(__dirname, "dist");
+  const rel = decodeURIComponent(url.pathname);
+  let file = path.normalize(path.join(dist, rel));
+  if (!file.startsWith(dist)) {
+    res.writeHead(403).end("Forbidden");
+    return;
+  }
+  try {
+    const stat = await fs.promises.stat(file);
+    if (stat.isDirectory()) file = path.join(file, "index.html");
+  } catch {
+    file = path.join(dist, "index.html"); // SPA fallback
+  }
+  try {
+    const data = await fs.promises.readFile(file);
+    const ext = path.extname(file);
+    res.writeHead(200, {
+      "Content-Type": MIME[ext] ?? "application/octet-stream",
+      "Cache-Control": file.includes(`${path.sep}assets${path.sep}`) ? "public, max-age=31536000, immutable" : "no-cache",
+      "X-Content-Type-Options": "nosniff",
+    });
+    res.end(data);
+  } catch {
+    res.writeHead(500, { "Content-Type": "text/plain" }).end("dist/ not found. Run `npm run build` first.");
+  }
+}
+
+async function main() {
+  type Middleware = (req: http.IncomingMessage, res: http.ServerResponse, next: (e?: unknown) => void) => void;
+  let viteMiddleware: Middleware | null = null;
+  if (!isProd) {
+    const { createServer } = await import("vite");
+    const vite = await createServer({ server: { middlewareMode: true }, appType: "spa" });
+    viteMiddleware = vite.middlewares as unknown as Middleware;
+  }
+
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    if (url.pathname.startsWith("/api/")) {
+      handleApi(req, res, url).catch((e) => sendJson(res, 500, { error: (e as Error).message }));
+    } else if (viteMiddleware) {
+      viteMiddleware(req, res, () => res.writeHead(404).end("Not found"));
+    } else {
+      serveStatic(req, res, url).catch(() => res.writeHead(500).end("Internal error"));
+    }
+  });
+
+  server.listen(PORT, () => {
+    const bin = resolveBinary();
+    console.log(`YOMNOVA ${isProd ? "production" : "development"} server: http://localhost:${PORT}`);
+    console.log(bin ? `Compiler binary: ${bin}` : "Compiler binary NOT FOUND — the Playground will be unavailable.");
+  });
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="YOMNOVA - ONE LANGUAGE. EVERY SYSTEM.">
+  <title>YOMNOVA - ONE LANGUAGE. EVERY SYSTEM.</title>
+  <defs>
+    <pattern id="g" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#FFFFFF" stroke-opacity="0.045" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="glow" cx="26%" cy="46%" r="46%">
+      <stop offset="0" stop-color="#19E3FF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#19E3FF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#07080B"/>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <g transform="translate(120 155) scale(5)">
+    <path d="M16.72 15.70 L32.0 35.0" stroke="#F2EEE6" stroke-width="5.0" stroke-linecap="round" fill="none"/>
+    <path d="M47.28 15.70 L32.0 35.0" stroke="#19E3FF" stroke-width="5.0" stroke-linecap="round" fill="none"/>
+    <path d="M32.0 35.0 L32.0 53.0" stroke="#F2EEE6" stroke-width="5.0" stroke-linecap="round" fill="none"/>
+    <circle cx="13.0" cy="11.0" r="5.0" fill="none" stroke="#F2EEE6" stroke-width="3"/>
+    <circle cx="51.0" cy="11.0" r="5.0" fill="none" stroke="#19E3FF" stroke-width="3"/>
+    <circle cx="32.0" cy="54.0" r="6.0" fill="#19E3FF"/>
+  </g>
+  <g transform="translate(520 236) scale(1.9)">
+    <path transform="translate(0.0 0)" d="M1 1 L11 21 L21 1 M11 21 L11 39" stroke="#F2EEE6" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(33.0 0)" d="M12 1 H12 A11 11 0 0 1 23 12 V28 A11 11 0 0 1 12 39 A11 11 0 0 1 1 28 V12 A11 11 0 0 1 12 1 Z" stroke="#F2EEE6" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(68.0 0)" d="M1 39 V1 L13 25 L25 1 V39" stroke="#F2EEE6" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(105.0 0)" d="M1 39 V1 L23 39 V1" stroke="#F2EEE6" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(140.0 0)" d="M12 1 H12 A11 11 0 0 1 23 12 V28 A11 11 0 0 1 12 39 A11 11 0 0 1 1 28 V12 A11 11 0 0 1 12 1 Z" stroke="#F2EEE6" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(175.0 0)" d="M1 1 L12 39 L23 1" stroke="#F2EEE6" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(210.0 0)" d="M1 39 L12 1 L23 39 M5.5 27 H18.5" stroke="#F2EEE6" stroke-width="5.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+  <text x="522" y="378" fill="#19E3FF" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="27" letter-spacing="4">ONE LANGUAGE. EVERY SYSTEM.</text>
+  <text x="522" y="430" fill="#F2EEE6" fill-opacity="0.62" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="20" letter-spacing="1">An experimental hybrid programming language</text>
+  <line x1="522" y1="478" x2="1080" y2="478" stroke="#FFFFFF" stroke-opacity="0.14"/>
+  <text x="522" y="520" fill="#F2EEE6" fill-opacity="0.45" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="18" letter-spacing="2">github.com/slimecoding2025/yomnova</text>
+</svg>

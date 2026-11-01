@@ -1,0 +1,11 @@
+module type_error
+
+// This program is rejected by the type checker before it runs.
+fn double(n: Int) -> Int {
+    return n * 2
+}
+
+fn main() -> Int {
+    emit(double("twenty-one"))
+    return 0
+}

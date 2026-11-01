@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 226 42" width="226" height="42" role="img" aria-label="YOMNOVA">
+  <title>YOMNOVA</title>
+  <g transform="translate(2 1)">
+    <path transform="translate(0.0 0)" d="M1 1 L11 21 L21 1 M11 21 L11 39" stroke="#F2EEE6" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(31.0 0)" d="M12 1 H12 A11 11 0 0 1 23 12 V28 A11 11 0 0 1 12 39 A11 11 0 0 1 1 28 V12 A11 11 0 0 1 12 1 Z" stroke="#F2EEE6" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(64.0 0)" d="M1 39 V1 L13 25 L25 1 V39" stroke="#F2EEE6" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(99.0 0)" d="M1 39 V1 L23 39 V1" stroke="#F2EEE6" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(132.0 0)" d="M12 1 H12 A11 11 0 0 1 23 12 V28 A11 11 0 0 1 12 39 A11 11 0 0 1 1 28 V12 A11 11 0 0 1 12 1 Z" stroke="#F2EEE6" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(165.0 0)" d="M1 1 L12 39 L23 1" stroke="#F2EEE6" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path transform="translate(198.0 0)" d="M1 39 L12 1 L23 39 M5.5 27 H18.5" stroke="#F2EEE6" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+</svg>
