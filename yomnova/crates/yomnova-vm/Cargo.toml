@@ -8,8 +8,3 @@ license.workspace = true
 [dependencies]
 yomnova-bytecode = { path = "../yomnova-bytecode" }
 thiserror = { workspace = true }
-serde = { workspace = true, optional = true }
-
-[features]
-default = []
-serde = ["dep:serde", "yomnova-bytecode/serde"]

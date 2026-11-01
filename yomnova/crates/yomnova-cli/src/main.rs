@@ -1,200 +1,211 @@
-//! YOMNOVA Official Command Line Interface (CLI)
+//! YOMNOVA command line interface.
 //! ONE LANGUAGE. EVERY SYSTEM.
+//!
+//! Argument parsing is hand-written so the CLI has no third-party dependencies.
 
-use clap::{Parser, Subcommand};
-use colored::Colorize;
 use std::fs;
-use std::path::PathBuf;
-use std::process;
-use yomnova_compiler::Compiler;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use yomnova_bytecode::Value;
+use yomnova_compiler::{format::format_source, Compiler};
+use yomnova_diagnostics::Diagnostic;
 
-#[derive(Parser)]
-#[command(name = "yomnova")]
-#[command(author = "Mouhamed Salim Bousmina")]
-#[command(version = "0.1.0-dev")]
-#[command(about = "YOMNOVA — Original Hybrid Systems & Networking Programming Language", long_about = None)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
+const USAGE: &str = "\
+yomnova - experimental hybrid programming language toolchain
+
+USAGE:
+    yomnova <COMMAND> [OPTIONS] <FILE>
+
+COMMANDS:
+    run [-d|--disassemble] <FILE>   Compile and run a program
+    check <FILE>                    Lex, parse, type-check and ownership-check only
+    build [-o <OUT>] <FILE>         Compile to a textual bytecode listing (does not run the program)
+    disasm <FILE>                   Print the bytecode listing to stdout (does not run the program)
+    tokens <FILE>                   Print the token stream
+    ast <FILE>                      Print the syntax tree
+    fmt [--check] <FILE>            Re-indent a source file (in place unless --check)
+    version                         Print version information
+    help                            Print this message
+";
+
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match dispatch(&args) {
+        Ok(code) => code,
+        Err(CliError::Usage(msg)) => {
+            eprintln!("error: {msg}\n\n{USAGE}");
+            ExitCode::from(2)
+        }
+        Err(CliError::Failure(msg)) => {
+            eprintln!("error: {msg}");
+            ExitCode::from(1)
+        }
+        Err(CliError::Diagnostics {
+            diags,
+            source,
+            file,
+        }) => {
+            for d in diags {
+                eprint!("{}", d.render(Some(&source), Some(&file)));
+            }
+            ExitCode::from(1)
+        }
+    }
 }
 
-#[derive(Subcommand)]
-enum Commands {
-    /// Compile and run a YOMNOVA source file (.yom)
-    Run {
-        /// Source file path (.yom)
-        file: PathBuf,
-        /// Show disassembled bytecode before execution
-        #[arg(long, short)]
-        disassemble: bool,
+enum CliError {
+    Usage(String),
+    Failure(String),
+    Diagnostics {
+        diags: Vec<Diagnostic>,
+        source: String,
+        file: String,
     },
-    /// Verify syntax, types, and ownership without execution
-    Check {
-        /// Source file path (.yom)
-        file: PathBuf,
-    },
-    /// Compile source file to bytecode artifact (.yomc)
-    Build {
-        /// Source file path (.yom)
-        file: PathBuf,
-        /// Output artifact destination
-        #[arg(long, short)]
-        output: Option<PathBuf>,
-    },
-    /// Format YOMNOVA source code
-    Fmt {
-        /// Source file path (.yom)
-        file: PathBuf,
-        /// Check formatting without overwriting file
-        #[arg(long)]
-        check: bool,
-    },
-    /// Display YOMNOVA toolchain version and build identity
-    Version,
 }
 
-fn main() {
-    let cli = Cli::parse();
+/// Options shared by all subcommands, parsed from the arguments after the command name.
+#[derive(Default)]
+struct Opts {
+    file: Option<PathBuf>,
+    disassemble: bool,
+    check: bool,
+    output: Option<PathBuf>,
+}
 
-    match cli.command {
-        Commands::Run { file, disassemble } => {
-            let filename = file.to_string_lossy().to_string();
-            let source = match fs::read_to_string(&file) {
-                Ok(content) => content,
-                Err(e) => {
-                    eprintln!("{}: Cannot read file '{}': {}", "error".red().bold(), filename, e);
-                    process::exit(1);
+fn parse_opts(command: &str, rest: &[String]) -> Result<Opts, CliError> {
+    let mut opts = Opts::default();
+    let mut it = rest.iter();
+    while let Some(arg) = it.next() {
+        match (command, arg.as_str()) {
+            ("run", "-d" | "--disassemble") => opts.disassemble = true,
+            ("fmt", "--check") => opts.check = true,
+            ("build", "-o" | "--output") => {
+                let value = it
+                    .next()
+                    .ok_or_else(|| CliError::Usage(format!("{arg} requires a value")))?;
+                opts.output = Some(PathBuf::from(value));
+            }
+            (_, a) if a.starts_with('-') && a.len() > 1 => {
+                return Err(CliError::Usage(format!(
+                    "unknown option '{a}' for '{command}'"
+                )));
+            }
+            _ => {
+                if opts.file.is_some() {
+                    return Err(CliError::Usage(format!(
+                        "unexpected extra argument '{arg}'"
+                    )));
                 }
+                opts.file = Some(PathBuf::from(arg));
+            }
+        }
+    }
+    Ok(opts)
+}
+
+fn read_source(path: &Path) -> Result<(String, String), CliError> {
+    let name = path.to_string_lossy().to_string();
+    match fs::read_to_string(path) {
+        Ok(s) => Ok((s, name)),
+        Err(e) => Err(CliError::Failure(format!("Cannot read file '{name}': {e}"))),
+    }
+}
+
+fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
+    let Some(command) = args.first().map(String::as_str) else {
+        print!("{USAGE}");
+        return Ok(ExitCode::from(2));
+    };
+    let rest = &args[1..];
+
+    match command {
+        "help" | "--help" | "-h" => {
+            print!("{USAGE}");
+            Ok(ExitCode::SUCCESS)
+        }
+        "version" | "--version" | "-V" => {
+            println!(
+                "yomnova {} ({}-{})",
+                env!("CARGO_PKG_VERSION"),
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            );
+            println!("ONE LANGUAGE. EVERY SYSTEM.");
+            Ok(ExitCode::SUCCESS)
+        }
+        "run" | "check" | "build" | "disasm" | "tokens" | "ast" | "fmt" => {
+            let opts = parse_opts(command, rest)?;
+            let path = opts
+                .file
+                .clone()
+                .ok_or_else(|| CliError::Usage(format!("'{command}' requires a source file")))?;
+            let (source, file) = read_source(&path)?;
+            let diag = |diags: Vec<Diagnostic>| CliError::Diagnostics {
+                diags,
+                source: source.clone(),
+                file: file.clone(),
             };
 
-            match Compiler::compile_and_run(&source) {
-                Ok(output) => {
-                    if disassemble {
-                        println!("{}", output.chunk.disassemble(&filename).cyan());
+            match command {
+                "run" => {
+                    let out = Compiler::compile_and_run(&source).map_err(diag)?;
+                    if opts.disassemble {
+                        println!("{}", out.disassemble_all());
                     }
-                    // Program output has already been emitted during execution
-                    if let Some(res) = output.execution_result {
-                        if res != yomnova_bytecode::Value::Unit {
-                            println!("=> {}", res);
+                    if let Some(res) = out.execution_result {
+                        if res != Value::Unit {
+                            println!("=> {res}");
                         }
                     }
                 }
-                Err(diagnostics) => {
-                    for diag in diagnostics {
-                        eprint!("{}", diag.render(Some(&source), Some(&filename)));
+                "check" => {
+                    Compiler::check(&source).map_err(diag)?;
+                    println!("ok: no errors in '{file}'");
+                }
+                "build" => {
+                    let unit = Compiler::compile_unit(&source).map_err(diag)?;
+                    let out_path = opts.output.unwrap_or_else(|| path.with_extension("yomc"));
+                    fs::write(&out_path, unit.disassemble_all()).map_err(|e| {
+                        CliError::Failure(format!(
+                            "Cannot write output '{}': {e}",
+                            out_path.display()
+                        ))
+                    })?;
+                    println!(
+                        "ok: wrote textual bytecode listing '{}' (not an executable artifact)",
+                        out_path.display()
+                    );
+                }
+                "disasm" => {
+                    let unit = Compiler::compile_unit(&source).map_err(diag)?;
+                    print!("{}", unit.disassemble_all());
+                }
+                "tokens" => {
+                    let tokens = Compiler::tokens(&source).map_err(diag)?;
+                    print!("{}", Compiler::render_tokens(&tokens));
+                }
+                "ast" => {
+                    println!("{}", Compiler::ast_dump(&source).map_err(diag)?);
+                }
+                "fmt" => {
+                    let formatted = format_source(&source);
+                    if opts.check {
+                        if formatted != source {
+                            eprintln!("'{file}' requires reformatting");
+                            return Ok(ExitCode::from(1));
+                        }
+                        println!("ok: '{file}' is formatted");
+                    } else {
+                        fs::write(&path, formatted).map_err(|e| {
+                            CliError::Failure(format!("Failed to write '{file}': {e}"))
+                        })?;
+                        println!("ok: formatted '{file}'");
                     }
-                    process::exit(1);
                 }
+                _ => unreachable!(),
             }
+            Ok(ExitCode::SUCCESS)
         }
-        Commands::Check { file } => {
-            let filename = file.to_string_lossy().to_string();
-            let source = match fs::read_to_string(&file) {
-                Ok(content) => content,
-                Err(e) => {
-                    eprintln!("{}: Cannot read file '{}': {}", "error".red().bold(), filename, e);
-                    process::exit(1);
-                }
-            };
-
-            match Compiler::check(&source) {
-                Ok(_) => {
-                    println!("{} Verification succeeded: 0 errors in '{}'", "success:".green().bold(), filename);
-                }
-                Err(diagnostics) => {
-                    for diag in diagnostics {
-                        eprint!("{}", diag.render(Some(&source), Some(&filename)));
-                    }
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::Build { file, output } => {
-            let filename = file.to_string_lossy().to_string();
-            let source = match fs::read_to_string(&file) {
-                Ok(content) => content,
-                Err(e) => {
-                    eprintln!("{}: Cannot read file '{}': {}", "error".red().bold(), filename, e);
-                    process::exit(1);
-                }
-            };
-
-            match Compiler::compile_and_run(&source) {
-                Ok(out) => {
-                    let out_path = output.unwrap_or_else(|| file.with_extension("yomc"));
-                    let dis = out.chunk.disassemble(&filename);
-                    if let Err(e) = fs::write(&out_path, dis) {
-                        eprintln!("{}: Cannot write output '{}': {}", "error".red().bold(), out_path.display(), e);
-                        process::exit(1);
-                    }
-                    println!("{} Built '{}' -> '{}'", "success:".green().bold(), filename, out_path.display());
-                }
-                Err(diagnostics) => {
-                    for diag in diagnostics {
-                        eprint!("{}", diag.render(Some(&source), Some(&filename)));
-                    }
-                    process::exit(1);
-                }
-            }
-        }
-        Commands::Fmt { file, check } => {
-            let filename = file.to_string_lossy().to_string();
-            let source = match fs::read_to_string(&file) {
-                Ok(content) => content,
-                Err(e) => {
-                    eprintln!("{}: Cannot read file '{}': {}", "error".red().bold(), filename, e);
-                    process::exit(1);
-                }
-            };
-
-            let formatted = format_source(&source);
-            if check {
-                if formatted != source {
-                    eprintln!("{}: '{}' requires reformatting", "warning:".yellow().bold(), filename);
-                    process::exit(1);
-                } else {
-                    println!("{} '{}' is formatted correctly", "ok:".green().bold(), filename);
-                }
-            } else {
-                if let Err(e) = fs::write(&file, formatted) {
-                    eprintln!("{}: Failed to format file '{}': {}", "error".red().bold(), filename, e);
-                    process::exit(1);
-                }
-                println!("{} Formatted '{}'", "success:".green().bold(), filename);
-            }
-        }
-        Commands::Version => {
-            println!("yomnova 0.1.0-dev (compiler: rustc 1.99.1, target: linux-x86_64)");
-            println!("Architecture: Hybrid General-Purpose & Systems Language");
-            println!("Creator: Mouhamed Salim Bousmina");
-            println!("Identity: ONE LANGUAGE. EVERY SYSTEM.");
-        }
+        other => Err(CliError::Usage(format!("unknown command '{other}'"))),
     }
-}
-
-fn format_source(src: &str) -> String {
-    let mut out = String::new();
-    let mut indent: usize = 0;
-
-    for line in src.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            out.push('\n');
-            continue;
-        }
-
-        if trimmed.starts_with('}') {
-            indent = indent.saturating_sub(1);
-        }
-
-        out.push_str(&"    ".repeat(indent));
-        out.push_str(trimmed);
-        out.push('\n');
-
-        if trimmed.ends_with('{') {
-            indent += 1;
-        }
-    }
-
-    out
 }

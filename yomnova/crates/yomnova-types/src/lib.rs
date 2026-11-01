@@ -44,7 +44,13 @@ impl Type {
     pub fn is_network_type(&self) -> bool {
         matches!(
             self,
-            Type::IPv4 | Type::IPv6 | Type::Port | Type::Endpoint | Type::Packet | Type::TCP | Type::UDP
+            Type::IPv4
+                | Type::IPv6
+                | Type::Port
+                | Type::Endpoint
+                | Type::Packet
+                | Type::TCP
+                | Type::UDP
         )
     }
 
@@ -74,6 +80,9 @@ impl Type {
         if *target == Type::Unknown || *self == Type::Unknown {
             return true;
         }
+        if let (Type::Array(a), Type::Array(b)) = (self, target) {
+            return a.is_assignable_to(b);
+        }
         false
     }
 }
@@ -94,7 +103,10 @@ impl fmt::Display for Type {
             Type::TCP => write!(f, "TCP"),
             Type::UDP => write!(f, "UDP"),
             Type::Array(t) => write!(f, "Array<{t}>"),
-            Type::Function { params, return_type } => {
+            Type::Function {
+                params,
+                return_type,
+            } => {
                 write!(f, "fn(")?;
                 for (i, p) in params.iter().enumerate() {
                     if i > 0 {

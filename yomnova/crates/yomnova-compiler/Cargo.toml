@@ -19,8 +19,3 @@ yomnova-vm = { path = "../yomnova-vm" }
 yomnova-network-core = { path = "../yomnova-network-core" }
 yomnova-stdlib = { path = "../yomnova-stdlib" }
 thiserror = { workspace = true }
-serde = { workspace = true, optional = true }
-
-[features]
-default = []
-serde = ["dep:serde"]

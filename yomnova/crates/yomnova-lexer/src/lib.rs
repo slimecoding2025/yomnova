@@ -149,11 +149,16 @@ impl<'a> Lexer<'a> {
         if ch.is_ascii_alphabetic() || ch == '_' {
             let mut id = String::new();
             id.push(ch);
-            while !self.is_at_end() && (self.peek().1.is_ascii_alphanumeric() || self.peek().1 == '_') {
+            while !self.is_at_end()
+                && (self.peek().1.is_ascii_alphanumeric() || self.peek().1 == '_')
+            {
                 id.push(self.advance().1);
             }
             let end_idx = if self.is_at_end() {
-                self.chars.last().map(|(i, c)| i + c.len_utf8()).unwrap_or(start_idx + id.len())
+                self.chars
+                    .last()
+                    .map(|(i, c)| i + c.len_utf8())
+                    .unwrap_or(start_idx + id.len())
             } else {
                 self.peek().0
             };
@@ -323,7 +328,10 @@ impl<'a> Lexer<'a> {
                     Ok(Token::new(TokenKind::BangEqual, make_span(end_idx + 1, 0)))
                 } else if !self.is_at_end() && self.peek().1 == '[' {
                     let (end_idx, _) = self.advance();
-                    Ok(Token::new(TokenKind::BangBracket, make_span(end_idx + 1, 0)))
+                    Ok(Token::new(
+                        TokenKind::BangBracket,
+                        make_span(end_idx + 1, 0),
+                    ))
                 } else {
                     Ok(Token::new(TokenKind::Bang, span1))
                 }
@@ -339,7 +347,10 @@ impl<'a> Lexer<'a> {
             '>' => {
                 if !self.is_at_end() && self.peek().1 == '=' {
                     let (end_idx, _) = self.advance();
-                    Ok(Token::new(TokenKind::GreaterEqual, make_span(end_idx + 1, 0)))
+                    Ok(Token::new(
+                        TokenKind::GreaterEqual,
+                        make_span(end_idx + 1, 0),
+                    ))
                 } else {
                     Ok(Token::new(TokenKind::Greater, span1))
                 }
@@ -358,7 +369,10 @@ impl<'a> Lexer<'a> {
                     Ok(Token::new(TokenKind::OrOr, make_span(end_idx + 1, 0)))
                 } else if !self.is_at_end() && self.peek().1 == '>' {
                     let (end_idx, _) = self.advance();
-                    Ok(Token::new(TokenKind::PipeGreater, make_span(end_idx + 1, 0)))
+                    Ok(Token::new(
+                        TokenKind::PipeGreater,
+                        make_span(end_idx + 1, 0),
+                    ))
                 } else {
                     Err(LexerError::UnexpectedChar { ch, span: span1 })
                 }
@@ -373,7 +387,13 @@ impl<'a> Lexer<'a> {
 
     fn peek(&self) -> (usize, char) {
         if self.is_at_end() {
-            (self.chars.last().map(|(i, c)| i + c.len_utf8()).unwrap_or(0), '\0')
+            (
+                self.chars
+                    .last()
+                    .map(|(i, c)| i + c.len_utf8())
+                    .unwrap_or(0),
+                '\0',
+            )
         } else {
             self.chars[self.cursor]
         }
@@ -425,7 +445,10 @@ fn main() -> Int {
         assert_eq!(tokens[8].kind, TokenKind::OpenBrace);
         assert_eq!(tokens[9].kind, TokenKind::Emit);
         assert_eq!(tokens[10].kind, TokenKind::OpenParen);
-        assert_eq!(tokens[11].kind, TokenKind::Text("Hello from YOMNOVA".to_string()));
+        assert_eq!(
+            tokens[11].kind,
+            TokenKind::Text("Hello from YOMNOVA".to_string())
+        );
         assert_eq!(tokens[12].kind, TokenKind::CloseParen);
         assert_eq!(tokens[13].kind, TokenKind::Return);
         assert_eq!(tokens[14].kind, TokenKind::Integer(0));

@@ -10,8 +10,3 @@ yomnova-diagnostics = { path = "../yomnova-diagnostics" }
 yomnova-ast = { path = "../yomnova-ast" }
 yomnova-types = { path = "../yomnova-types" }
 thiserror = { workspace = true }
-serde = { workspace = true, optional = true }
-
-[features]
-default = []
-serde = ["dep:serde", "yomnova-diagnostics/serde", "yomnova-ast/serde", "yomnova-types/serde"]

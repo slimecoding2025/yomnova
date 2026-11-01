@@ -52,37 +52,37 @@ pub enum TokenKind {
     Packet,
 
     // Operators
-    Plus,          // +
-    Minus,         // -
-    Star,          // *
-    Slash,         // /
-    Percent,       // %
-    Equal,         // =
-    EqualEqual,    // ==
-    BangEqual,     // !=
-    Less,          // <
-    LessEqual,     // <=
-    Greater,       // >
-    GreaterEqual,  // >=
-    AndAnd,        // &&
-    OrOr,          // ||
-    Bang,          // !
-    PipeGreater,   // |>
-    Arrow,         // ->
-    FatArrow,      // =>
-    Dot,           // .
+    Plus,         // +
+    Minus,        // -
+    Star,         // *
+    Slash,        // /
+    Percent,      // %
+    Equal,        // =
+    EqualEqual,   // ==
+    BangEqual,    // !=
+    Less,         // <
+    LessEqual,    // <=
+    Greater,      // >
+    GreaterEqual, // >=
+    AndAnd,       // &&
+    OrOr,         // ||
+    Bang,         // !
+    PipeGreater,  // |>
+    Arrow,        // ->
+    FatArrow,     // =>
+    Dot,          // .
 
     // Punctuation
-    OpenParen,     // (
-    CloseParen,    // )
-    OpenBrace,     // {
-    CloseBrace,    // }
-    OpenBracket,   // [
-    CloseBracket,  // ]
-    Comma,         // ,
-    Colon,         // :
-    Semicolon,     // ;
-    BangBracket,   // ![
+    OpenParen,    // (
+    CloseParen,   // )
+    OpenBrace,    // {
+    CloseBrace,   // }
+    OpenBracket,  // [
+    CloseBracket, // ]
+    Comma,        // ,
+    Colon,        // :
+    Semicolon,    // ;
+    BangBracket,  // ![
 
     // Special
     Eof,

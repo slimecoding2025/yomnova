@@ -62,9 +62,18 @@ impl Vm {
         };
 
         // Register builtin functions
-        vm.globals.insert("IPv4".to_string(), Value::NativeFunction("IPv4".to_string()));
-        vm.globals.insert("Port".to_string(), Value::NativeFunction("Port".to_string()));
-        vm.globals.insert("Endpoint".to_string(), Value::NativeFunction("Endpoint".to_string()));
+        vm.globals.insert(
+            "IPv4".to_string(),
+            Value::NativeFunction("IPv4".to_string()),
+        );
+        vm.globals.insert(
+            "Port".to_string(),
+            Value::NativeFunction("Port".to_string()),
+        );
+        vm.globals.insert(
+            "Endpoint".to_string(),
+            Value::NativeFunction("Endpoint".to_string()),
+        );
 
         vm
     }
@@ -77,7 +86,6 @@ impl Default for Vm {
 }
 
 impl Vm {
-
     pub fn run_chunk(&mut self, chunk: Chunk) -> Result<Value, VmError> {
         let chunk_idx = self.chunks.len();
         self.chunks.push(chunk);
@@ -95,7 +103,9 @@ impl Vm {
         while !self.frames.is_empty() {
             self.step_count += 1;
             if self.step_count > self.max_steps {
-                return Err(VmError::StepLimitExceeded { limit: self.max_steps });
+                return Err(VmError::StepLimitExceeded {
+                    limit: self.max_steps,
+                });
             }
 
             let frame = self.frames.last_mut().unwrap();
@@ -115,7 +125,8 @@ impl Vm {
             match op {
                 OpCode::Constant => {
                     let idx = self.read_u16()?;
-                    let val = self.chunks[self.current_frame().chunk_index].constants[idx as usize].clone();
+                    let val = self.chunks[self.current_frame().chunk_index].constants[idx as usize]
+                        .clone();
                     self.push(val)?;
                 }
                 OpCode::Nil => self.push(Value::Unit)?,
@@ -145,7 +156,8 @@ impl Vm {
                 }
                 OpCode::GetGlobal => {
                     let idx = self.read_u16()?;
-                    let name_val = &self.chunks[self.current_frame().chunk_index].constants[idx as usize];
+                    let name_val =
+                        &self.chunks[self.current_frame().chunk_index].constants[idx as usize];
                     if let Value::Text(name) = name_val {
                         if let Some(val) = self.globals.get(name) {
                             let v = val.clone();
@@ -157,7 +169,9 @@ impl Vm {
                 }
                 OpCode::SetGlobal => {
                     let idx = self.read_u16()?;
-                    let name_val = self.chunks[self.current_frame().chunk_index].constants[idx as usize].clone();
+                    let name_val = self.chunks[self.current_frame().chunk_index].constants
+                        [idx as usize]
+                        .clone();
                     let val = self.peek(0)?.clone();
                     if let Value::Text(name) = name_val {
                         self.globals.insert(name, val);
@@ -179,7 +193,9 @@ impl Vm {
                     match (a, b) {
                         (Value::Int(x), Value::Int(y)) => self.push(Value::Bool(x > y))?,
                         (Value::Float(x), Value::Float(y)) => self.push(Value::Bool(x > y))?,
-                        (x, y) => return Err(VmError::TypeError(format!("Cannot compare {x:?} > {y:?}"))),
+                        (x, y) => {
+                            return Err(VmError::TypeError(format!("Cannot compare {x:?} > {y:?}")))
+                        }
                     }
                 }
                 OpCode::GreaterEqual => {
@@ -188,7 +204,11 @@ impl Vm {
                     match (a, b) {
                         (Value::Int(x), Value::Int(y)) => self.push(Value::Bool(x >= y))?,
                         (Value::Float(x), Value::Float(y)) => self.push(Value::Bool(x >= y))?,
-                        (x, y) => return Err(VmError::TypeError(format!("Cannot compare {x:?} >= {y:?}"))),
+                        (x, y) => {
+                            return Err(VmError::TypeError(format!(
+                                "Cannot compare {x:?} >= {y:?}"
+                            )))
+                        }
                     }
                 }
                 OpCode::Less => {
@@ -197,7 +217,9 @@ impl Vm {
                     match (a, b) {
                         (Value::Int(x), Value::Int(y)) => self.push(Value::Bool(x < y))?,
                         (Value::Float(x), Value::Float(y)) => self.push(Value::Bool(x < y))?,
-                        (x, y) => return Err(VmError::TypeError(format!("Cannot compare {x:?} < {y:?}"))),
+                        (x, y) => {
+                            return Err(VmError::TypeError(format!("Cannot compare {x:?} < {y:?}")))
+                        }
                     }
                 }
                 OpCode::LessEqual => {
@@ -206,14 +228,21 @@ impl Vm {
                     match (a, b) {
                         (Value::Int(x), Value::Int(y)) => self.push(Value::Bool(x <= y))?,
                         (Value::Float(x), Value::Float(y)) => self.push(Value::Bool(x <= y))?,
-                        (x, y) => return Err(VmError::TypeError(format!("Cannot compare {x:?} <= {y:?}"))),
+                        (x, y) => {
+                            return Err(VmError::TypeError(format!(
+                                "Cannot compare {x:?} <= {y:?}"
+                            )))
+                        }
                     }
                 }
                 OpCode::Add => {
                     let b = self.pop()?;
                     let a = self.pop()?;
                     match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.push(Value::Int(x.checked_add(y).ok_or_else(|| VmError::IntegerOverflow(format!("{x} + {y}")))?))?,
+                        (Value::Int(x), Value::Int(y)) => self
+                            .push(Value::Int(x.checked_add(y).ok_or_else(|| {
+                                VmError::IntegerOverflow(format!("{x} + {y}"))
+                            })?))?,
                         (Value::Float(x), Value::Float(y)) => self.push(Value::Float(x + y))?,
                         (Value::Text(x), Value::Text(y)) => {
                             if x.len() + y.len() > Self::MAX_TEXT_BYTES {
@@ -224,25 +253,41 @@ impl Vm {
                             }
                             self.push(Value::Text(format!("{x}{y}")))?
                         }
-                        (x, y) => return Err(VmError::TypeError(format!("Cannot add {x:?} and {y:?}"))),
+                        (x, y) => {
+                            return Err(VmError::TypeError(format!("Cannot add {x:?} and {y:?}")))
+                        }
                     }
                 }
                 OpCode::Subtract => {
                     let b = self.pop()?;
                     let a = self.pop()?;
                     match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.push(Value::Int(x.checked_sub(y).ok_or_else(|| VmError::IntegerOverflow(format!("{x} - {y}")))?))?,
+                        (Value::Int(x), Value::Int(y)) => self
+                            .push(Value::Int(x.checked_sub(y).ok_or_else(|| {
+                                VmError::IntegerOverflow(format!("{x} - {y}"))
+                            })?))?,
                         (Value::Float(x), Value::Float(y)) => self.push(Value::Float(x - y))?,
-                        (x, y) => return Err(VmError::TypeError(format!("Cannot subtract {y:?} from {x:?}"))),
+                        (x, y) => {
+                            return Err(VmError::TypeError(format!(
+                                "Cannot subtract {y:?} from {x:?}"
+                            )))
+                        }
                     }
                 }
                 OpCode::Multiply => {
                     let b = self.pop()?;
                     let a = self.pop()?;
                     match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => self.push(Value::Int(x.checked_mul(y).ok_or_else(|| VmError::IntegerOverflow(format!("{x} * {y}")))?))?,
+                        (Value::Int(x), Value::Int(y)) => self
+                            .push(Value::Int(x.checked_mul(y).ok_or_else(|| {
+                                VmError::IntegerOverflow(format!("{x} * {y}"))
+                            })?))?,
                         (Value::Float(x), Value::Float(y)) => self.push(Value::Float(x * y))?,
-                        (x, y) => return Err(VmError::TypeError(format!("Cannot multiply {x:?} by {y:?}"))),
+                        (x, y) => {
+                            return Err(VmError::TypeError(format!(
+                                "Cannot multiply {x:?} by {y:?}"
+                            )))
+                        }
                     }
                 }
                 OpCode::Divide => {
@@ -253,7 +298,11 @@ impl Vm {
                             if y == 0 {
                                 return Err(VmError::DivisionByZero);
                             }
-                            self.push(Value::Int(x.checked_div(y).ok_or_else(|| VmError::IntegerOverflow(format!("{x} / {y}")))?))?;
+                            self.push(Value::Int(
+                                x.checked_div(y).ok_or_else(|| {
+                                    VmError::IntegerOverflow(format!("{x} / {y}"))
+                                })?,
+                            ))?;
                         }
                         (Value::Float(x), Value::Float(y)) => {
                             if y == 0.0 {
@@ -261,7 +310,9 @@ impl Vm {
                             }
                             self.push(Value::Float(x / y))?;
                         }
-                        (x, y) => return Err(VmError::TypeError(format!("Cannot divide {x:?} by {y:?}"))),
+                        (x, y) => {
+                            return Err(VmError::TypeError(format!("Cannot divide {x:?} by {y:?}")))
+                        }
                     }
                 }
                 OpCode::Modulo => {
@@ -272,9 +323,15 @@ impl Vm {
                             if y == 0 {
                                 return Err(VmError::DivisionByZero);
                             }
-                            self.push(Value::Int(x.checked_rem(y).ok_or_else(|| VmError::IntegerOverflow(format!("{x} % {y}")))?))?;
+                            self.push(Value::Int(
+                                x.checked_rem(y).ok_or_else(|| {
+                                    VmError::IntegerOverflow(format!("{x} % {y}"))
+                                })?,
+                            ))?;
                         }
-                        (x, y) => return Err(VmError::TypeError(format!("Cannot modulo {x:?} by {y:?}"))),
+                        (x, y) => {
+                            return Err(VmError::TypeError(format!("Cannot modulo {x:?} by {y:?}")))
+                        }
                     }
                 }
                 OpCode::And => {
@@ -294,7 +351,10 @@ impl Vm {
                 OpCode::Negate => {
                     let val = self.pop()?;
                     match val {
-                        Value::Int(n) => self.push(Value::Int(n.checked_neg().ok_or_else(|| VmError::IntegerOverflow(format!("-{n}")))?))?,
+                        Value::Int(n) => self.push(Value::Int(
+                            n.checked_neg()
+                                .ok_or_else(|| VmError::IntegerOverflow(format!("-{n}")))?,
+                        ))?,
                         Value::Float(f) => self.push(Value::Float(-f))?,
                         _ => return Err(VmError::TypeError(format!("Cannot negate {val:?}"))),
                     }
@@ -344,7 +404,11 @@ impl Vm {
                                 )));
                             }
                         }
-                        (c, i) => return Err(VmError::TypeError(format!("Cannot index {c:?} with {i:?}"))),
+                        (c, i) => {
+                            return Err(VmError::TypeError(format!(
+                                "Cannot index {c:?} with {i:?}"
+                            )))
+                        }
                     }
                 }
                 OpCode::Return => {
@@ -366,13 +430,18 @@ impl Vm {
     }
 
     fn call_value(&mut self, arg_count: usize) -> Result<(), VmError> {
-        let callee_idx = (self.stack.len().checked_sub(1 + arg_count)).ok_or(VmError::StackUnderflow)?;
+        let callee_idx =
+            (self.stack.len().checked_sub(1 + arg_count)).ok_or(VmError::StackUnderflow)?;
         let callee = self.stack[callee_idx].clone();
 
         match callee {
-            Value::UserFunction { chunk_index, arity, .. } => {
+            Value::UserFunction {
+                chunk_index, arity, ..
+            } => {
                 if arg_count != arity {
-                    return Err(VmError::TypeError(format!("Function expects {arity} arguments, but {arg_count} were provided")));
+                    return Err(VmError::TypeError(format!(
+                        "Function expects {arity} arguments, but {arg_count} were provided"
+                    )));
                 }
                 let mut args = Vec::with_capacity(arg_count);
                 for _ in 0..arg_count {
@@ -405,7 +474,11 @@ impl Vm {
                 let expected = match name.as_str() {
                     "IPv4" | "Port" => 1,
                     "Endpoint" => 2,
-                    other => return Err(VmError::TypeError(format!("Unknown native function '{other}'"))),
+                    other => {
+                        return Err(VmError::TypeError(format!(
+                            "Unknown native function '{other}'"
+                        )))
+                    }
                 };
                 if args.len() != expected {
                     return Err(VmError::TypeError(format!(
@@ -417,45 +490,75 @@ impl Vm {
                     "IPv4" => {
                         let text = match &args[0] {
                             Value::Text(s) => s.as_str(),
-                            _ => return Err(VmError::TypeError("IPv4 expects a string argument".to_string())),
+                            _ => {
+                                return Err(VmError::TypeError(
+                                    "IPv4 expects a string argument".to_string(),
+                                ))
+                            }
                         };
                         match text.parse::<Ipv4Addr>() {
                             Ok(ip) => Value::IPv4(ip.octets()),
-                            Err(e) => return Err(VmError::ProtocolError(format!("Invalid IPv4 address: {e}"))),
+                            Err(e) => {
+                                return Err(VmError::ProtocolError(format!(
+                                    "Invalid IPv4 address: {e}"
+                                )))
+                            }
                         }
                     }
                     "Port" => {
                         let port_num = match args[0] {
                             Value::Int(n) => n,
-                            _ => return Err(VmError::TypeError("Port expects an integer argument".to_string())),
+                            _ => {
+                                return Err(VmError::TypeError(
+                                    "Port expects an integer argument".to_string(),
+                                ))
+                            }
                         };
                         if !(1..=65535).contains(&port_num) {
-                            return Err(VmError::ProtocolError(format!("Port out of range (1-65535): {port_num}")));
+                            return Err(VmError::ProtocolError(format!(
+                                "Port out of range (1-65535): {port_num}"
+                            )));
                         }
                         Value::Port(port_num as u16)
                     }
                     "Endpoint" => {
                         let ip_bytes = match args[0] {
                             Value::IPv4(b) => b,
-                            _ => return Err(VmError::TypeError("Endpoint arg 1 must be IPv4".to_string())),
+                            _ => {
+                                return Err(VmError::TypeError(
+                                    "Endpoint arg 1 must be IPv4".to_string(),
+                                ))
+                            }
                         };
                         let port = match args[1] {
                             Value::Port(p) => p,
                             Value::Int(n) if (1..=65535).contains(&n) => n as u16,
                             Value::Int(n) => {
-                                return Err(VmError::ProtocolError(format!("Port out of range (1-65535): {n}")))
+                                return Err(VmError::ProtocolError(format!(
+                                    "Port out of range (1-65535): {n}"
+                                )))
                             }
-                            _ => return Err(VmError::TypeError("Endpoint arg 2 must be Port".to_string())),
+                            _ => {
+                                return Err(VmError::TypeError(
+                                    "Endpoint arg 2 must be Port".to_string(),
+                                ))
+                            }
                         };
                         Value::Endpoint(ip_bytes, port)
                     }
-                    other => return Err(VmError::TypeError(format!("Unknown native function '{other}'"))),
+                    other => {
+                        return Err(VmError::TypeError(format!(
+                            "Unknown native function '{other}'"
+                        )))
+                    }
                 };
 
                 self.push(result)?;
                 Ok(())
             }
-            _ => Err(VmError::TypeError(format!("Value {callee:?} is not callable"))),
+            _ => Err(VmError::TypeError(format!(
+                "Value {callee:?} is not callable"
+            ))),
         }
     }
 

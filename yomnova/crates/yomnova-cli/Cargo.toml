@@ -19,5 +19,3 @@ yomnova-ownership = { path = "../yomnova-ownership" }
 yomnova-bytecode = { path = "../yomnova-bytecode" }
 yomnova-vm = { path = "../yomnova-vm" }
 yomnova-compiler = { path = "../yomnova-compiler" }
-clap = { workspace = true }
-colored = { workspace = true }

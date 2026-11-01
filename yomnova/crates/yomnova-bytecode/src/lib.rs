@@ -5,15 +5,15 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum OpCode {
-    Constant,     // [u16: index]
+    Constant, // [u16: index]
     Nil,
     True,
     False,
     Pop,
-    GetLocal,     // [u16: slot]
-    SetLocal,     // [u16: slot]
-    GetGlobal,    // [u16: name_idx]
-    SetGlobal,    // [u16: name_idx]
+    GetLocal,  // [u16: slot]
+    SetLocal,  // [u16: slot]
+    GetGlobal, // [u16: name_idx]
+    SetGlobal, // [u16: name_idx]
     Equal,
     NotEqual,
     Greater,
@@ -29,12 +29,12 @@ pub enum OpCode {
     Or,
     Not,
     Negate,
-    Jump,         // [u16: offset]
-    JumpIfFalse,  // [u16: offset]
-    Call,         // [u8: arg_count]
+    Jump,        // [u16: offset]
+    JumpIfFalse, // [u16: offset]
+    Call,        // [u8: arg_count]
     Return,
     Emit,
-    Array,        // [u16: length]
+    Array, // [u16: length]
     Index,
     Halt,
 }
@@ -94,9 +94,16 @@ pub enum Value {
     IPv6([u8; 16]),
     Port(u16),
     Endpoint([u8; 4], u16),
-    Packet { header: Vec<u8>, payload: Vec<u8> },
+    Packet {
+        header: Vec<u8>,
+        payload: Vec<u8>,
+    },
     NativeFunction(String),
-    UserFunction { name: String, chunk_index: usize, arity: usize },
+    UserFunction {
+        name: String,
+        chunk_index: usize,
+        arity: usize,
+    },
 }
 
 impl Value {
@@ -166,7 +173,6 @@ impl Default for Chunk {
 }
 
 impl Chunk {
-
     pub fn write_byte(&mut self, byte: u8, line: usize) {
         self.code.push(byte);
         self.lines.push(line);
@@ -219,9 +225,13 @@ impl Chunk {
         };
         match op {
             OpCode::Constant => {
-                let const_idx = ((self.code[offset + 1] as u16) << 8) | (self.code[offset + 2] as u16);
+                let const_idx =
+                    ((self.code[offset + 1] as u16) << 8) | (self.code[offset + 2] as u16);
                 let val = &self.constants[const_idx as usize];
-                (format!("{out}OP_CONSTANT {const_idx} ('{val}')"), offset + 3)
+                (
+                    format!("{out}OP_CONSTANT {const_idx} ('{val}')"),
+                    offset + 3,
+                )
             }
             OpCode::GetLocal => {
                 let slot = ((self.code[offset + 1] as u16) << 8) | (self.code[offset + 2] as u16);

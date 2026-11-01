@@ -39,11 +39,24 @@ pub enum SemaError {
         right: String,
         span: Span,
     },
+    #[error("{feature} is not supported yet (at {span})")]
+    Unsupported { feature: String, span: Span },
+    #[error("{message} (at {span})")]
+    Invalid { message: String, span: Span },
+    #[error("Function '{name}' may finish without returning a value (at {span})")]
+    MissingReturn { name: String, span: Span },
 }
 
 impl SemaError {
     pub fn to_diagnostic(&self) -> Diagnostic {
-        Diagnostic::error(self.to_string(), Some(self.span()))
+        let d = Diagnostic::error(self.to_string(), Some(self.span()));
+        match self {
+            SemaError::Unsupported { .. } => {
+                d.with_hint("This syntax parses but has no implementation; see docs/PROGRESS.md")
+            }
+            SemaError::MissingReturn { .. } => d.with_hint("Add a `return` on every path"),
+            _ => d,
+        }
     }
 
     pub fn span(&self) -> Span {
@@ -56,6 +69,9 @@ impl SemaError {
             SemaError::InvalidReturnType { span, .. } => *span,
             SemaError::InvalidUnaryOp { span, .. } => *span,
             SemaError::InvalidBinaryOp { span, .. } => *span,
+            SemaError::Unsupported { span, .. } => *span,
+            SemaError::Invalid { span, .. } => *span,
+            SemaError::MissingReturn { span, .. } => *span,
         }
     }
 }
@@ -121,11 +137,13 @@ impl SemanticAnalyzer {
         // Register built-in functions
         analyzer.register_builtin("emit", vec![("val".to_string(), Type::Unknown)], Type::Unit);
         analyzer.register_builtin("IPv4", vec![("addr".to_string(), Type::Text)], Type::IPv4);
-        analyzer.register_builtin("IPv6", vec![("addr".to_string(), Type::Text)], Type::IPv6);
         analyzer.register_builtin("Port", vec![("port".to_string(), Type::Int)], Type::Port);
         analyzer.register_builtin(
             "Endpoint",
-            vec![("ip".to_string(), Type::IPv4), ("port".to_string(), Type::Port)],
+            vec![
+                ("ip".to_string(), Type::IPv4),
+                ("port".to_string(), Type::Unknown),
+            ],
             Type::Endpoint,
         );
 
@@ -180,28 +198,84 @@ impl SemanticAnalyzer {
             }
         }
 
-        // Second pass: analyze function bodies and top-level statements
+        // Reject declarations that have no implementation instead of silently ignoring them.
         for item in &program.items {
             match item {
-                TopLevelItem::Function(func) => self.analyze_function(func)?,
-                TopLevelItem::Statement(stmt) => self.analyze_statement(stmt)?,
-                TopLevelItem::Const(c) => {
-                    let val_ty = self.analyze_expression(&c.value)?;
-                    if let Some(ref anno) = c.ty {
-                        let expected = Type::from_annotation(anno);
-                        if !val_ty.is_assignable_to(&expected) {
-                            return Err(SemaError::TypeMismatch {
-                                expected: expected.to_string(),
-                                found: val_ty.to_string(),
-                                span: c.value.span,
-                            });
-                        }
-                    }
-                    self.declare_symbol(c.name.clone(), val_ty, false, true, c.span)?;
+                TopLevelItem::Struct(d) => {
+                    return Err(SemaError::Unsupported {
+                        feature: format!("struct '{}'", d.name),
+                        span: d.span,
+                    })
                 }
-                TopLevelItem::Struct(_) | TopLevelItem::Enum(_) => {}
+                TopLevelItem::Enum(d) => {
+                    return Err(SemaError::Unsupported {
+                        feature: format!("enum '{}'", d.name),
+                        span: d.span,
+                    })
+                }
+                _ => {}
             }
         }
+
+        let main_fn = program.items.iter().find_map(|i| match i {
+            TopLevelItem::Function(f) if f.name == "main" => Some(f),
+            _ => None,
+        });
+        let has_top_level_stmts = program
+            .items
+            .iter()
+            .any(|i| matches!(i, TopLevelItem::Statement(_)));
+        if let Some(m) = main_fn {
+            if !m.params.is_empty() {
+                return Err(SemaError::Invalid {
+                    message: "`main` must not take parameters".to_string(),
+                    span: m.span,
+                });
+            }
+            if has_top_level_stmts {
+                return Err(SemaError::Invalid {
+                    message: "top-level statements cannot be combined with `fn main`".to_string(),
+                    span: m.span,
+                });
+            }
+        }
+
+        // Second pass: constants, in source order, so every function body can use them.
+        for item in &program.items {
+            if let TopLevelItem::Const(c) = item {
+                let val_ty = self.analyze_expression(&c.value)?;
+                let ty = if let Some(ref anno) = c.ty {
+                    let expected = Type::from_annotation(anno);
+                    if !val_ty.is_assignable_to(&expected) {
+                        return Err(SemaError::TypeMismatch {
+                            expected: expected.to_string(),
+                            found: val_ty.to_string(),
+                            span: c.value.span,
+                        });
+                    }
+                    expected
+                } else {
+                    val_ty
+                };
+                self.declare_symbol(c.name.clone(), ty, false, true, c.span)?;
+            }
+        }
+
+        // Third pass: function bodies.
+        for item in &program.items {
+            if let TopLevelItem::Function(func) = item {
+                self.analyze_function(func)?;
+            }
+        }
+
+        // Finally top-level statements, in their own scope (functions cannot see them).
+        self.enter_scope();
+        for item in &program.items {
+            if let TopLevelItem::Statement(stmt) = item {
+                self.analyze_statement(stmt)?;
+            }
+        }
+        self.leave_scope();
 
         Ok(())
     }
@@ -226,6 +300,13 @@ impl SemanticAnalyzer {
         self.leave_scope();
 
         self.current_return_type = prev_ret;
+
+        if expected_ret != Type::Unit && !block_always_returns(&func.body) {
+            return Err(SemaError::MissingReturn {
+                name: func.name.clone(),
+                span: func.span,
+            });
+        }
         Ok(())
     }
 
@@ -240,7 +321,12 @@ impl SemanticAnalyzer {
 
     fn analyze_statement(&mut self, stmt: &Stmt) -> Result<(), SemaError> {
         match stmt {
-            Stmt::Let { name, ty, init, span } => {
+            Stmt::Let {
+                name,
+                ty,
+                init,
+                span,
+            } => {
                 let init_ty = self.analyze_expression(init)?;
                 let final_ty = if let Some(ref anno) = ty {
                     let expected = Type::from_annotation(anno);
@@ -257,7 +343,12 @@ impl SemanticAnalyzer {
                 };
                 self.declare_symbol(name.clone(), final_ty, false, false, *span)?;
             }
-            Stmt::Mut { name, ty, init, span } => {
+            Stmt::Mut {
+                name,
+                ty,
+                init,
+                span,
+            } => {
                 let init_ty = self.analyze_expression(init)?;
                 let final_ty = if let Some(ref anno) = ty {
                     let expected = Type::from_annotation(anno);
@@ -274,7 +365,11 @@ impl SemanticAnalyzer {
                 };
                 self.declare_symbol(name.clone(), final_ty, true, false, *span)?;
             }
-            Stmt::Assign { target, value, span } => {
+            Stmt::Assign {
+                target,
+                value,
+                span,
+            } => {
                 let sym = self.lookup_symbol(target, *span)?;
                 if !sym.is_mut {
                     return Err(SemaError::CannotAssignImmutable {
@@ -291,7 +386,12 @@ impl SemanticAnalyzer {
                     });
                 }
             }
-            Stmt::If { condition, then_branch, else_branch, span: _ } => {
+            Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+                span: _,
+            } => {
                 let cond_ty = self.analyze_expression(condition)?;
                 if !cond_ty.is_assignable_to(&Type::Bool) {
                     return Err(SemaError::TypeMismatch {
@@ -305,7 +405,11 @@ impl SemanticAnalyzer {
                     self.analyze_block(el)?;
                 }
             }
-            Stmt::While { condition, body, span: _ } => {
+            Stmt::While {
+                condition,
+                body,
+                span: _,
+            } => {
                 let cond_ty = self.analyze_expression(condition)?;
                 if !cond_ty.is_assignable_to(&Type::Bool) {
                     return Err(SemaError::TypeMismatch {
@@ -333,10 +437,14 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            Stmt::Flow { name, source, stages: _, span } => {
-                let src_ty = self.analyze_expression(source)?;
-                // Flow stage output retains array or transformed collection
-                self.declare_symbol(name.clone(), src_ty, false, false, *span)?;
+            Stmt::Flow {
+                name,
+                source,
+                stages,
+                span,
+            } => {
+                let result_ty = self.analyze_pipeline(source, stages)?;
+                self.declare_symbol(name.clone(), result_ty, false, false, *span)?;
             }
             Stmt::Expr(expr) => {
                 self.analyze_expression(expr)?;
@@ -373,12 +481,19 @@ impl SemanticAnalyzer {
                 let right_ty = self.analyze_expression(right)?;
 
                 match op {
-                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::Mod => {
                         if left_ty == Type::Int && right_ty == Type::Int {
                             Type::Int
                         } else if left_ty == Type::Float && right_ty == Type::Float {
                             Type::Float
-                        } else if *op == BinaryOp::Add && left_ty == Type::Text && right_ty == Type::Text {
+                        } else if *op == BinaryOp::Add
+                            && left_ty == Type::Text
+                            && right_ty == Type::Text
+                        {
                             Type::Text
                         } else {
                             return Err(SemaError::InvalidBinaryOp {
@@ -390,7 +505,9 @@ impl SemanticAnalyzer {
                         }
                     }
                     BinaryOp::Eq | BinaryOp::Neq => {
-                        if left_ty.is_assignable_to(&right_ty) || right_ty.is_assignable_to(&left_ty) {
+                        if left_ty.is_assignable_to(&right_ty)
+                            || right_ty.is_assignable_to(&left_ty)
+                        {
                             Type::Bool
                         } else {
                             return Err(SemaError::InvalidBinaryOp {
@@ -402,7 +519,7 @@ impl SemanticAnalyzer {
                         }
                     }
                     BinaryOp::Lt | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Gte => {
-                        if left_ty.is_numeric() && right_ty.is_numeric() {
+                        if left_ty.is_numeric() && right_ty.is_numeric() && left_ty == right_ty {
                             Type::Bool
                         } else {
                             return Err(SemaError::InvalidBinaryOp {
@@ -455,50 +572,60 @@ impl SemanticAnalyzer {
                 }
             }
             ExprKind::Call { callee, args } => {
-                let callee_name = if let ExprKind::Identifier(ref name) = callee.kind {
-                    Some(name.clone())
-                } else {
-                    None
+                let ExprKind::Identifier(name) = &callee.kind else {
+                    return Err(SemaError::Unsupported {
+                        feature: "calling a non-identifier expression".to_string(),
+                        span: expr.span,
+                    });
                 };
-
                 let mut arg_types = Vec::new();
                 for arg in args {
                     arg_types.push(self.analyze_expression(arg)?);
                 }
-
-                if let Some(name) = callee_name {
-                    if let Some(sig) = self.functions.get(&name).cloned() {
-                        if name != "emit" && sig.params.len() != args.len() {
-                            return Err(SemaError::ArgumentCountMismatch {
-                                name,
-                                expected: sig.params.len(),
-                                found: args.len(),
-                                span: expr.span,
-                            });
-                        }
-                        sig.return_type
-                    } else if let Ok(sym) = self.lookup_symbol(&name, expr.span) {
-                        if let Type::Function { return_type, .. } = sym.ty {
-                            *return_type
-                        } else {
-                            Type::Unknown
+                let Some(sig) = self.functions.get(name).cloned() else {
+                    return Err(if self.lookup_symbol(name, expr.span).is_ok() {
+                        SemaError::Invalid {
+                            message: format!("'{name}' is a variable, not a function"),
+                            span: expr.span,
                         }
                     } else {
-                        return Err(SemaError::UndefinedIdentifier {
-                            name,
+                        SemaError::UndefinedIdentifier {
+                            name: name.clone(),
                             span: expr.span,
+                        }
+                    });
+                };
+                if sig.params.len() != args.len() {
+                    return Err(SemaError::ArgumentCountMismatch {
+                        name: name.clone(),
+                        expected: sig.params.len(),
+                        found: args.len(),
+                        span: expr.span,
+                    });
+                }
+                for (i, (arg_ty, (_, param_ty))) in
+                    arg_types.iter().zip(sig.params.iter()).enumerate()
+                {
+                    // Endpoint(ip, port) also accepts an Int port; the VM range-checks it.
+                    let ok = arg_ty.is_assignable_to(param_ty)
+                        || (name == "Endpoint"
+                            && i == 1
+                            && matches!(arg_ty, Type::Int | Type::Port));
+                    if !ok {
+                        return Err(SemaError::TypeMismatch {
+                            expected: param_ty.to_string(),
+                            found: arg_ty.to_string(),
+                            span: args[i].span,
                         });
                     }
-                } else {
-                    Type::Unknown
                 }
+                sig.return_type
             }
-            ExprKind::MethodCall { receiver, method: _, args } => {
-                let _recv_ty = self.analyze_expression(receiver)?;
-                for arg in args {
-                    self.analyze_expression(arg)?;
-                }
-                Type::Unknown
+            ExprKind::MethodCall { .. } => {
+                return Err(SemaError::Unsupported {
+                    feature: "method calls".to_string(),
+                    span: expr.span,
+                });
             }
             ExprKind::Array(elements) => {
                 if elements.is_empty() {
@@ -530,32 +657,72 @@ impl SemanticAnalyzer {
                 }
                 match col_ty {
                     Type::Array(inner) => *inner,
-                    _ => Type::Unknown,
+                    Type::Unknown => Type::Unknown,
+                    other => {
+                        return Err(SemaError::TypeMismatch {
+                            expected: "Array<_>".to_string(),
+                            found: other.to_string(),
+                            span: collection.span,
+                        })
+                    }
                 }
             }
-            ExprKind::FieldAccess { object, .. } => {
-                self.analyze_expression(object)?;
-                Type::Unknown
+            ExprKind::FieldAccess { .. } => {
+                return Err(SemaError::Unsupported {
+                    feature: "field access".to_string(),
+                    span: expr.span,
+                });
             }
-            ExprKind::Pipe { expr: source, stages: _ } => {
-                self.analyze_expression(source)?
-            }
-            ExprKind::Lambda { params, body } => {
-                self.enter_scope();
-                for p in params {
-                    self.declare_symbol(p.clone(), Type::Unknown, false, false, expr.span)?;
-                }
-                let body_ty = self.analyze_expression(body)?;
-                self.leave_scope();
-                Type::Function {
-                    params: vec![Type::Unknown; params.len()],
-                    return_type: Box::new(body_ty),
-                }
+            ExprKind::Pipe {
+                expr: source,
+                stages,
+            } => self.analyze_pipeline(source, stages)?,
+            ExprKind::Lambda { .. } => {
+                return Err(SemaError::Unsupported {
+                    feature: "lambda expressions".to_string(),
+                    span: expr.span,
+                });
             }
         };
 
         self.expression_types.insert(expr.span, ty.clone());
         Ok(ty)
+    }
+
+    /// `x |> f |> g(a)` is typed as `g(f(x), a)`; `|> emit` yields Unit.
+    fn analyze_pipeline(&mut self, source: &Expr, stages: &[PipeStage]) -> Result<Type, SemaError> {
+        let mut current = self.analyze_expression(source)?;
+        for stage in stages {
+            let Some(sig) = self.functions.get(&stage.op_name).cloned() else {
+                return Err(SemaError::UndefinedIdentifier {
+                    name: stage.op_name.clone(),
+                    span: stage.span,
+                });
+            };
+            let mut arg_types = vec![current.clone()];
+            if let Some(arg) = &stage.arg {
+                arg_types.push(self.analyze_expression(arg)?);
+            }
+            if sig.params.len() != arg_types.len() {
+                return Err(SemaError::ArgumentCountMismatch {
+                    name: stage.op_name.clone(),
+                    expected: sig.params.len(),
+                    found: arg_types.len(),
+                    span: stage.span,
+                });
+            }
+            for (arg_ty, (_, param_ty)) in arg_types.iter().zip(sig.params.iter()) {
+                if !arg_ty.is_assignable_to(param_ty) {
+                    return Err(SemaError::TypeMismatch {
+                        expected: param_ty.to_string(),
+                        found: arg_ty.to_string(),
+                        span: stage.span,
+                    });
+                }
+            }
+            current = sig.return_type;
+        }
+        Ok(current)
     }
 
     fn enter_scope(&mut self) {
@@ -603,4 +770,17 @@ impl SemanticAnalyzer {
             span,
         })
     }
+}
+
+/// True when every path through the block ends in `return`.
+fn block_always_returns(block: &Block) -> bool {
+    block.statements.iter().any(|s| match s {
+        Stmt::Return { .. } => true,
+        Stmt::If {
+            then_branch,
+            else_branch: Some(el),
+            ..
+        } => block_always_returns(then_branch) && block_always_returns(el),
+        _ => false,
+    })
 }

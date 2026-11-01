@@ -6,8 +6,3 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-serde = { workspace = true, optional = true }
-
-[features]
-default = []
-serde = ["dep:serde"]

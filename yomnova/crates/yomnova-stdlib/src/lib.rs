@@ -31,7 +31,13 @@ mod tests {
     #[test]
     fn test_stdlib_functions() {
         assert_eq!(std_math_abs(&Value::Int(-42)), Some(Value::Int(42)));
-        assert_eq!(std_text_len(&Value::Text("hello".to_string())), Some(Value::Int(5)));
-        assert_eq!(std_array_len(&Value::Array(vec![Value::Int(1), Value::Int(2)])), Some(Value::Int(2)));
+        assert_eq!(
+            std_text_len(&Value::Text("hello".to_string())),
+            Some(Value::Int(5))
+        );
+        assert_eq!(
+            std_array_len(&Value::Array(vec![Value::Int(1), Value::Int(2)])),
+            Some(Value::Int(2))
+        );
     }
 }

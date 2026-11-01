@@ -7,8 +7,3 @@ license.workspace = true
 
 [dependencies]
 yomnova-diagnostics = { path = "../yomnova-diagnostics" }
-serde = { workspace = true, optional = true }
-
-[features]
-default = []
-serde = ["dep:serde", "yomnova-diagnostics/serde"]

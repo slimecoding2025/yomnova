@@ -51,7 +51,11 @@ impl Parser {
     pub const MAX_NESTING: usize = 150;
 
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, cursor: 0, depth: 0 }
+        Self {
+            tokens,
+            cursor: 0,
+            depth: 0,
+        }
     }
 
     fn enter(&mut self) -> Result<(), ParserError> {
@@ -248,7 +252,11 @@ impl Parser {
         self.consume(&TokenKind::CloseBrace, "'}'")?;
         let span = start_span.merge(self.previous_span());
 
-        Ok(EnumDecl { name, variants, span })
+        Ok(EnumDecl {
+            name,
+            variants,
+            span,
+        })
     }
 
     fn parse_const(&mut self) -> Result<ConstDecl, ParserError> {
@@ -266,7 +274,12 @@ impl Parser {
         let value = self.parse_expr()?;
         let span = start_span.merge(value.span);
 
-        Ok(ConstDecl { name, ty, value, span })
+        Ok(ConstDecl {
+            name,
+            ty,
+            value,
+            span,
+        })
     }
 
     fn parse_block(&mut self) -> Result<Block, ParserError> {
@@ -304,7 +317,12 @@ impl Parser {
         if self.check(&TokenKind::Const) {
             // A local `const` is an immutable binding.
             let decl = self.parse_const()?;
-            Ok(Stmt::Let { name: decl.name, ty: decl.ty, init: decl.value, span: decl.span })
+            Ok(Stmt::Let {
+                name: decl.name,
+                ty: decl.ty,
+                init: decl.value,
+                span: decl.span,
+            })
         } else if self.check(&TokenKind::Let) {
             self.advance();
             let name = self.consume_identifier("variable name")?;
@@ -316,7 +334,12 @@ impl Parser {
             self.consume(&TokenKind::Equal, "'='")?;
             let init = self.parse_expr()?;
             let span = start_span.merge(init.span);
-            Ok(Stmt::Let { name, ty, init, span })
+            Ok(Stmt::Let {
+                name,
+                ty,
+                init,
+                span,
+            })
         } else if self.check(&TokenKind::Mut) {
             self.advance();
             let name = self.consume_identifier("mutable variable name")?;
@@ -328,7 +351,12 @@ impl Parser {
             self.consume(&TokenKind::Equal, "'='")?;
             let init = self.parse_expr()?;
             let span = start_span.merge(init.span);
-            Ok(Stmt::Mut { name, ty, init, span })
+            Ok(Stmt::Mut {
+                name,
+                ty,
+                init,
+                span,
+            })
         } else if self.check(&TokenKind::If) {
             self.advance();
             let condition = self.parse_expr()?;
@@ -349,7 +377,10 @@ impl Parser {
                 }
             }
 
-            let end_span = else_branch.as_ref().map(|b| b.span).unwrap_or(then_branch.span);
+            let end_span = else_branch
+                .as_ref()
+                .map(|b| b.span)
+                .unwrap_or(then_branch.span);
             let span = start_span.merge(end_span);
 
             Ok(Stmt::If {
@@ -363,11 +394,18 @@ impl Parser {
             let condition = self.parse_expr()?;
             let body = self.parse_block()?;
             let span = start_span.merge(body.span);
-            Ok(Stmt::While { condition, body, span })
+            Ok(Stmt::While {
+                condition,
+                body,
+                span,
+            })
         } else if self.check(&TokenKind::Return) {
             self.advance();
             let mut value = None;
-            if !self.check(&TokenKind::CloseBrace) && !self.check(&TokenKind::Semicolon) && !self.is_at_end() {
+            if !self.check(&TokenKind::CloseBrace)
+                && !self.check(&TokenKind::Semicolon)
+                && !self.is_at_end()
+            {
                 value = Some(self.parse_expr()?);
             }
             let span = if let Some(ref v) = value {
@@ -452,7 +490,12 @@ impl Parser {
             while self.check(&TokenKind::PipeGreater) {
                 let p_start = self.current_span();
                 self.advance();
-                let op_name = self.consume_identifier("pipe stage")?;
+                let op_name = if self.check(&TokenKind::Emit) {
+                    self.advance();
+                    "emit".to_string()
+                } else {
+                    self.consume_identifier("pipe stage")?
+                };
                 let mut arg = None;
                 if self.check(&TokenKind::OpenParen) {
                     self.advance();
@@ -462,7 +505,11 @@ impl Parser {
                     self.consume(&TokenKind::CloseParen, "')'")?;
                 }
                 let p_span = p_start.merge(self.previous_span());
-                stages.push(PipeStage { op_name, arg, span: p_span });
+                stages.push(PipeStage {
+                    op_name,
+                    arg,
+                    span: p_span,
+                });
             }
             let end_span = stages.last().map(|s| s.span).unwrap_or(expr.span);
             let span = expr.span.merge(end_span);
@@ -653,54 +700,90 @@ impl Parser {
                 TokenKind::Integer(n) => {
                     let val = *n;
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Integer(val), span })
+                    Ok(Expr {
+                        kind: ExprKind::Integer(val),
+                        span,
+                    })
                 }
                 TokenKind::Float(f) => {
                     let val = *f;
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Float(val), span })
+                    Ok(Expr {
+                        kind: ExprKind::Float(val),
+                        span,
+                    })
                 }
                 TokenKind::Text(s) => {
                     let val = s.clone();
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Text(val), span })
+                    Ok(Expr {
+                        kind: ExprKind::Text(val),
+                        span,
+                    })
                 }
                 TokenKind::Bool(b) => {
                     let val = *b;
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Bool(val), span })
+                    Ok(Expr {
+                        kind: ExprKind::Bool(val),
+                        span,
+                    })
                 }
                 TokenKind::Emit => {
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Identifier("emit".to_string()), span })
+                    Ok(Expr {
+                        kind: ExprKind::Identifier("emit".to_string()),
+                        span,
+                    })
                 }
                 TokenKind::IPv4 => {
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Identifier("IPv4".to_string()), span })
+                    Ok(Expr {
+                        kind: ExprKind::Identifier("IPv4".to_string()),
+                        span,
+                    })
                 }
                 TokenKind::IPv6 => {
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Identifier("IPv6".to_string()), span })
+                    Ok(Expr {
+                        kind: ExprKind::Identifier("IPv6".to_string()),
+                        span,
+                    })
                 }
                 TokenKind::Port => {
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Identifier("Port".to_string()), span })
+                    Ok(Expr {
+                        kind: ExprKind::Identifier("Port".to_string()),
+                        span,
+                    })
                 }
                 TokenKind::Endpoint => {
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Identifier("Endpoint".to_string()), span })
+                    Ok(Expr {
+                        kind: ExprKind::Identifier("Endpoint".to_string()),
+                        span,
+                    })
                 }
                 TokenKind::TCP => {
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Identifier("TCP".to_string()), span })
+                    Ok(Expr {
+                        kind: ExprKind::Identifier("TCP".to_string()),
+                        span,
+                    })
                 }
                 TokenKind::UDP => {
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Identifier("UDP".to_string()), span })
+                    Ok(Expr {
+                        kind: ExprKind::Identifier("UDP".to_string()),
+                        span,
+                    })
                 }
                 TokenKind::Packet => {
                     self.advance();
-                    Ok(Expr { kind: ExprKind::Identifier("Packet".to_string()), span })
+                    Ok(Expr {
+                        kind: ExprKind::Identifier("Packet".to_string()),
+                        span,
+                    })
                 }
                 TokenKind::Identifier(id) => {
                     let name = id.clone();
@@ -720,7 +803,10 @@ impl Parser {
                         });
                     }
 
-                    Ok(Expr { kind: ExprKind::Identifier(name), span })
+                    Ok(Expr {
+                        kind: ExprKind::Identifier(name),
+                        span,
+                    })
                 }
                 TokenKind::OpenBracket => {
                     // Array literal [1, 2, 3]
@@ -748,7 +834,10 @@ impl Parser {
                     self.advance();
                     if self.check(&TokenKind::CloseParen) {
                         self.advance();
-                        return Ok(Expr { kind: ExprKind::Unit, span: span.merge(self.previous_span()) });
+                        return Ok(Expr {
+                            kind: ExprKind::Unit,
+                            span: span.merge(self.previous_span()),
+                        });
                     }
 
                     // Check if it's a lambda parameter list: (x, y) => ...
@@ -762,7 +851,9 @@ impl Parser {
                             if self.tokens[temp_cur].kind == TokenKind::Comma {
                                 temp_cur += 1;
                                 if temp_cur < self.tokens.len() {
-                                    if let TokenKind::Identifier(ref next_id) = self.tokens[temp_cur].kind {
+                                    if let TokenKind::Identifier(ref next_id) =
+                                        self.tokens[temp_cur].kind
+                                    {
                                         lambda_params.push(next_id.clone());
                                         temp_cur += 1;
                                     } else {
@@ -771,7 +862,9 @@ impl Parser {
                                 }
                             } else if self.tokens[temp_cur].kind == TokenKind::CloseParen {
                                 temp_cur += 1;
-                                if temp_cur < self.tokens.len() && self.tokens[temp_cur].kind == TokenKind::FatArrow {
+                                if temp_cur < self.tokens.len()
+                                    && self.tokens[temp_cur].kind == TokenKind::FatArrow
+                                {
                                     is_lambda = true;
                                     self.cursor = temp_cur + 1; // skip past '=>'
                                 }
@@ -824,11 +917,26 @@ impl Parser {
         if let Some(kind) = self.peek_kind() {
             let ty = match kind {
                 TokenKind::Identifier(id) => match id.as_str() {
-                    "Int" => { self.advance(); TypeAnnotation::Int }
-                    "Float" => { self.advance(); TypeAnnotation::Float }
-                    "Bool" => { self.advance(); TypeAnnotation::Bool }
-                    "Text" => { self.advance(); TypeAnnotation::Text }
-                    "Unit" => { self.advance(); TypeAnnotation::Unit }
+                    "Int" => {
+                        self.advance();
+                        TypeAnnotation::Int
+                    }
+                    "Float" => {
+                        self.advance();
+                        TypeAnnotation::Float
+                    }
+                    "Bool" => {
+                        self.advance();
+                        TypeAnnotation::Bool
+                    }
+                    "Text" => {
+                        self.advance();
+                        TypeAnnotation::Text
+                    }
+                    "Unit" => {
+                        self.advance();
+                        TypeAnnotation::Unit
+                    }
                     "Array" => {
                         self.advance();
                         self.consume(&TokenKind::Less, "'<'")?;
@@ -842,13 +950,34 @@ impl Parser {
                         TypeAnnotation::Custom(custom)
                     }
                 },
-                TokenKind::IPv4 => { self.advance(); TypeAnnotation::IPv4 }
-                TokenKind::IPv6 => { self.advance(); TypeAnnotation::IPv6 }
-                TokenKind::Port => { self.advance(); TypeAnnotation::Port }
-                TokenKind::Endpoint => { self.advance(); TypeAnnotation::Endpoint }
-                TokenKind::TCP => { self.advance(); TypeAnnotation::TCP }
-                TokenKind::UDP => { self.advance(); TypeAnnotation::UDP }
-                TokenKind::Packet => { self.advance(); TypeAnnotation::Packet }
+                TokenKind::IPv4 => {
+                    self.advance();
+                    TypeAnnotation::IPv4
+                }
+                TokenKind::IPv6 => {
+                    self.advance();
+                    TypeAnnotation::IPv6
+                }
+                TokenKind::Port => {
+                    self.advance();
+                    TypeAnnotation::Port
+                }
+                TokenKind::Endpoint => {
+                    self.advance();
+                    TypeAnnotation::Endpoint
+                }
+                TokenKind::TCP => {
+                    self.advance();
+                    TypeAnnotation::TCP
+                }
+                TokenKind::UDP => {
+                    self.advance();
+                    TypeAnnotation::UDP
+                }
+                TokenKind::Packet => {
+                    self.advance();
+                    TypeAnnotation::Packet
+                }
                 _ => {
                     return Err(ParserError::UnexpectedToken {
                         token: format!("{}", kind),
@@ -906,7 +1035,10 @@ impl Parser {
             Ok(self.advance())
         } else {
             let span = self.current_span();
-            let actual = self.peek_kind().map(|k| format!("{}", k)).unwrap_or_else(|| "<EOF>".to_string());
+            let actual = self
+                .peek_kind()
+                .map(|k| format!("{}", k))
+                .unwrap_or_else(|| "<EOF>".to_string());
             Err(ParserError::UnexpectedToken {
                 token: actual,
                 expected: expected.to_string(),
@@ -922,7 +1054,10 @@ impl Parser {
             Ok(name)
         } else {
             let span = self.current_span();
-            let actual = self.peek_kind().map(|k| format!("{}", k)).unwrap_or_else(|| "<EOF>".to_string());
+            let actual = self
+                .peek_kind()
+                .map(|k| format!("{}", k))
+                .unwrap_or_else(|| "<EOF>".to_string());
             Err(ParserError::UnexpectedToken {
                 token: actual,
                 expected: expected.to_string(),

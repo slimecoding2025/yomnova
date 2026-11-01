@@ -1,5 +1,7 @@
 //! YOMNOVA Multi-Stage Compiler Driver and Bytecode Generator.
 
+pub mod format;
+
 use std::collections::HashMap;
 use yomnova_ast::*;
 use yomnova_bytecode::{Chunk, OpCode, Value};
@@ -110,7 +112,10 @@ impl Compiler {
     pub fn render_tokens(tokens: &[Token]) -> String {
         let mut out = String::new();
         for t in tokens {
-            out.push_str(&format!("{:>4}:{:<3} {}\n", t.span.line, t.span.col, t.kind));
+            out.push_str(&format!(
+                "{:>4}:{:<3} {}\n",
+                t.span.line, t.span.col, t.kind
+            ));
         }
         out
     }
@@ -163,7 +168,11 @@ impl Compiler {
 
         let mut compiler = Compiler::new();
         let main = compiler.generate_bytecode(&program).map_err(fail)?;
-        Ok(CompiledUnit { ast: program, main, functions })
+        Ok(CompiledUnit {
+            ast: program,
+            main,
+            functions,
+        })
     }
 
     /// Complete pipeline: Lex -> Parse -> Sema -> Ownership -> Bytecode -> Run in VM
@@ -176,7 +185,11 @@ impl Compiler {
             vm.chunks.push(chunk.clone());
             vm.globals.insert(
                 name.clone(),
-                Value::UserFunction { name: name.clone(), chunk_index, arity: *arity },
+                Value::UserFunction {
+                    name: name.clone(),
+                    chunk_index,
+                    arity: *arity,
+                },
             );
         }
 
@@ -254,9 +267,9 @@ impl Compiler {
     }
 
     fn constant(&mut self, value: Value) -> Result<u16, CompilerError> {
-        self.chunk
-            .try_add_constant(value)
-            .ok_or_else(|| CompilerError::Codegen("too many constants in one function (limit 65536)".to_string()))
+        self.chunk.try_add_constant(value).ok_or_else(|| {
+            CompilerError::Codegen("too many constants in one function (limit 65536)".to_string())
+        })
     }
 
     /// Emit a jump with a placeholder operand; returns the operand offset.
@@ -268,27 +281,40 @@ impl Compiler {
     }
 
     fn patch_jump(&mut self, operand_at: usize) -> Result<(), CompilerError> {
-        let target = u16::try_from(self.chunk.code.len())
-            .map_err(|_| CompilerError::Codegen("function too large (jump target exceeds 65535 bytes)".to_string()))?;
+        let target = u16::try_from(self.chunk.code.len()).map_err(|_| {
+            CompilerError::Codegen(
+                "function too large (jump target exceeds 65535 bytes)".to_string(),
+            )
+        })?;
         self.chunk.code[operand_at] = (target >> 8) as u8;
         self.chunk.code[operand_at + 1] = (target & 0xFF) as u8;
         Ok(())
     }
 
     fn here(&self) -> Result<u16, CompilerError> {
-        u16::try_from(self.chunk.code.len())
-            .map_err(|_| CompilerError::Codegen("function too large (offset exceeds 65535 bytes)".to_string()))
+        u16::try_from(self.chunk.code.len()).map_err(|_| {
+            CompilerError::Codegen("function too large (offset exceeds 65535 bytes)".to_string())
+        })
     }
 
     fn compile_statement(&mut self, stmt: &Stmt) -> Result<(), CompilerError> {
         match stmt {
-            Stmt::Let { name, init, span, .. } | Stmt::Mut { name, init, span, .. } => {
+            Stmt::Let {
+                name, init, span, ..
+            }
+            | Stmt::Mut {
+                name, init, span, ..
+            } => {
                 self.compile_expression(init)?;
                 let slot = self.declare_local(name)?;
                 self.chunk.write_op(OpCode::SetLocal, span.line);
                 self.chunk.write_u16(slot, span.line);
             }
-            Stmt::Assign { target, value, span } => {
+            Stmt::Assign {
+                target,
+                value,
+                span,
+            } => {
                 self.compile_expression(value)?;
                 if let Some(slot) = self.resolve_local(target) {
                     self.chunk.write_op(OpCode::SetLocal, span.line);
@@ -300,7 +326,12 @@ impl Compiler {
                     self.chunk.write_op(OpCode::Pop, span.line);
                 }
             }
-            Stmt::If { condition, then_branch, else_branch, span } => {
+            Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+                span,
+            } => {
                 self.compile_expression(condition)?;
                 let to_else = self.emit_jump(OpCode::JumpIfFalse, span.line);
                 self.compile_scoped_block(then_branch)?;
@@ -313,7 +344,11 @@ impl Compiler {
                     self.patch_jump(to_else)?;
                 }
             }
-            Stmt::While { condition, body, span } => {
+            Stmt::While {
+                condition,
+                body,
+                span,
+            } => {
                 let loop_start = self.here()?;
                 self.compile_expression(condition)?;
                 let exit = self.emit_jump(OpCode::JumpIfFalse, span.line);
@@ -330,7 +365,12 @@ impl Compiler {
                 }
                 self.chunk.write_op(OpCode::Return, span.line);
             }
-            Stmt::Flow { name, source, stages, span } => {
+            Stmt::Flow {
+                name,
+                source,
+                stages,
+                span,
+            } => {
                 self.compile_pipeline(source, stages, span.line)?;
                 let slot = self.declare_local(name)?;
                 self.chunk.write_op(OpCode::SetLocal, span.line);
@@ -345,7 +385,12 @@ impl Compiler {
     }
 
     /// `x |> f |> g(a)` compiles as `g(f(x), a)`; `|> emit` emits the value.
-    fn compile_pipeline(&mut self, source: &Expr, stages: &[PipeStage], line: usize) -> Result<(), CompilerError> {
+    fn compile_pipeline(
+        &mut self,
+        source: &Expr,
+        stages: &[PipeStage],
+        line: usize,
+    ) -> Result<(), CompilerError> {
         let Some((last, rest)) = stages.split_last() else {
             return self.compile_expression(source);
         };
@@ -395,7 +440,8 @@ impl Compiler {
                 self.chunk.write_u16(idx, line);
             }
             ExprKind::Bool(b) => {
-                self.chunk.write_op(if *b { OpCode::True } else { OpCode::False }, line);
+                self.chunk
+                    .write_op(if *b { OpCode::True } else { OpCode::False }, line);
             }
             ExprKind::Unit => {
                 self.chunk.write_op(OpCode::Nil, line);
@@ -410,7 +456,11 @@ impl Compiler {
                     self.chunk.write_u16(idx, line);
                 }
             }
-            ExprKind::Binary { op: BinaryOp::And, left, right } => {
+            ExprKind::Binary {
+                op: BinaryOp::And,
+                left,
+                right,
+            } => {
                 // a && b: if a is false the result is false and b is not evaluated.
                 self.compile_expression(left)?;
                 let to_false = self.emit_jump(OpCode::JumpIfFalse, line);
@@ -420,7 +470,11 @@ impl Compiler {
                 self.chunk.write_op(OpCode::False, line);
                 self.patch_jump(to_end)?;
             }
-            ExprKind::Binary { op: BinaryOp::Or, left, right } => {
+            ExprKind::Binary {
+                op: BinaryOp::Or,
+                left,
+                right,
+            } => {
                 // a || b: if a is true the result is true and b is not evaluated.
                 self.compile_expression(left)?;
                 let to_rhs = self.emit_jump(OpCode::JumpIfFalse, line);
@@ -470,8 +524,9 @@ impl Compiler {
                         return Ok(());
                     }
                 }
-                let argc = u8::try_from(args.len())
-                    .map_err(|_| CompilerError::Codegen("too many call arguments (limit 255)".to_string()))?;
+                let argc = u8::try_from(args.len()).map_err(|_| {
+                    CompilerError::Codegen("too many call arguments (limit 255)".to_string())
+                })?;
                 self.compile_expression(callee)?;
                 for arg in args {
                     self.compile_expression(arg)?;
@@ -480,8 +535,9 @@ impl Compiler {
                 self.chunk.write_byte(argc, line);
             }
             ExprKind::Array(elements) => {
-                let len = u16::try_from(elements.len())
-                    .map_err(|_| CompilerError::Codegen("array literal too long (limit 65535)".to_string()))?;
+                let len = u16::try_from(elements.len()).map_err(|_| {
+                    CompilerError::Codegen("array literal too long (limit 65535)".to_string())
+                })?;
                 for el in elements {
                     self.compile_expression(el)?;
                 }
@@ -493,7 +549,10 @@ impl Compiler {
                 self.compile_expression(index)?;
                 self.chunk.write_op(OpCode::Index, line);
             }
-            ExprKind::Pipe { expr: source, stages } => {
+            ExprKind::Pipe {
+                expr: source,
+                stages,
+            } => {
                 self.compile_pipeline(source, stages, line)?;
             }
             other => {
@@ -508,10 +567,9 @@ impl Compiler {
 
     fn declare_local(&mut self, name: &str) -> Result<u16, CompilerError> {
         let slot = self.next_slot;
-        self.next_slot = self
-            .next_slot
-            .checked_add(1)
-            .ok_or_else(|| CompilerError::Codegen("too many local variables (limit 65535)".to_string()))?;
+        self.next_slot = self.next_slot.checked_add(1).ok_or_else(|| {
+            CompilerError::Codegen("too many local variables (limit 65535)".to_string())
+        })?;
         if let Some(scope) = self.locals.last_mut() {
             scope.insert(name.to_string(), slot);
         }
@@ -519,7 +577,10 @@ impl Compiler {
     }
 
     fn resolve_local(&self, name: &str) -> Option<u16> {
-        self.locals.iter().rev().find_map(|scope| scope.get(name).copied())
+        self.locals
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name).copied())
     }
 }
 

@@ -37,8 +37,14 @@ pub enum Constant {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
-    LoadConst { dest: VarId, val: Constant },
-    Move { dest: VarId, src: VarId },
+    LoadConst {
+        dest: VarId,
+        val: Constant,
+    },
+    Move {
+        dest: VarId,
+        src: VarId,
+    },
     Binary {
         dest: VarId,
         op: BinaryOp,
@@ -50,8 +56,13 @@ pub enum Instruction {
         func: String,
         args: Vec<VarId>,
     },
-    Emit { src: VarId },
-    ArrayCreate { dest: VarId, elements: Vec<VarId> },
+    Emit {
+        src: VarId,
+    },
+    ArrayCreate {
+        dest: VarId,
+        elements: Vec<VarId>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -79,25 +90,36 @@ impl fmt::Display for IrProgram {
                         Instruction::Move { dest, src } => {
                             writeln!(f, "    v{dest} = v{src}")?;
                         }
-                        Instruction::Binary { dest, op, left, right } => {
+                        Instruction::Binary {
+                            dest,
+                            op,
+                            left,
+                            right,
+                        } => {
                             writeln!(f, "    v{dest} = v{left} {op:?} v{right}")?;
                         }
                         Instruction::Call { dest, func, args } => {
-                            let args_str: Vec<String> = args.iter().map(|a| format!("v{a}")).collect();
+                            let args_str: Vec<String> =
+                                args.iter().map(|a| format!("v{a}")).collect();
                             writeln!(f, "    v{dest} = call {func}({})", args_str.join(", "))?;
                         }
                         Instruction::Emit { src } => {
                             writeln!(f, "    emit v{src}")?;
                         }
                         Instruction::ArrayCreate { dest, elements } => {
-                            let elem_str: Vec<String> = elements.iter().map(|e| format!("v{e}")).collect();
+                            let elem_str: Vec<String> =
+                                elements.iter().map(|e| format!("v{e}")).collect();
                             writeln!(f, "    v{dest} = [{}]", elem_str.join(", "))?;
                         }
                     }
                 }
                 match &block.terminator {
                     Terminator::Jump(target) => writeln!(f, "    jmp bb{target}")?,
-                    Terminator::BranchIf { cond, then_block, else_block } => {
+                    Terminator::BranchIf {
+                        cond,
+                        then_block,
+                        else_block,
+                    } => {
                         writeln!(f, "    br_if v{cond} -> bb{then_block} else bb{else_block}")?;
                     }
                     Terminator::Return(Some(v)) => writeln!(f, "    ret v{v}")?,

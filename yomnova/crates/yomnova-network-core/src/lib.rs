@@ -1,7 +1,9 @@
 //! Network types, sockets, protocol validation, and safe buffer abstractions for YOMNOVA.
 
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener as StdTcpListener, TcpStream as StdTcpStream};
+use std::net::{
+    Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener as StdTcpListener, TcpStream as StdTcpStream,
+};
 use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -200,7 +202,8 @@ pub struct TcpServer {
 impl TcpServer {
     pub fn bind(endpoint: &Endpoint) -> Result<Self, NetworkError> {
         let addr = endpoint.to_socket_addr();
-        let listener = StdTcpListener::bind(addr).map_err(|e| NetworkError::IoError(e.to_string()))?;
+        let listener =
+            StdTcpListener::bind(addr).map_err(|e| NetworkError::IoError(e.to_string()))?;
         Ok(Self { listener })
     }
 

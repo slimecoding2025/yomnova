@@ -12,11 +12,21 @@ pub struct Span {
 
 impl Span {
     pub const fn new(start: usize, end: usize, line: usize, col: usize) -> Self {
-        Self { start, end, line, col }
+        Self {
+            start,
+            end,
+            line,
+            col,
+        }
     }
 
     pub const fn zero() -> Self {
-        Self { start: 0, end: 0, line: 1, col: 1 }
+        Self {
+            start: 0,
+            end: 0,
+            line: 1,
+            col: 1,
+        }
     }
 
     pub fn merge(self, other: Self) -> Self {
@@ -24,7 +34,11 @@ impl Span {
             start: self.start.min(other.start),
             end: self.end.max(other.end),
             line: self.line.min(other.line),
-            col: if self.line <= other.line { self.col } else { other.col },
+            col: if self.line <= other.line {
+                self.col
+            } else {
+                other.col
+            },
         }
     }
 }
@@ -86,7 +100,10 @@ impl Diagnostic {
         };
 
         if let Some(span) = self.span {
-            out.push_str(&format!("{file}:{}:{}: {level_str}: {}\n", span.line, span.col, self.message));
+            out.push_str(&format!(
+                "{file}:{}:{}: {level_str}: {}\n",
+                span.line, span.col, self.message
+            ));
             if let Some(src) = source {
                 let lines: Vec<&str> = src.lines().collect();
                 if span.line > 0 && span.line <= lines.len() {
