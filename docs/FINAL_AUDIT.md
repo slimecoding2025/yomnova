@@ -31,7 +31,7 @@ anything not run is listed under **Unverifiable**. Status words: PASS · FAIL ·
 | `cargo clippy --workspace --all-targets -D warnings` | clean on 13 lib crates | **clean on all 14 crates incl. tests** | run |
 | `cargo fmt --check` | FAIL | **PASS** | run |
 | Behaviour battery 1 (46 cases with a stated expectation) | 42/46 | **46/46** | `battery.sh` |
-| Process crashes in 97 battery programs (exit 101/134/139) | 7 | **0** | battery summaries |
+| Process crashes in 97 battery programs (exit 101/134/139) | 6 | **0** | battery summaries |
 | `fib(15)` / recursion | FAIL (C1 stack leak) | PASS | `fib` in `examples/functions.yom` |
 | Pipelines `|>`, `flow` | FAIL (stages discarded) | PASS (sequential) | `pipelines_apply_every_stage` |
 | Integer overflow | panic | `IntegerOverflow` error | `integer_overflow_is_an_error_not_a_panic` |
@@ -48,8 +48,8 @@ anything not run is listed under **Unverifiable**. Status words: PASS · FAIL ·
 | Documentation accuracy | FAIL | rewritten against behaviour | docs/ |
 
 The "46 cases" are the battery cases that carry an expectation; 22 further exploratory cases (marked `any`) only
-check that the process does not crash. The 7 initial crashes were: 3 integer-overflow panics, deep-parenthesis and
-deep-block aborts, an oversize-output case and a memory-pressure case.
+check that the process does not crash. The 6 initial crashes were: 4 integer-overflow/negation panics (exit 101) and the deep-parenthesis and
+deep-block aborts (exit 134).
 
 ## 3. What was changed
 
@@ -57,8 +57,9 @@ deep-block aborts, an oversize-output case and a memory-pressure case.
 and checked (C2); checked arithmetic (C3); parser nesting cap (C4); scoping, `const`, short-circuit (H1, H2, H6); port
 range (H5); argument typing (H8); `emit` borrows (H3); ownership holes (H4); missing returns (H7); no catch-all
 `Nil` codegen (M1); `build` no longer executes (M2); honest `version` (M3); negative index (M4); formatter (M8);
-transmutes removed (M10). Memory pressure (M-mem) is bounded by the 16 MiB text cap, 65,536 stack slots and
-10,000 frames, and arrays are bounded by the stack/step limits; this was exercised by `r_huge_output` (clean error).
+transmutes removed (M10). Memory growth (M-mem) is now bounded by the 16 MiB text cap, 65,536 stack slots and
+10,000 frames. The battery never reproduced an out-of-memory crash (`r_huge_output` exited cleanly before and after), so the
+caps are defensive and their effect on real memory pressure is not demonstrated.
 
 **Web** — original logo system (`public/brand`), GSAP + ScrollTrigger scroll story, real-compiler Playground,
 `node:http` backend, removal of Tailwind/lucide/motion/express/dotenv/`@google/genai`.
