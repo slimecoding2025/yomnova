@@ -9,7 +9,6 @@ export function PlaygroundChapter({ version }: { version: string | null }) {
   return (
     <section id="playground" ref={root} className="chapter play" aria-label="Playground">
       <ChapterTag n={8} title="Playground" />
-      <h2 className="display rv" style={{ marginBottom: 32 }}>Run the real compiler.</h2>
       {version ? (
         <>
           <div className="rv"><Playground version={version} /></div>
