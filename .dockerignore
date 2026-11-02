@@ -1,0 +1,9 @@
+.git
+node_modules
+dist
+yomnova/target
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

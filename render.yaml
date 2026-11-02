@@ -1,0 +1,12 @@
+# Render Blueprint: free web service built from the Dockerfile. (Not tested on Render: see docs/DEPLOY.md.)
+services:
+  - type: web
+    name: yomnova
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/version
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # The AI Assistant stays OFF unless you add OPENROUTER_API_KEY in the Render dashboard. Do not do that on a
+      # public site without authentication in front of it.

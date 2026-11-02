@@ -114,6 +114,10 @@ The Playground sends your code to `server.ts`, which runs the real `yomnova` bin
 compiler. If the server or binary is unavailable the site says so; nothing is simulated. Set `YOMNOVA_BIN` to use a
 specific binary. **There is no OS-level sandbox**; run behind container isolation if you expose it publicly.
 
+### Deploying
+A `Dockerfile` and a Render Blueprint (`render.yaml`) are included; see [docs/DEPLOY.md](docs/DEPLOY.md) (image build and
+Render deployment not yet verified).
+
 ### AI Assistant (optional)
 The Playground has a suggest-only AI panel (explain compiler errors, explain selected code, syntax tutoring, fix
 suggestions you can validate with the compiler). It is **off** unless the server has `OPENROUTER_API_KEY`, sends your

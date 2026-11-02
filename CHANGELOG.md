@@ -2,6 +2,11 @@
 
 ## Unreleased — 2026-11-02
 
+### Deployment
+* **Added** `Dockerfile`, `.dockerignore`, `render.yaml` and `docs/DEPLOY.md` (Render free plan). The container layout was
+  verified locally; the image build and the Render deployment have not been run.
+* **Removed** the "Run the real compiler." heading from the Playground chapter.
+
 ### AI Assistant (optional, suggest-only)
 * **Added** a native Playground panel: *Explain with YOMNOVA AI* on compiler errors, *Explain selection*, syntax tutor,
   debug mode, and fix suggestions with copy / diff / *Validate with compiler* (runs `yomnova check` on a copy; the
