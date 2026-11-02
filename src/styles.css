@@ -102,7 +102,7 @@ h1, h2, h3, p { margin: 0; }
 /* ---------- header, rail, progress ---------- */
 .site-header {
   position: fixed; top: 0; left: 0; right: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center;
-  padding: 14px var(--gutter); background: linear-gradient(to bottom, rgba(7, 8, 11, 0.92), rgba(7, 8, 11, 0));
+  padding: 14px var(--gutter); background: rgba(7, 8, 11, 0.97); border-bottom: 1px solid var(--line);
   pointer-events: none;
 }
 .site-header > * { pointer-events: auto; }
