@@ -32,8 +32,8 @@ What to expect on the free plan (from [Render's free-instances page](https://ren
   routes only have per-address rate limits, and every request spends your OpenRouter credit.
 * The Playground executes visitors' programs (5 s limit, 1 MiB output, 4 concurrent jobs, no file or network access in
   the language) but the server has no OS sandbox; the container is the boundary. Expect abuse on any public host.
-* `index.html` references the social image with a relative URL. Once you know the public address, make `og:image`
-  an absolute `https://…/brand/…` URL so link previews work.
+* `index.html` points `og:image`, `twitter:image` and `og:url` at `https://yomnova.onrender.com`. If you deploy under a
+  different address, change those three absolute URLs so link previews work.
 
 ## Other hosts
 
