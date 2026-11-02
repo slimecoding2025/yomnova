@@ -254,3 +254,87 @@ fn bare_return_and_else_if_chain() {
         &["neg", "zero", "pos"],
     );
 }
+
+// ---- multiple diagnostics per run (error recovery) ----
+
+fn diags(body: &str) -> Vec<(usize, String)> {
+    let src = format!("module t\n{body}");
+    match Compiler::check(&src) {
+        Ok(_) => Vec::new(),
+        Err(ds) => ds
+            .into_iter()
+            .map(|d| (d.span.map_or(0, |s| s.line), d.message))
+            .collect(),
+    }
+}
+
+#[test]
+fn reports_several_syntax_errors_in_one_run() {
+    let d = diags("fn main() -> Int {\n let = 5\n let a: Int = 1\n emit(a +)\n return 0\n}");
+    assert_eq!(d.len(), 2, "{d:?}");
+    assert_eq!(d[0].0, 3);
+    assert_eq!(d[1].0, 5);
+}
+
+#[test]
+fn reports_several_type_errors_in_one_run() {
+    let d = diags("fn main() -> Int {\n let a: Int = \"x\"\n emit(1 + true)\n return 0\n}");
+    assert_eq!(d.len(), 2, "{d:?}");
+}
+
+#[test]
+fn failed_declaration_does_not_cascade() {
+    // `a` fails to type-check; the later uses of `a` must not add "undefined" errors.
+    let d = diags(
+        "fn main() -> Int {\n let a: Int = \"x\"\n emit(a)\n let b = a\n emit(b)\n return 0\n}",
+    );
+    assert_eq!(d.len(), 1, "{d:?}");
+}
+
+#[test]
+fn errors_in_separate_functions_are_all_reported() {
+    let d = diags(
+        "fn f() -> Int {\n return \"x\"\n}\nfn g() -> Int {\n return true\n}\nfn main() -> Int {\n return 0\n}",
+    );
+    assert_eq!(d.len(), 2, "{d:?}");
+}
+
+#[test]
+fn reports_several_ownership_errors_in_one_run() {
+    let d = diags(
+        "fn main() -> Int {\n let a = \"t\"\n let b = a\n emit(a)\n let c = \"u\"\n let d = c\n emit(c)\n return 0\n}",
+    );
+    assert_eq!(d.len(), 2, "{d:?}");
+}
+
+#[test]
+fn later_stage_waits_for_earlier_stage() {
+    // A type error and an ownership error: only the type error is reported until it is fixed.
+    let d = diags(
+        "fn main() -> Int {\n let n: Int = \"x\"\n let a = \"t\"\n let b = a\n emit(a)\n return 0\n}",
+    );
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].1.contains("mismatch"), "{d:?}");
+}
+
+#[test]
+fn recovery_always_terminates_on_garbage() {
+    for src in [
+        "}}}}",
+        "fn fn fn",
+        "let let let",
+        "((((",
+        "fn main( {",
+        "if if if }",
+    ] {
+        let _ = diags(src); // must return, not hang or panic
+    }
+}
+
+#[test]
+fn single_error_programs_still_report_exactly_one() {
+    assert_eq!(
+        diags("fn main() -> Int {\n emit(zzz)\n return 0\n}").len(),
+        1
+    );
+}

@@ -125,8 +125,13 @@ The language has no file, process, network or time access.
 
 ## 9. Diagnostics
 
-Errors are reported one at a time (compilation stops at the first error) with `file:line:col`, the source line
-and a caret. Runtime failures are reported as `Runtime error: …` and exit with code 1. There are no warnings.
+Every diagnostic carries `file:line:col`, the source line and a caret. A run reports several errors where it can:
+the parser resumes at the next statement or declaration, and semantic analysis and the ownership check continue after
+a failing statement or function (at most 20 errors per stage). A name whose declaration failed does not produce
+follow-on "undefined" errors. Stages are still sequential: semantic analysis runs only if parsing succeeded, and the
+ownership check only if semantic analysis succeeded, so fixing the reported errors can reveal errors from the next
+stage. Lexical errors are still reported one at a time. Runtime failures are reported as `Runtime error: …` and exit
+with code 1. There are no warnings yet.
 
 ## 10. Formatting
 

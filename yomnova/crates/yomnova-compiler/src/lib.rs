@@ -95,9 +95,12 @@ fn lex_and_parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
     let tokens = Lexer::new(source)
         .tokenize()
         .map_err(|e| vec![e.to_diagnostic()])?;
-    Parser::new(tokens)
-        .parse_program()
-        .map_err(|e| vec![e.to_diagnostic()])
+    let (program, errors) = Parser::new(tokens).parse_program_recovering();
+    if errors.is_empty() {
+        Ok(program)
+    } else {
+        Err(errors.iter().map(|e| e.to_diagnostic()).collect())
+    }
 }
 
 impl Compiler {
@@ -130,14 +133,18 @@ impl Compiler {
     pub fn check(source: &str) -> Result<Program, Vec<Diagnostic>> {
         let program = lex_and_parse(source)?;
 
+        // Each stage reports all of its errors; a later stage only runs when the earlier
+        // one is clean, because it would otherwise analyse a program that is not valid.
         let mut sema = SemanticAnalyzer::new();
-        if let Err(e) = sema.analyze_program(&program) {
-            return Err(vec![e.to_diagnostic()]);
+        let errors = sema.analyze_program_all(&program);
+        if !errors.is_empty() {
+            return Err(errors.iter().map(|e| e.to_diagnostic()).collect());
         }
 
         let mut ownership = OwnershipChecker::new();
-        if let Err(e) = ownership.check_program(&program) {
-            return Err(vec![e.to_diagnostic()]);
+        let errors = ownership.check_program_all(&program);
+        if !errors.is_empty() {
+            return Err(errors.iter().map(|e| e.to_diagnostic()).collect());
         }
 
         Ok(program)

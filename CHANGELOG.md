@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — 2026-11-03
+
+### Compiler
+* **Added** multiple diagnostics per run (roadmap item 1, first part): parser error recovery at statement/declaration
+  boundaries, per-statement/per-function recovery in semantic analysis and the ownership check, a cap of 20 errors per
+  stage, and suppression of "undefined" cascades from a failed declaration. 8 new regression tests (40 Rust tests total).
+* **Not done yet:** warnings; lexical errors are still reported one at a time; a later stage runs only after the
+  earlier one is clean.
+
 ## Unreleased — 2026-11-02
 
 ### Deployment

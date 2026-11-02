@@ -29,7 +29,7 @@ source ─▶ lexer ─▶ parser ─▶ AST ─▶ sema (scopes + types) ─▶
 
 `Compiler::check` runs lex → parse → sema → ownership. `Compiler::compile_unit` additionally generates bytecode
 without executing it (used by `build`, `disasm`). `Compiler::compile_and_run` executes the result.
-Errors are `Vec<Diagnostic>`; the pipeline currently stops at the first error.
+Errors are `Vec<Diagnostic>`. The parser recovers at statement/declaration boundaries, and sema and the ownership check continue after a failing statement; each stage reports its errors (max 20) and the next stage runs only when the previous one is clean.
 
 ## Bytecode and VM
 

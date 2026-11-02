@@ -61,6 +61,8 @@ pub struct Binding {
 pub struct OwnershipChecker {
     scopes: Vec<HashMap<String, Binding>>,
     fn_returns: HashMap<String, Type>,
+    /// `Some` while collecting several errors per run (see `check_program_all`).
+    collected: Option<Vec<OwnershipError>>,
 }
 
 impl OwnershipChecker {
@@ -73,6 +75,7 @@ impl OwnershipChecker {
         Self {
             scopes: vec![HashMap::new()],
             fn_returns,
+            collected: None,
         }
     }
 }
@@ -84,6 +87,37 @@ impl Default for OwnershipChecker {
 }
 
 impl OwnershipChecker {
+    /// Maximum number of errors reported in one run.
+    pub const MAX_ERRORS: usize = 20;
+
+    /// Check the whole program and return every ownership error found (recovery is per
+    /// statement and per function).
+    pub fn check_program_all(&mut self, program: &Program) -> Vec<OwnershipError> {
+        self.collected = Some(Vec::new());
+        let fatal = self.check_program(program).err();
+        let mut errors = self.collected.take().unwrap_or_default();
+        if let Some(e) = fatal {
+            errors.push(e);
+        }
+        errors.truncate(Self::MAX_ERRORS);
+        errors
+    }
+
+    fn guard_statement(&mut self, stmt: &Stmt) -> Result<(), OwnershipError> {
+        let depth = self.scopes.len();
+        match self.check_statement(stmt) {
+            Ok(()) => Ok(()),
+            Err(e) if self.collected.is_some() => {
+                self.scopes.truncate(depth);
+                if let Some(list) = self.collected.as_mut() {
+                    list.push(e);
+                }
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn check_program(&mut self, program: &Program) -> Result<(), OwnershipError> {
         for item in &program.items {
             if let TopLevelItem::Function(f) = item {
@@ -108,7 +142,7 @@ impl OwnershipChecker {
         for item in &program.items {
             match item {
                 TopLevelItem::Function(func) => self.check_function(func)?,
-                TopLevelItem::Statement(stmt) => self.check_statement(stmt)?,
+                TopLevelItem::Statement(stmt) => self.guard_statement(stmt)?,
                 _ => {}
             }
         }
@@ -130,7 +164,7 @@ impl OwnershipChecker {
     fn check_block(&mut self, block: &Block) -> Result<(), OwnershipError> {
         self.enter_scope();
         for stmt in &block.statements {
-            self.check_statement(stmt)?;
+            self.guard_statement(stmt)?;
         }
         self.leave_scope();
         Ok(())

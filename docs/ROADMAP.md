@@ -6,11 +6,11 @@ Direction, not a schedule. Items move to **Implemented** only when covered by te
 ## Implemented
 Lexer, parser, AST · scopes and type checking with call-argument checks · move-based ownership checking ·
 bytecode compiler and stack VM with resource limits · pipelines and `flow` · `IPv4`/`Port`/`Endpoint` values ·
-CLI (`run check build disasm tokens ast fmt`) · formatter (re-indent) · end-to-end regression suite · web
+multiple errors per run · CLI (`run check build disasm tokens ast fmt`) · formatter (re-indent) · end-to-end regression suite · web
 Playground backed by the real compiler.
 
 ## Next (planned, in rough order)
-1. Multiple diagnostics per run (error recovery) and warnings.
+1. Warnings (e.g. unused variable, unreachable code). *(Multiple errors per run — parser, semantic and ownership recovery — is implemented; lexical errors are still reported one at a time.)*
 2. `struct` and `enum` with `match`; `for … in` loops; array length/push.
 3. Wire `yomnova-ir`: lower AST → IR → bytecode, then simple optimisations.
 4. Borrowing (shared and mutable) and lifetimes in the ownership checker.

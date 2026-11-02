@@ -43,6 +43,10 @@ pub struct Parser {
     tokens: Vec<Token>,
     cursor: usize,
     depth: usize,
+    /// When set, statement-level errors are recorded and parsing resumes at the next
+    /// statement or declaration instead of stopping at the first error.
+    recovering: bool,
+    errors: Vec<ParserError>,
 }
 
 impl Parser {
@@ -55,8 +59,13 @@ impl Parser {
             tokens,
             cursor: 0,
             depth: 0,
+            recovering: false,
+            errors: Vec::new(),
         }
     }
+
+    /// Upper bound on diagnostics collected in one run (keeps cascades readable).
+    pub const MAX_ERRORS: usize = 20;
 
     fn enter(&mut self) -> Result<(), ParserError> {
         if self.depth >= Self::MAX_NESTING {
@@ -73,6 +82,87 @@ impl Parser {
         self.depth -= 1;
     }
 
+    /// Parse the whole program, collecting every syntax error that can be found.
+    ///
+    /// Recovery happens at statement and declaration boundaries. The returned program is
+    /// only meaningful when the error list is empty.
+    pub fn parse_program_recovering(&mut self) -> (Program, Vec<ParserError>) {
+        self.recovering = true;
+        self.errors.clear();
+        let result = self.parse_program();
+        self.recovering = false;
+        let mut errors = std::mem::take(&mut self.errors);
+        let program = match result {
+            Ok(p) => p,
+            Err(e) => {
+                errors.push(e);
+                Program {
+                    module_name: None,
+                    items: Vec::new(),
+                    span: self.current_span(),
+                }
+            }
+        };
+        errors.truncate(Self::MAX_ERRORS);
+        (program, errors)
+    }
+
+    /// Record `e` and skip to a safe resume point, or give it back when recovery is off or
+    /// pointless (end of input, nesting limit, error cap reached).
+    fn recover(&mut self, e: ParserError, in_block: bool, decl: bool) -> Result<(), ParserError> {
+        let fatal = matches!(
+            e,
+            ParserError::NestingTooDeep { .. } | ParserError::UnexpectedEof { .. }
+        );
+        if !self.recovering || fatal || self.errors.len() >= Self::MAX_ERRORS {
+            return Err(e);
+        }
+        self.errors.push(e);
+        self.synchronize(in_block, decl);
+        Ok(())
+    }
+
+    /// Always makes progress, then stops before the next token that can start a statement
+    /// (or declaration, when the failed item was one) or at a block's closing brace.
+    fn synchronize(&mut self, in_block: bool, decl: bool) {
+        if !self.is_at_end() && !(in_block && self.check(&TokenKind::CloseBrace)) {
+            self.advance();
+        }
+        while !self.is_at_end() {
+            if self.cursor > 0 && self.tokens[self.cursor - 1].kind == TokenKind::Semicolon {
+                return;
+            }
+            let k = &self.tokens[self.cursor].kind;
+            let stop = if decl {
+                matches!(
+                    k,
+                    TokenKind::Fn | TokenKind::Struct | TokenKind::Enum | TokenKind::Const
+                )
+            } else {
+                matches!(
+                    k,
+                    TokenKind::Fn
+                        | TokenKind::Struct
+                        | TokenKind::Enum
+                        | TokenKind::Const
+                        | TokenKind::Let
+                        | TokenKind::Mut
+                        | TokenKind::Flow
+                        | TokenKind::Return
+                        | TokenKind::If
+                        | TokenKind::While
+                        | TokenKind::For
+                        | TokenKind::Emit
+                        | TokenKind::CloseBrace
+                )
+            };
+            if stop {
+                return;
+            }
+            self.advance();
+        }
+    }
+
     pub fn parse_program(&mut self) -> Result<Program, ParserError> {
         let start_span = self.current_span();
         let mut module_name = None;
@@ -85,8 +175,18 @@ impl Parser {
 
         let mut items = Vec::new();
         while !self.is_at_end() {
-            let item = self.parse_top_level_item()?;
-            items.push(item);
+            let decl = matches!(
+                self.peek_kind(),
+                Some(TokenKind::Fn | TokenKind::Struct | TokenKind::Enum | TokenKind::Const)
+            );
+            let depth = self.depth;
+            match self.parse_top_level_item() {
+                Ok(item) => items.push(item),
+                Err(e) => {
+                    self.depth = depth;
+                    self.recover(e, false, decl)?;
+                }
+            }
         }
 
         let end_span = self.previous_span();
@@ -295,7 +395,14 @@ impl Parser {
 
         let mut statements = Vec::new();
         while !self.check(&TokenKind::CloseBrace) && !self.is_at_end() {
-            statements.push(self.parse_statement()?);
+            let depth = self.depth;
+            match self.parse_statement() {
+                Ok(stmt) => statements.push(stmt),
+                Err(e) => {
+                    self.depth = depth;
+                    self.recover(e, true, false)?;
+                }
+            }
         }
 
         self.consume(&TokenKind::CloseBrace, "'}'")?;

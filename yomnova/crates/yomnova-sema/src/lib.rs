@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use yomnova_ast::*;
 use yomnova_diagnostics::{Diagnostic, Span};
 use yomnova_types::Type;
@@ -117,6 +117,10 @@ pub struct SemanticAnalyzer {
     functions: HashMap<String, FunctionSignature>,
     current_return_type: Option<Type>,
     pub expression_types: HashMap<Span, Type>,
+    /// `Some` while collecting several errors per run (see `analyze_program_all`).
+    collected: Option<Vec<SemaError>>,
+    /// Names whose declaration failed; later "undefined" errors for them are cascades.
+    poisoned: HashSet<String>,
 }
 
 impl Default for SemanticAnalyzer {
@@ -132,6 +136,8 @@ impl SemanticAnalyzer {
             functions: HashMap::new(),
             current_return_type: None,
             expression_types: HashMap::new(),
+            collected: None,
+            poisoned: HashSet::new(),
         };
 
         // Register built-in functions
@@ -161,6 +167,64 @@ impl SemanticAnalyzer {
                 span: Span::zero(),
             },
         );
+    }
+
+    /// Maximum number of errors reported in one run.
+    pub const MAX_ERRORS: usize = 20;
+
+    /// Analyse the whole program and return every error found (recovery is per statement).
+    ///
+    /// A failed `let`/`mut` poisons its name so that later uses do not produce a pile of
+    /// follow-on "undefined identifier" errors.
+    pub fn analyze_program_all(&mut self, program: &Program) -> Vec<SemaError> {
+        self.collected = Some(Vec::new());
+        self.poisoned.clear();
+        let fatal = self.analyze_program(program).err();
+        let mut errors = self.collected.take().unwrap_or_default();
+        if let Some(e) = fatal {
+            errors.push(e);
+        }
+        errors.truncate(Self::MAX_ERRORS);
+        errors
+    }
+
+    /// Run one statement; in collecting mode record its error and carry on.
+    fn guard_statement(&mut self, stmt: &Stmt) -> Result<(), SemaError> {
+        let depth = self.scopes.len();
+        match self.analyze_statement(stmt) {
+            Ok(()) => Ok(()),
+            Err(e) if self.collected.is_some() => {
+                self.scopes.truncate(depth);
+                if let Stmt::Let { name, .. } | Stmt::Mut { name, .. } = stmt {
+                    self.poisoned.insert(name.clone());
+                }
+                let cascade = matches!(&e, SemaError::UndefinedIdentifier { name, .. } if self.poisoned.contains(name));
+                if !cascade {
+                    if let Some(list) = self.collected.as_mut() {
+                        list.push(e);
+                    }
+                }
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Run one function body; same recovery rule as `guard_statement`.
+    fn guard_function(&mut self, func: &FunctionDecl) -> Result<(), SemaError> {
+        let depth = self.scopes.len();
+        match self.analyze_function(func) {
+            Ok(()) => Ok(()),
+            Err(e) if self.collected.is_some() => {
+                self.scopes.truncate(depth);
+                self.current_return_type = None;
+                if let Some(list) = self.collected.as_mut() {
+                    list.push(e);
+                }
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub fn analyze_program(&mut self, program: &Program) -> Result<(), SemaError> {
@@ -264,7 +328,7 @@ impl SemanticAnalyzer {
         // Third pass: function bodies.
         for item in &program.items {
             if let TopLevelItem::Function(func) = item {
-                self.analyze_function(func)?;
+                self.guard_function(func)?;
             }
         }
 
@@ -272,7 +336,7 @@ impl SemanticAnalyzer {
         self.enter_scope();
         for item in &program.items {
             if let TopLevelItem::Statement(stmt) = item {
-                self.analyze_statement(stmt)?;
+                self.guard_statement(stmt)?;
             }
         }
         self.leave_scope();
@@ -313,7 +377,7 @@ impl SemanticAnalyzer {
     fn analyze_block(&mut self, block: &Block) -> Result<(), SemaError> {
         self.enter_scope();
         for stmt in &block.statements {
-            self.analyze_statement(stmt)?;
+            self.guard_statement(stmt)?;
         }
         self.leave_scope();
         Ok(())
