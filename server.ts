@@ -16,6 +16,9 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createAiHandler } from "./server/ai/routes.ts";
+import { KnowledgeBase } from "./server/ai/knowledge.ts";
+import { configFromEnv, OpenRouter } from "./server/ai/openrouter.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isProd = process.argv.includes("--prod") || process.env.NODE_ENV === "production";
@@ -101,14 +104,14 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown) {
   res.end(data);
 }
 
-function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+function readJsonBody(req: http.IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => {
       size += c.length;
-      if (size > MAX_BODY_BYTES) {
-        reject(Object.assign(new Error(`Request body exceeds ${MAX_BODY_BYTES} bytes`), { status: 413 }));
+      if (size > maxBytes) {
+        reject(Object.assign(new Error(`Request body exceeds ${maxBytes} bytes`), { status: 413 }));
         req.destroy();
         return;
       }
@@ -134,7 +137,46 @@ const COMMANDS: Record<string, (file: string) => string[]> = {
   "/api/fmt": (f) => ["fmt", f],
 };
 
+/** Compiler access for the AI Assistant: same temp-dir execution, timeout and concurrency cap as the Playground. */
+async function compileForAi(cmd: "check" | "run", code: string) {
+  const bin = resolveBinary();
+  if (!bin) return null;
+  if (running >= MAX_CONCURRENT) throw Object.assign(new Error("Server is busy. Please retry in a moment."), { status: 429 });
+  running += 1;
+  try {
+    return await withSource(bin, code, COMMANDS[`/api/${cmd}`]);
+  } finally {
+    running -= 1;
+  }
+}
+
+let cachedVersion = "";
+async function compilerVersion(): Promise<string> {
+  if (cachedVersion) return cachedVersion;
+  const bin = resolveBinary();
+  if (!bin) return "";
+  const r = await runCli(bin, ["version"]);
+  cachedVersion = r.ok ? (r.stdout.split("\n")[0]?.trim() ?? "") : "";
+  return cachedVersion;
+}
+
+const aiClient = new OpenRouter(configFromEnv());
+const aiHandler = createAiHandler({
+  client: aiClient,
+  kb: KnowledgeBase.load(__dirname),
+  compile: compileForAi,
+  version: compilerVersion,
+  readJson: (req) => readJsonBody(req, 128 * 1024),
+  sendJson,
+  trustProxy: process.env.AI_TRUST_PROXY === "1",
+  perMinute: Number.parseInt(process.env.AI_RATE_PER_MINUTE ?? "20", 10) || 20,
+  perHour: Number.parseInt(process.env.AI_RATE_PER_HOUR ?? "300", 10) || 300,
+  // Metadata only: never prompts, source code, headers or keys.
+  log: (e) => console.log(JSON.stringify({ ai: e })),
+});
+
 async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
+  if (await aiHandler(req, res, url)) return;
   const bin = resolveBinary();
 
   if (req.method === "GET" && url.pathname === "/api/version") {
@@ -262,6 +304,7 @@ async function main() {
     const bin = resolveBinary();
     console.log(`YOMNOVA ${isProd ? "production" : "development"} server: http://localhost:${PORT}`);
     console.log(bin ? `Compiler binary: ${bin}` : "Compiler binary NOT FOUND — the Playground will be unavailable.");
+    console.log(aiClient.configured ? "AI Assistant: enabled (OpenRouter key present)" : "AI Assistant: disabled (set OPENROUTER_API_KEY to enable)");
   });
 }
 

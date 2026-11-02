@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type CliResult, type ExampleFile } from "../lib/api";
 import { highlight } from "../lib/highlight";
+import { Assistant, type AssistantHandle } from "./Assistant";
 
 type Tab = "output" | "diagnostics" | "tokens" | "ast" | "bytecode";
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -37,6 +38,9 @@ export function Playground({ version }: { version: string }) {
   const pre = useRef<HTMLPreElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const seq = useRef(0);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [selection, setSelection] = useState("");
+  const assistant = useRef<AssistantHandle>(null);
 
   useEffect(() => {
     api.examples().then((list) => {
@@ -118,6 +122,16 @@ export function Playground({ version }: { version: string }) {
     }
   };
 
+  /** Opens the panel, then runs an assistant action once its handle exists. The assistant never edits `code`. */
+  const ask = (action: "explainError" | "suggestFix" | "explainSelection") => {
+    setAssistantOpen(true);
+    const go = (tries: number) => {
+      if (assistant.current) assistant.current[action]();
+      else if (tries > 0) setTimeout(() => go(tries - 1), 30);
+    };
+    setTimeout(() => go(20), 0);
+  };
+
   const pick = (id: string) => {
     setExampleId(id);
     const ex = examples.find((x) => x.id === id);
@@ -147,7 +161,7 @@ export function Playground({ version }: { version: string }) {
   })();
 
   return (
-    <div className="pg">
+    <div className={`pg${assistantOpen ? " has-ai" : ""}`}>
       <div className="pg-bar" role="toolbar" aria-label="Playground actions">
         <button className="btn primary small" onClick={() => void run()} disabled={busy !== null}>Run</button>
         <button className="btn small" onClick={() => void check()} disabled={busy !== null}>Check</button>
@@ -161,6 +175,8 @@ export function Playground({ version }: { version: string }) {
             ))}
           </select>
         </label>
+        <button className="btn small" onClick={() => ask("explainSelection")} disabled={!selection} title={selection ? "Ask the AI to explain the selected code" : "Select code in the editor first"}>Explain selection</button>
+        <button className="btn small" aria-pressed={assistantOpen} onClick={() => setAssistantOpen((o) => !o)}>AI Assistant</button>
         <span className="spacer" />
         <span className="meta">{busy ?? version}</span>
       </div>
@@ -178,6 +194,10 @@ export function Playground({ version }: { version: string }) {
               onChange={(e) => setCode(e.target.value)}
               onScroll={syncScroll}
               onKeyDown={onKeyDown}
+              onSelect={(e) => {
+                const t = e.currentTarget;
+                setSelection(code.slice(t.selectionStart, t.selectionEnd).slice(0, 8000));
+              }}
               spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
@@ -191,12 +211,19 @@ export function Playground({ version }: { version: string }) {
               <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>
             ))}
           </div>
+          {tab === "diagnostics" && res.run && !res.run.ok && res.run.stderr && (
+            <div className="pg-ai-actions">
+              <button className="btn small" onClick={() => ask("explainError")}>Explain with YOMNOVA AI</button>
+              <button className="btn small" onClick={() => ask("suggestFix")}>Suggest a fix</button>
+            </div>
+          )}
           {pane}
           <div className="pg-status" aria-live="polite">
             <span className={status ? (status.ok ? "ok" : "bad") : ""}>{status?.text ?? "Ready"}</span>
             <span>{lines} lines</span>
           </div>
         </div>
+        {assistantOpen && <Assistant ref={assistant} code={code} selection={selection} onClose={() => setAssistantOpen(false)} />}
       </div>
     </div>
   );

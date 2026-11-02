@@ -17,7 +17,8 @@
     "start": "tsx server.ts --prod",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test:ai": "tsx --test \"tests/ai/*.test.ts\""
   },
   "dependencies": {
     "gsap": "^3.13.0",

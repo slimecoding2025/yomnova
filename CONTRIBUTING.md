@@ -24,7 +24,7 @@ cd yomnova
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cd .. && npm run lint && npm run build
+cd .. && npm run lint && npm run build && npm run test:ai   # test:ai needs the compiler built (or YOMNOVA_BIN)
 ```
 
 ## Layout

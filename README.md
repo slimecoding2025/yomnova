@@ -114,6 +114,12 @@ The Playground sends your code to `server.ts`, which runs the real `yomnova` bin
 compiler. If the server or binary is unavailable the site says so; nothing is simulated. Set `YOMNOVA_BIN` to use a
 specific binary. **There is no OS-level sandbox**; run behind container isolation if you expose it publicly.
 
+### AI Assistant (optional)
+The Playground has a suggest-only AI panel (explain compiler errors, explain selected code, syntax tutoring, fix
+suggestions you can validate with the compiler). It is **off** unless the server has `OPENROUTER_API_KEY`, sends your
+code to the chosen model provider through OpenRouter, and has only been tested against a mock provider. See
+[docs/AI_ASSISTANT.md](docs/AI_ASSISTANT.md) for setup, privacy and limitations.
+
 ## 10. Examples
 `yomnova/examples/`: `hello`, `variables`, `functions`, `pipeline`, `dataflow`, `ownership`, `ownership_fail`
 (rejected by the ownership checker), `type_error` (rejected by the type checker), `tcp-client`, `showcase`.

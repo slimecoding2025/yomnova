@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — 2026-11-02
+
+### AI Assistant (optional, suggest-only)
+* **Added** a native Playground panel: *Explain with YOMNOVA AI* on compiler errors, *Explain selection*, syntax tutor,
+  debug mode, and fix suggestions with copy / diff / *Validate with compiler* (runs `yomnova check` on a copy; the
+  editor is never modified). Models are selected from the live OpenRouter model list.
+* **Added** `server/ai/` (OpenRouter client, diagnostic adapter, documentation retrieval, versioned prompts, response
+  validation, rate limiting) and `/api/ai/*` routes on the existing `node:http` server. No new runtime dependencies.
+* **Added** `docs/AI_ASSISTANT.md`, AI settings in `.env.example`, `npm run test:ai` (46 tests) and a Playwright
+  end-to-end script. Disabled unless `OPENROUTER_API_KEY` is set. Tested only against a mock provider.
+
 ## Unreleased — 2026-11-01
 
 ### Compiler / VM fixes
