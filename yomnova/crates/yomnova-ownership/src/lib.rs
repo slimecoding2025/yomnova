@@ -69,6 +69,7 @@ impl OwnershipChecker {
     pub fn new() -> Self {
         let mut fn_returns = HashMap::new();
         fn_returns.insert("emit".to_string(), Type::Unit);
+        fn_returns.insert("len".to_string(), Type::Int);
         fn_returns.insert("IPv4".to_string(), Type::IPv4);
         fn_returns.insert("Port".to_string(), Type::Port);
         fn_returns.insert("Endpoint".to_string(), Type::Endpoint);
@@ -192,7 +193,9 @@ impl OwnershipChecker {
                 UnaryOp::Neg => self.infer(operand),
                 UnaryOp::Not => Type::Bool,
             },
-            ExprKind::Call { callee, .. } => match &callee.kind {
+            ExprKind::Call { callee, args } => match &callee.kind {
+                // `push(xs, v)` returns the array it was given, extended.
+                ExprKind::Identifier(n) if n == "push" && !args.is_empty() => self.infer(&args[0]),
                 ExprKind::Identifier(n) => self.fn_returns.get(n).cloned().unwrap_or(Type::Unknown),
                 _ => Type::Unknown,
             },
@@ -270,24 +273,28 @@ impl OwnershipChecker {
                 self.check_expr_use(condition)?;
                 let before = self.scopes.clone();
                 self.check_block(body)?;
-                // Anything declared outside the loop that was owned before the body
-                // and is moved after it would be used again on the next iteration.
-                for (b_scope, a_scope) in before.iter().zip(self.scopes.iter()) {
-                    for (name, b) in b_scope {
-                        if b.state == VariableState::Owned {
-                            if let Some(Binding {
-                                state: VariableState::Moved { at },
-                                ..
-                            }) = a_scope.get(name)
-                            {
-                                return Err(OwnershipError::MovedInLoop {
-                                    name: name.clone(),
-                                    moved_at: *at,
-                                });
-                            }
-                        }
-                    }
-                }
+                self.check_moved_in_loop(&before)?;
+            }
+            Stmt::For {
+                var,
+                iterable,
+                body,
+                ..
+            } => {
+                // Iterating borrows the array; each element is bound to `var` for one iteration.
+                self.check_expr_use(iterable)?;
+                let elem = match self.infer(iterable) {
+                    Type::Array(t) => *t,
+                    _ => Type::Unknown,
+                };
+                let before = self.scopes.clone();
+                self.enter_scope();
+                let is_copy = Self::is_copy_type(&elem);
+                self.declare(var.clone(), elem, is_copy);
+                let result = self.check_block(body);
+                self.leave_scope();
+                result?;
+                self.check_moved_in_loop(&before)?;
             }
             Stmt::Return { value, .. } => {
                 if let Some(v) = value {
@@ -333,6 +340,31 @@ impl OwnershipChecker {
     }
 
     /// Mark `expr` as consumed when it is a bare identifier of a non-copy type.
+    /// Anything declared outside a loop that was owned before the body and is moved after it
+    /// would be used again on the next iteration.
+    fn check_moved_in_loop(
+        &self,
+        before: &[HashMap<String, Binding>],
+    ) -> Result<(), OwnershipError> {
+        for (b_scope, a_scope) in before.iter().zip(self.scopes.iter()) {
+            for (name, b) in b_scope {
+                if b.state == VariableState::Owned {
+                    if let Some(Binding {
+                        state: VariableState::Moved { at },
+                        ..
+                    }) = a_scope.get(name)
+                    {
+                        return Err(OwnershipError::MovedInLoop {
+                            name: name.clone(),
+                            moved_at: *at,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn check_expr_move(&mut self, expr: &Expr) -> Result<(), OwnershipError> {
         if let ExprKind::Identifier(name) = &expr.kind {
             if let Some(binding) = self.lookup(name) {
@@ -375,8 +407,9 @@ impl OwnershipChecker {
             ExprKind::Unary { operand, .. } => self.check_expr_use(operand)?,
             ExprKind::Call { callee, args } => {
                 self.check_expr_use(callee)?;
-                // `emit` only borrows its argument; every other call consumes identifier arguments.
-                let borrows = matches!(&callee.kind, ExprKind::Identifier(n) if n == "emit");
+                // `emit` and `len` only borrow their argument; every other call consumes identifier arguments.
+                let borrows =
+                    matches!(&callee.kind, ExprKind::Identifier(n) if n == "emit" || n == "len");
                 for arg in args {
                     if borrows {
                         self.check_expr_use(arg)?;

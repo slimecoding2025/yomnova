@@ -85,7 +85,7 @@ no scroll hijacking or smooth-scroll library. The skill's horizontal-scroll exam
 1. (Updated after this audit: several errors per run are now reported; lexical errors are still one at a time; stages are sequential.) No warnings.
 2. Ownership is move-only; no borrows/lifetimes/resources/typestate. Values whose type cannot be inferred are treated as
    copy (conservative against false positives, so it can miss a move).
-3. Arrays have no length/push/iteration; `struct`, `enum`, methods, lambdas, `for`, `match`, `import` are not supported.
+3. (Updated after this audit: `for … in` over arrays, `len` and `push` now exist.) `struct`, `enum`, methods, lambdas, `match`, `import` are not supported.
 4. `yomnova-ir`, `yomnova-network-core`, `yomnova-stdlib` are not wired in; the VM's `And`/`Or` opcodes and
    `IPv6`/`Packet` values are unused by generated code.
 5. `build` produces a text listing, not a loadable program. Function effects `![…]` parse but are ignored.

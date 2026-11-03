@@ -28,7 +28,7 @@ coherent language where network types, ownership and dataflow are part of the la
   `Int` (checked 64-bit), `Float`, `Bool`, `Text`, arrays (literal + index), `IPv4`/`Port`/`Endpoint` values,
   static type checking including call arguments, move-based ownership checking, a bytecode VM with resource
   limits, and the `|>` pipeline operator / `flow` bindings.
-* **Partial:** arrays (no length/push/iteration), ownership (moves only), type inference (local), formatter
+* **Partial:** arrays (`len`, `push` returning a new array, `for … in`; no element assignment or nested-array typing beyond inference), ownership (moves only), type inference (local), formatter
   (re-indent only).
 * **Parsed but rejected:** `struct`, `enum`, methods, field access, lambdas.
 * **Planned / Research:** borrowing and lifetimes, `IPv6`/`Packet`/`TCP`/`UDP`, concurrency, distributed

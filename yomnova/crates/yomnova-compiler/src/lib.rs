@@ -364,6 +364,62 @@ impl Compiler {
                 self.chunk.write_u16(loop_start, span.line);
                 self.patch_jump(exit)?;
             }
+            Stmt::For {
+                var,
+                iterable,
+                body,
+                span,
+            } => {
+                // Two hidden locals (the array and the index) live in a scope of their own.
+                let line = span.line;
+                self.locals.push(HashMap::new());
+                let result = (|| -> Result<(), CompilerError> {
+                    self.compile_expression(iterable)?;
+                    let arr = self.declare_local("$for_arr")?;
+                    self.chunk.write_op(OpCode::SetLocal, line);
+                    self.chunk.write_u16(arr, line);
+                    let zero = self.constant(Value::Int(0))?;
+                    self.chunk.write_op(OpCode::Constant, line);
+                    self.chunk.write_u16(zero, line);
+                    let idx = self.declare_local("$for_idx")?;
+                    self.chunk.write_op(OpCode::SetLocal, line);
+                    self.chunk.write_u16(idx, line);
+
+                    let loop_start = self.here()?;
+                    self.chunk.write_op(OpCode::GetLocal, line);
+                    self.chunk.write_u16(idx, line);
+                    self.chunk.write_op(OpCode::GetLocal, line);
+                    self.chunk.write_u16(arr, line);
+                    self.chunk.write_op(OpCode::Len, line);
+                    self.chunk.write_op(OpCode::Less, line);
+                    let exit = self.emit_jump(OpCode::JumpIfFalse, line);
+
+                    self.chunk.write_op(OpCode::GetLocal, line);
+                    self.chunk.write_u16(arr, line);
+                    self.chunk.write_op(OpCode::GetLocal, line);
+                    self.chunk.write_u16(idx, line);
+                    self.chunk.write_op(OpCode::Index, line);
+                    let slot = self.declare_local(var)?;
+                    self.chunk.write_op(OpCode::SetLocal, line);
+                    self.chunk.write_u16(slot, line);
+
+                    self.compile_scoped_block(body)?;
+
+                    let one = self.constant(Value::Int(1))?;
+                    self.chunk.write_op(OpCode::GetLocal, line);
+                    self.chunk.write_u16(idx, line);
+                    self.chunk.write_op(OpCode::Constant, line);
+                    self.chunk.write_u16(one, line);
+                    self.chunk.write_op(OpCode::Add, line);
+                    self.chunk.write_op(OpCode::SetLocal, line);
+                    self.chunk.write_u16(idx, line);
+                    self.chunk.write_op(OpCode::Jump, line);
+                    self.chunk.write_u16(loop_start, line);
+                    self.patch_jump(exit)
+                })();
+                self.locals.pop();
+                result?;
+            }
             Stmt::Return { value, span } => {
                 if let Some(v) = value {
                     self.compile_expression(v)?;

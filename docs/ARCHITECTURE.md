@@ -34,7 +34,7 @@ Errors are `Vec<Diagnostic>`. The parser recovers at statement/declaration bound
 ## Bytecode and VM
 
 * One `Chunk` per function plus an entry chunk holding top-level `const` initialisers and `main`'s body.
-* 32 opcodes (`OpCode::ALL`, decoded safely by `OpCode::from_u8`; there is no `unsafe` in the workspace).
+* 33 opcodes (`OpCode::ALL`, decoded safely by `OpCode::from_u8`; there is no `unsafe` in the workspace).
 * Jumps and constant/slot operands are 16-bit; compilation fails with a clear error if a function exceeds them.
 * `JumpIfFalse` pops its condition. `&&`/`||` compile to jumps (short-circuit), not to `And`/`Or` opcodes
   (those opcodes remain defined but unused by the code generator).

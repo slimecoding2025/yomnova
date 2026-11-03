@@ -506,6 +506,19 @@ impl Parser {
                 body,
                 span,
             })
+        } else if self.check(&TokenKind::For) {
+            self.advance();
+            let var = self.consume_identifier("loop variable name")?;
+            self.consume(&TokenKind::In, "'in'")?;
+            let iterable = self.parse_expr()?;
+            let body = self.parse_block()?;
+            let span = start_span.merge(body.span);
+            Ok(Stmt::For {
+                var,
+                iterable,
+                body,
+                span,
+            })
         } else if self.check(&TokenKind::Return) {
             self.advance();
             let mut value = None;

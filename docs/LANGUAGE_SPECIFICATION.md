@@ -62,10 +62,11 @@ A function with a non-`Unit` return type must return on every path (`MissingRetu
 | `name = expr` | Implemented (only identifiers are assignable; the target must be `mut`) |
 | `if cond { } else if cond { } else { }` | Implemented |
 | `while cond { }` | Implemented |
+| `for name in array { }` | Implemented — iterates the elements of an `Array<T>`; `name` is immutable and scoped to the loop |
 | `return [expr]` | Implemented |
 | `flow name = source |> stage …` | Implemented (see §6) |
 | expression statement | Implemented |
-| `for … in …`, `match`, `import`, `type` | Planned — the words are reserved, but there is no syntax for them |
+| `match`, `import`, `type` | Planned — the words are reserved, but there is no syntax for them |
 
 Blocks introduce lexical scopes. A name can be shadowed in an inner block but not redeclared in the same scope.
 
@@ -104,7 +105,8 @@ Ownership is checked statically after type checking; violations stop the program
   source/argument.
 * Using a moved value is `Use of moved value 'x'`.
 * A value moved in only one branch of an `if` is *maybe moved* afterwards and is rejected on later use.
-* Moving a value declared outside a `while` loop from inside the loop is rejected, unless it is reassigned.
+* Moving a value declared outside a `while` or `for` loop from inside the loop is rejected, unless it is reassigned.
+* `for x in xs` only borrows `xs` (it can be used afterwards); `push` consumes its array argument and `len` only borrows.
 * **Not implemented:** references/borrows, mutable borrows, lifetimes, resource types, typestate.
 
 ## 8. Runtime and limits

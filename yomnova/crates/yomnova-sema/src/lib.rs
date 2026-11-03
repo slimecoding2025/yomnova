@@ -142,6 +142,16 @@ impl SemanticAnalyzer {
 
         // Register built-in functions
         analyzer.register_builtin("emit", vec![("val".to_string(), Type::Unknown)], Type::Unit);
+        // Generic over the element type; the exact result types are computed at the call site.
+        analyzer.register_builtin("len", vec![("value".to_string(), Type::Unknown)], Type::Int);
+        analyzer.register_builtin(
+            "push",
+            vec![
+                ("array".to_string(), Type::Unknown),
+                ("value".to_string(), Type::Unknown),
+            ],
+            Type::Unknown,
+        );
         analyzer.register_builtin("IPv4", vec![("addr".to_string(), Type::Text)], Type::IPv4);
         analyzer.register_builtin("Port", vec![("port".to_string(), Type::Int)], Type::Port);
         analyzer.register_builtin(
@@ -484,6 +494,30 @@ impl SemanticAnalyzer {
                 }
                 self.analyze_block(body)?;
             }
+            Stmt::For {
+                var,
+                iterable,
+                body,
+                span,
+            } => {
+                let it_ty = self.analyze_expression(iterable)?;
+                let elem = match it_ty {
+                    Type::Array(t) => *t,
+                    Type::Unknown => Type::Unknown,
+                    other => {
+                        return Err(SemaError::TypeMismatch {
+                            expected: "Array<_>".to_string(),
+                            found: other.to_string(),
+                            span: iterable.span,
+                        })
+                    }
+                };
+                self.enter_scope();
+                let declared = self.declare_symbol(var.clone(), elem, false, false, *span);
+                let result = declared.and_then(|_| self.analyze_block(body));
+                self.leave_scope();
+                result?;
+            }
             Stmt::Return { value, span } => {
                 let val_ty = if let Some(ref v) = value {
                     self.analyze_expression(v)?
@@ -686,7 +720,42 @@ impl SemanticAnalyzer {
                         });
                     }
                 }
-                sig.return_type
+                match name.as_str() {
+                    "len" => {
+                        if !matches!(arg_types[0], Type::Array(_) | Type::Text | Type::Unknown) {
+                            return Err(SemaError::TypeMismatch {
+                                expected: "Array<_> or Text".to_string(),
+                                found: arg_types[0].to_string(),
+                                span: args[0].span,
+                            });
+                        }
+                        Type::Int
+                    }
+                    "push" => match &arg_types[0] {
+                        Type::Array(elem) => {
+                            if **elem == Type::Unknown {
+                                Type::Array(Box::new(arg_types[1].clone()))
+                            } else if arg_types[1].is_assignable_to(elem) {
+                                Type::Array(elem.clone())
+                            } else {
+                                return Err(SemaError::TypeMismatch {
+                                    expected: elem.to_string(),
+                                    found: arg_types[1].to_string(),
+                                    span: args[1].span,
+                                });
+                            }
+                        }
+                        Type::Unknown => Type::Array(Box::new(arg_types[1].clone())),
+                        other => {
+                            return Err(SemaError::TypeMismatch {
+                                expected: "Array<_>".to_string(),
+                                found: other.to_string(),
+                                span: args[0].span,
+                            })
+                        }
+                    },
+                    _ => sig.return_type,
+                }
             }
             ExprKind::MethodCall { .. } => {
                 return Err(SemaError::Unsupported {

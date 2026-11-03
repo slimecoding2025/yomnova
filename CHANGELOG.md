@@ -2,6 +2,12 @@
 
 ## Unreleased — 2026-11-03
 
+### Language
+* **Added** `for name in array { … }`, and the built-ins `len(Array|Text) -> Int` and `push(array, value) -> Array`
+  (returns a new array; the old one is consumed). New opcode `OP_LEN` (33 opcodes). The VM caps arrays at 1,000,000
+  elements. 11 new regression tests (51 Rust tests total) and `examples/arrays.yom`.
+* **Not done yet:** `struct`/`enum`/`match`, element assignment (`xs[i] = v`), `pop`, ranges.
+
 ### Web (phones)
 * **Fixed** code panels cut off on phones: grid children could not shrink and code never wrapped. Code now wraps and
   nothing exceeds the screen width.

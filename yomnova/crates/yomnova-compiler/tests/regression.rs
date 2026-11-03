@@ -338,3 +338,111 @@ fn single_error_programs_still_report_exactly_one() {
         1
     );
 }
+
+// ---- for … in, len, push ----
+
+#[test]
+fn for_loop_iterates_an_array() {
+    ok(
+        "fn main() -> Int {\n mut total: Int = 0\n for n in [1, 2, 3, 4] { total = total + n }\n emit(total)\n return 0\n}",
+        &["10"],
+    );
+}
+
+#[test]
+fn for_loop_over_empty_array_runs_zero_times() {
+    ok(
+        "fn main() -> Int {\n let e = []\n for z in e { emit(z) }\n emit(\"done\")\n return 0\n}",
+        &["done"],
+    );
+}
+
+#[test]
+fn len_of_array_and_text() {
+    ok(
+        "fn main() -> Int {\n let a = [5, 6, 7]\n emit(len(a))\n emit(len(\"héllo\"))\n emit(len(a))\n return 0\n}",
+        &["3", "5", "3"],
+    );
+}
+
+#[test]
+fn push_returns_an_extended_array() {
+    ok(
+        "fn main() -> Int {\n mut xs = [10]\n xs = push(xs, 20)\n xs = push(xs, 30)\n for x in xs { emit(x) }\n emit(len(xs))\n return 0\n}",
+        &["10", "20", "30", "3"],
+    );
+}
+
+#[test]
+fn push_on_empty_literal_infers_the_element_type() {
+    ok(
+        "fn main() -> Int {\n let a = push([], \"a\")\n for s in a { emit(s) }\n return 0\n}",
+        &["a"],
+    );
+}
+
+#[test]
+fn loop_variable_is_scoped_to_the_loop() {
+    err(
+        "fn main() -> Int {\n for x in [1] { emit(x) }\n emit(x)\n return 0\n}",
+        "Undefined identifier 'x'",
+    );
+}
+
+#[test]
+fn for_loop_type_errors() {
+    err(
+        "fn main() -> Int {\n for x in 5 { emit(x) }\n return 0\n}",
+        "expected Array",
+    );
+    err(
+        "fn main() -> Int {\n for s in [1, 2] { emit(s + \"x\") }\n return 0\n}",
+        "Cannot apply binary operator",
+    );
+}
+
+#[test]
+fn len_and_push_type_errors() {
+    err(
+        "fn main() -> Int {\n emit(len(true))\n return 0\n}",
+        "expected Array<_> or Text",
+    );
+    err(
+        "fn main() -> Int {\n let a = push(7, 1)\n return 0\n}",
+        "expected Array<_>",
+    );
+    err(
+        "fn main() -> Int {\n let a = push([1], \"t\")\n return 0\n}",
+        "expected Int, found Text",
+    );
+}
+
+#[test]
+fn for_loop_borrows_but_push_moves() {
+    // Iterating borrows the array, so it can be used afterwards...
+    ok(
+        "fn main() -> Int {\n let n = [\"a\", \"b\"]\n for x in n { emit(x) }\n emit(len(n))\n return 0\n}",
+        &["a", "b", "2"],
+    );
+    // ...while push consumes it.
+    err(
+        "fn main() -> Int {\n let n = [\"a\"]\n let m = push(n, \"b\")\n emit(len(n))\n return 0\n}",
+        "moved value",
+    );
+}
+
+#[test]
+fn moving_an_outer_value_inside_a_for_loop_is_rejected() {
+    err(
+        "fn take(s: Text) -> Int {\n return 0\n}\nfn main() -> Int {\n let t = \"x\"\n for i in [1, 2] { take(t) }\n return 0\n}",
+        "moved inside a loop",
+    );
+}
+
+#[test]
+fn nested_for_loops() {
+    ok(
+        "fn main() -> Int {\n for a in [1, 2] { for b in [10, 20] { emit(a * b) } }\n return 0\n}",
+        &["10", "20", "20", "40"],
+    );
+}

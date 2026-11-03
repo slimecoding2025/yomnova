@@ -108,6 +108,13 @@ pub enum Stmt {
         body: Block,
         span: Span,
     },
+    /// `for name in iterable { body }`: iterates the elements of an array.
+    For {
+        var: String,
+        iterable: Expr,
+        body: Block,
+        span: Span,
+    },
     Return {
         value: Option<Expr>,
         span: Span,
@@ -228,6 +235,7 @@ impl Stmt {
             Stmt::Assign { span, .. } => *span,
             Stmt::If { span, .. } => *span,
             Stmt::While { span, .. } => *span,
+            Stmt::For { span, .. } => *span,
             Stmt::Return { span, .. } => *span,
             Stmt::Flow { span, .. } => *span,
             Stmt::Expr(e) => e.span,

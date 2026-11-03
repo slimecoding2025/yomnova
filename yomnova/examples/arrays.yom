@@ -1,0 +1,15 @@
+module arrays_demo
+
+fn main() -> Int {
+    mut scores = [90, 72]
+    scores = push(scores, 85)
+
+    mut total: Int = 0
+    for s in scores {
+        total = total + s
+    }
+
+    emit(len(scores))
+    emit(total)
+    return 0
+}

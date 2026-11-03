@@ -21,6 +21,7 @@ statement    = "let" IDENT [ ":" type ] "=" expr
              | IDENT "=" expr
              | "if" expr block [ "else" ( block | if_stmt ) ]
              | "while" expr block
+             | "for" IDENT "in" expr block
              | "return" [ expr ]
              | "flow" IDENT "=" pipeline
              | expr ;

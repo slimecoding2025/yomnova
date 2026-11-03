@@ -49,6 +49,7 @@ impl Vm {
     pub const MAX_STACK_SIZE: usize = 65_536;
     pub const MAX_CALL_DEPTH: usize = 10_000;
     pub const MAX_TEXT_BYTES: usize = 16 * 1024 * 1024;
+    pub const MAX_ARRAY_LEN: usize = 1_000_000;
 
     pub fn new() -> Self {
         let mut vm = Self {
@@ -74,6 +75,10 @@ impl Vm {
             "Endpoint".to_string(),
             Value::NativeFunction("Endpoint".to_string()),
         );
+        for name in ["len", "push"] {
+            vm.globals
+                .insert(name.to_string(), Value::NativeFunction(name.to_string()));
+        }
 
         vm
     }
@@ -411,6 +416,11 @@ impl Vm {
                         }
                     }
                 }
+                OpCode::Len => {
+                    let v = self.pop()?;
+                    let n = Self::length_of(&v)?;
+                    self.push(Value::Int(n))?;
+                }
                 OpCode::Return => {
                     let result = self.pop()?;
                     self.frames.pop();
@@ -472,8 +482,8 @@ impl Vm {
                 self.pop()?; // pop callee
 
                 let expected = match name.as_str() {
-                    "IPv4" | "Port" => 1,
-                    "Endpoint" => 2,
+                    "IPv4" | "Port" | "len" => 1,
+                    "Endpoint" | "push" => 2,
                     other => {
                         return Err(VmError::TypeError(format!(
                             "Unknown native function '{other}'"
@@ -546,6 +556,27 @@ impl Vm {
                         };
                         Value::Endpoint(ip_bytes, port)
                     }
+                    "len" => Value::Int(Self::length_of(&args[0])?),
+                    "push" => {
+                        let mut it = args.into_iter();
+                        match (it.next(), it.next()) {
+                            (Some(Value::Array(mut items)), Some(v)) => {
+                                if items.len() >= Self::MAX_ARRAY_LEN {
+                                    return Err(VmError::ResourceLimit(format!(
+                                        "array length exceeds {}",
+                                        Self::MAX_ARRAY_LEN
+                                    )));
+                                }
+                                items.push(v);
+                                Value::Array(items)
+                            }
+                            (first, _) => {
+                                return Err(VmError::TypeError(format!(
+                                    "push expects an Array as its first argument, got {first:?}"
+                                )))
+                            }
+                        }
+                    }
                     other => {
                         return Err(VmError::TypeError(format!(
                             "Unknown native function '{other}'"
@@ -587,6 +618,17 @@ impl Vm {
         let high = self.read_byte()? as u16;
         let low = self.read_byte()? as u16;
         Ok((high << 8) | low)
+    }
+
+    /// Length of an Array (elements) or Text (characters) as an `Int`.
+    fn length_of(v: &Value) -> Result<i64, VmError> {
+        match v {
+            Value::Array(a) => Ok(a.len() as i64),
+            Value::Text(t) => Ok(t.chars().count() as i64),
+            other => Err(VmError::TypeError(format!(
+                "len expects an Array or Text, got {other:?}"
+            ))),
+        }
     }
 
     fn push(&mut self, val: Value) -> Result<(), VmError> {

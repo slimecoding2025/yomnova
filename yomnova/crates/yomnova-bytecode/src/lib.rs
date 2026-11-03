@@ -36,12 +36,13 @@ pub enum OpCode {
     Emit,
     Array, // [u16: length]
     Index,
+    Len, // pops an Array or Text, pushes its length as Int
     Halt,
 }
 
 impl OpCode {
     /// Every opcode, in discriminant order. `ALL[op as usize] == op`.
-    pub const ALL: [OpCode; 32] = [
+    pub const ALL: [OpCode; 33] = [
         OpCode::Constant,
         OpCode::Nil,
         OpCode::True,
@@ -73,6 +74,7 @@ impl OpCode {
         OpCode::Emit,
         OpCode::Array,
         OpCode::Index,
+        OpCode::Len,
         OpCode::Halt,
     ];
 
@@ -288,6 +290,7 @@ impl Chunk {
             OpCode::Negate => (format!("{out}OP_NEGATE"), offset + 1),
             OpCode::Emit => (format!("{out}OP_EMIT"), offset + 1),
             OpCode::Index => (format!("{out}OP_INDEX"), offset + 1),
+            OpCode::Len => (format!("{out}OP_LEN"), offset + 1),
             OpCode::Return => (format!("{out}OP_RETURN"), offset + 1),
             OpCode::Halt => (format!("{out}OP_HALT"), offset + 1),
         }

@@ -11,7 +11,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | Top-level and local `const` | Implemented (was broken) | `constants_work_globally_and_locally` |
 | Short-circuit `&&` / `||` | Implemented (was eager) | `short_circuit_does_not_evaluate_right_side` |
 | Checked integer arithmetic | Implemented (was panicking) | `integer_overflow_is_an_error_not_a_panic` |
-| Arrays: literal and index | Partial | no length/push/iteration |
+| Arrays: literal, index, `len`, `push`, `for … in` | Partial | `push` returns a new array (O(n) copy); no `xs[i] = v`; no `pop`/slices |
 | Pipelines and `flow` | Partial (was discarding stages) | `pipelines_apply_every_stage` |
 | `IPv4`, `Port`, `Endpoint` | Implemented | `endpoint_port_is_range_checked` |
 | Static call-argument type checks | Implemented (was runtime-only) | `static_checks` |
@@ -32,7 +32,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 40 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 51 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.
