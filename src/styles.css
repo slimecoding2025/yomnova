@@ -398,3 +398,21 @@ code { font-family: var(--font-mono); font-size: 0.88em; color: var(--ink); }
 .ai-ctx { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .ai-chip { font: 500 11px var(--font-mono); color: var(--ink-dim); border: 1px solid var(--line-strong); padding: 4px 8px; display: inline-flex; gap: 6px; align-items: center; }
 @media (prefers-reduced-motion: no-preference) { .ai-msg { animation: aiIn 0.18s ease-out; } @keyframes aiIn { from { opacity: 0; transform: translateY(3px); } } }
+
+/* ---------- mobile: nothing may be clipped, code wraps ---------- */
+.own-layout > *, .proto-layout > *, .flow-layout > *, .domains-layout > *, .stage-detail > *, .vision-grid > * { min-width: 0; }
+@media (max-width: 899px) {
+  .codeblock { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; font-size: 13px; line-height: 1.65; padding: 14px 14px; }
+  .own-code pre { font-size: 13px; line-height: 1.7; }
+  .own-line { white-space: pre-wrap; overflow-wrap: anywhere; padding: 0 8px; }
+  .own-code pre.codeblock { padding: 14px 0 !important; }
+  .owners { gap: 10px; }
+  .owner { min-width: 0; flex: 1 1 120px; padding: 10px 12px; }
+  .diag { font-size: 12px; overflow-wrap: anywhere; }
+  /* Scroll spotlight (no pinning): the row or stage crossing the middle of the screen is lit. */
+  .dom-row[data-spot] { color: var(--ink); }
+  .dom-row[data-spot] .n { color: var(--violet); }
+  .stage-all article { opacity: 0.55; transition: opacity 0.3s; }
+  .stage-all article[data-spot] { opacity: 1; }
+  .own-step { min-height: 4.8em; }
+}

@@ -14,9 +14,11 @@ export function Dataflow() {
   const root = useRef<HTMLElement>(null);
   const val = useRef<HTMLDivElement>(null);
   const lane = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
 
   const { active, pinned } = usePinnedSteps(root, NODES.length, {
     perStep: 45,
+    mobileTarget: stage,
     onProgress: (p) => {
       const l = lane.current;
       const v = val.current;
@@ -35,6 +37,7 @@ export function Dataflow() {
       <ChapterTag n={7} title="Dataflow & concurrency" />
       <h2 className="display rv">Data moves left to right.</h2>
       <div className="flow-layout">
+        <div className="flow-stage" ref={stage}>
         <p className="flow-src">
           <span className="active">flow result = 5 |&gt; inc |&gt; scale(10)</span>
         </p>
@@ -46,6 +49,7 @@ export function Dataflow() {
               <small>{n.sub}</small>
             </div>
           ))}
+        </div>
         </div>
         <div className="flow-cols">
           <div className="rv">

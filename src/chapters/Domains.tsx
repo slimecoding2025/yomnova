@@ -1,12 +1,13 @@
 import { useLayoutEffect, useRef } from "react";
 import { ChapterTag, StatusChip } from "../components/Common";
 import { DOMAINS } from "../data";
-import { gsap, usePinnedSteps, useReveal } from "../lib/motion";
+import { gsap, usePinnedSteps, useReveal, useSpotlight } from "../lib/motion";
 
 export function Domains() {
   const root = useRef<HTMLElement>(null);
   const { active, pinned } = usePinnedSteps(root, DOMAINS.length, { perStep: 45 });
   useReveal(root);
+  useSpotlight(root, ".dom-row");
   const d = DOMAINS[active];
 
   // Animate the detail panel whenever the active domain changes.

@@ -26,7 +26,8 @@ emit(Endpoint(ip, port))`;
 
 export function Protocol() {
   const root = useRef<HTMLElement>(null);
-  const { active, pinned } = usePinnedSteps(root, STEPS.length, { perStep: 50 });
+  const stage = useRef<HTMLDivElement>(null);
+  const { active, pinned } = usePinnedSteps(root, STEPS.length, { perStep: 50, mobileTarget: stage });
   useReveal(root);
   const step = pinned ? active : STEPS.length - 1;
   const on = STEPS[step].groups;
@@ -37,7 +38,7 @@ export function Protocol() {
       <ChapterTag n={6} title="Protocol-aware programming" />
       <h2 className="display rv">Network values, not strings.</h2>
       <div className="proto-layout">
-        <div>
+        <div ref={stage}>
           <div className="hdr" role="img" aria-label="Conceptual diagram of an IPv4 header followed by transport ports">
             {FIELDS.map(([label, bits, g], i) => (
               <div key={i} className={on.includes(g) ? "on" : ""} style={{ gridColumn: `span ${bits}` }}>{label}</div>

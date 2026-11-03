@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { ChapterTag, Code, StatusChip } from "../components/Common";
 import { STAGES } from "../data";
-import { gsap, usePinnedSteps, useReveal } from "../lib/motion";
+import { gsap, usePinnedSteps, useReveal, useSpotlight } from "../lib/motion";
 
 export function Architecture() {
   const root = useRef<HTMLElement>(null);
@@ -22,6 +22,7 @@ export function Architecture() {
     },
   });
   useReveal(root);
+  useSpotlight(root, ".stage-all article");
   const s = STAGES[active];
 
   return (

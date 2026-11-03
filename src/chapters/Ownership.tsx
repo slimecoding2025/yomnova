@@ -20,7 +20,8 @@ function Line({ text, cls }: { text: string; cls: string }) {
 
 export function Ownership() {
   const root = useRef<HTMLElement>(null);
-  const { active, pinned } = usePinnedSteps(root, STEPS.length, { perStep: 60 });
+  const stage = useRef<HTMLDivElement>(null);
+  const { active, pinned } = usePinnedSteps(root, STEPS.length, { perStep: 60, mobileTarget: stage });
   useReveal(root);
   // Not pinned (mobile / reduced motion): show the end state with the diagnostic.
   const step = pinned ? active : STEPS.length - 1;
@@ -31,7 +32,7 @@ export function Ownership() {
       <ChapterTag n={5} title="Ownership & resource safety" />
       <h2 className="display rv">One owner. Checked before it runs.</h2>
       <div className="own-layout">
-        <div className="own-code">
+        <div className="own-code" ref={stage}>
           <pre className="codeblock" style={{ padding: "16px 4px" }} aria-label="Example program with a use after move">
             {OWNERSHIP_SRC.map((l, i) => (
               <Line key={i} text={l} cls={i + 1 === STEPS[step].line ? (step === 2 ? "bad" : "hot") : ""} />

@@ -2,6 +2,14 @@
 
 ## Unreleased — 2026-11-03
 
+### Web (phones)
+* **Fixed** code panels cut off on phones: grid children could not shrink and code never wrapped. Code now wraps and
+  nothing exceeds the screen width.
+* **Fixed** the scroll story on phones: Ownership, Protocol and Dataflow now pin their visual (not the whole chapter) and
+  advance step by step with touch scrolling; Domains and Architecture light up the item crossing the middle of the screen.
+  Hero and Vision are still plain scrolling sections on phones.
+* **Added** `tests/e2e/mobile.e2e.mjs` (6 checks, iPhone 13 emulation in Chromium; not tested on a real device or on iOS Safari).
+
 ### Compiler
 * **Added** multiple diagnostics per run (roadmap item 1, first part): parser error recovery at statement/declaration
   boundaries, per-statement/per-function recovery in semantic analysis and the ownership check, a cap of 20 errors per

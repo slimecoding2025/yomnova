@@ -16,11 +16,19 @@ export const MQ = {
   motion: "(prefers-reduced-motion: no-preference)",
 } as const;
 
+/** Height of the fixed site header, so a pinned element sits just below it. */
+const HEADER_PX = 62;
+
 interface PinnedStepsOptions {
   /** Scroll distance per step, as a percentage of viewport height. */
   perStep?: number;
   /** Called on every scroll update with the section's pinned progress (0..1). Not a React state. */
   onProgress?: (progress: number) => void;
+  /**
+   * Phones: pin only this element (not the whole chapter) while the steps advance, so the step-by-step
+   * story works with touch scrolling. Without it, chapters stay a normal scrolling section on phones.
+   */
+  mobileTarget?: RefObject<HTMLElement | null>;
   /** Called once when the pinned mode starts; may return a cleanup. */
   onPin?: (section: HTMLElement) => void | (() => void);
 }
@@ -66,6 +74,35 @@ export function usePinnedSteps(ref: RefObject<HTMLElement | null>, count: number
         if (typeof cleanupPin === "function") cleanupPin();
       };
     });
+    mm.add(MQ.mobile, () => {
+      const target = cb.current.mobileTarget?.current;
+      if (!target) return;
+      setPinned(true);
+      const cleanupPin = cb.current.onPin?.(section);
+      const vh = () => window.innerHeight;
+      let last = -1;
+      ScrollTrigger.create({
+        trigger: target,
+        start: () => `top ${HEADER_PX + 12}px`,
+        end: () => `+=${Math.round(count * vh() * ((cb.current.perStep ?? 60) / 100) * 0.8)}`,
+        pin: true,
+        anticipatePin: 1,
+        invalidateOnRefresh: true,
+        onUpdate: (self) => {
+          const idx = Math.min(count - 1, Math.floor(self.progress * count));
+          if (idx !== last) {
+            last = idx;
+            setActive(idx);
+          }
+          cb.current.onProgress?.(self.progress);
+        },
+      });
+      return () => {
+        setPinned(false);
+        setActive(0);
+        if (typeof cleanupPin === "function") cleanupPin();
+      };
+    });
     return () => mm.revert();
   }, [ref, count]);
 
@@ -91,4 +128,28 @@ export function useReveal(ref: RefObject<HTMLElement | null>) {
     });
     return () => mm.revert();
   }, [ref]);
+}
+
+/**
+ * Phones: marks (data-spot) the item of `selector` that is crossing the middle of the screen. Pure
+ * scroll feedback, no pinning, so it cannot trap or jitter touch scrolling.
+ */
+export function useSpotlight(ref: RefObject<HTMLElement | null>, selector: string) {
+  useLayoutEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const mm = gsap.matchMedia();
+    mm.add(MQ.mobile, () => {
+      const triggers = Array.from(root.querySelectorAll<HTMLElement>(selector)).map((el) =>
+        ScrollTrigger.create({
+          trigger: el,
+          start: "top 62%",
+          end: "bottom 38%",
+          onToggle: (self) => el.toggleAttribute("data-spot", self.isActive),
+        }),
+      );
+      return () => triggers.forEach((t) => t.kill());
+    });
+    return () => mm.revert();
+  }, [ref, selector]);
 }
