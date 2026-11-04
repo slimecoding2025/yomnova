@@ -464,6 +464,54 @@ impl Vm {
                         }
                     }
                 }
+                OpCode::EnumNew => {
+                    let idx = self.read_u16()? as usize;
+                    let carries = self.read_byte()? == 1;
+                    let full = match self.constant_at(idx) {
+                        Some(Value::Text(s)) => s,
+                        _ => return Err(VmError::TypeError("malformed enum constant".to_string())),
+                    };
+                    let Some((name, variant)) = full.split_once('.') else {
+                        return Err(VmError::TypeError("malformed enum constant".to_string()));
+                    };
+                    let payload = if carries {
+                        Some(Box::new(self.pop()?))
+                    } else {
+                        None
+                    };
+                    self.push(Value::Enum {
+                        name: name.to_string(),
+                        variant: variant.to_string(),
+                        payload,
+                    })?;
+                }
+                OpCode::EnumIs => {
+                    let idx = self.read_u16()? as usize;
+                    let full = match self.constant_at(idx) {
+                        Some(Value::Text(s)) => s,
+                        _ => return Err(VmError::TypeError("malformed enum constant".to_string())),
+                    };
+                    match self.pop()? {
+                        Value::Enum { name, variant, .. } => {
+                            self.push(Value::Bool(format!("{name}.{variant}") == full))?;
+                        }
+                        other => {
+                            return Err(VmError::TypeError(format!(
+                                "match expects an enum value, got {other:?}"
+                            )))
+                        }
+                    }
+                }
+                OpCode::EnumPayload => match self.pop()? {
+                    Value::Enum {
+                        payload: Some(v), ..
+                    } => self.push(*v)?,
+                    other => {
+                        return Err(VmError::TypeError(format!(
+                            "enum value {other:?} carries no value"
+                        )))
+                    }
+                },
                 OpCode::Len => {
                     let v = self.pop()?;
                     let n = Self::length_of(&v)?;

@@ -189,7 +189,7 @@ fn static_checks() {
         "must not take parameters",
     );
     err(
-        "enum E { A }\nfn main() -> Int {\n return 0\n}",
+        "fn main() -> Int {\n let v = [1]\n let n = v.first()\n return 0\n}",
         "not supported",
     );
     err(
@@ -552,5 +552,162 @@ fn braces_after_an_uppercase_name_still_open_a_block() {
     ok(
         "const Limit = 3\nfn main() -> Int {\n if 3 == Limit { emit(\"eq\") }\n for a in [1] { emit(a) }\n return 0\n}",
         &["eq", "1"],
+    );
+}
+
+// ---- enums and match ----
+
+const SHAPE: &str = "enum Shape { Circle(Int), Rect(Int), Empty }\n";
+
+fn with_shape(body: &str) -> String {
+    format!("{SHAPE}{body}")
+}
+
+#[test]
+fn enum_values_display_and_compare_by_value() {
+    ok(
+        &with_shape("fn main() -> Int {\n emit(Shape.Circle(2))\n emit(Shape.Empty)\n emit(Shape.Circle(2) == Shape.Circle(2))\n emit(Shape.Circle(2) == Shape.Rect(2))\n return 0\n}"),
+        &["Shape.Circle(2)", "Shape.Empty", "true", "false"],
+    );
+}
+
+#[test]
+fn match_binds_the_carried_value_and_returns_from_every_arm() {
+    // `area` has no statement after the match: sema must see that every arm returns.
+    ok(
+        &with_shape("fn area(s: Shape) -> Int {\n match s {\n Shape.Circle(r) => { return r * r * 3 }\n Shape.Rect(w) => { return w * w }\n Shape.Empty => { return 0 }\n }\n}\nfn main() -> Int {\n emit(area(Shape.Circle(2)))\n emit(area(Shape.Rect(4)))\n emit(area(Shape.Empty))\n return 0\n}"),
+        &["12", "16", "0"],
+    );
+}
+
+#[test]
+fn match_wildcard_ignore_binding_and_only_the_first_matching_arm_runs() {
+    ok(
+        &with_shape("fn main() -> Int {\n for s in [Shape.Circle(1), Shape.Empty, Shape.Rect(2)] {\n match s {\n Shape.Circle(_) => { emit(\"c\") }\n _ => { emit(\"other\") }\n }\n }\n return 0\n}"),
+        &["c", "other", "other"],
+    );
+}
+
+#[test]
+fn enums_work_inside_structs_and_with_text_payloads() {
+    ok(
+        "enum Msg { Text(Text), Quit }\nstruct Box { m: Msg }\nfn main() -> Int {\n let b = Box { m: Msg.Text(\"hi\") }\n match b.m {\n Msg.Text(t) => { emit(t) }\n Msg.Quit => { emit(\"quit\") }\n }\n return 0\n}",
+        &["hi"],
+    );
+}
+
+#[test]
+fn match_must_be_exhaustive() {
+    err(
+        &with_shape("fn main() -> Int {\n match Shape.Empty {\n Shape.Circle(r) => { emit(r) }\n }\n return 0\n}"),
+        "not exhaustive: missing Shape.Rect, Shape.Empty",
+    );
+}
+
+#[test]
+fn match_arm_errors() {
+    let m = |arms: &str| {
+        with_shape(&format!(
+            "fn main() -> Int {{\n let s = Shape.Empty\n match s {{\n{arms}\n }}\n return 0\n}}"
+        ))
+    };
+    err(
+        &m("Shape.Circle(a) => { emit(a) }\nShape.Circle(b) => { emit(b) }\n_ => { emit(0) }"),
+        "matched more than once",
+    );
+    err(
+        &m("_ => { emit(0) }\nShape.Empty => { emit(1) }"),
+        "can never run",
+    );
+    err(
+        &m("Shape.Circle => { emit(0) }\n_ => { emit(1) }"),
+        "carries a value",
+    );
+    err(
+        &m("Shape.Empty(x) => { emit(0) }\n_ => { emit(1) }"),
+        "carries no value",
+    );
+    err(
+        &m("Shape.Nope => { emit(0) }\n_ => { emit(1) }"),
+        "has no variant 'Nope'",
+    );
+    err(
+        &format!(
+            "enum Other {{ A }}\n{}",
+            m("Other.A => { emit(0) }\n_ => { emit(1) }")
+        ),
+        "pattern is for enum 'Other'",
+    );
+    err(
+        &with_shape("fn main() -> Int {\n match 5 { _ => { emit(1) } }\n return 0\n}"),
+        "expected an enum value",
+    );
+}
+
+#[test]
+fn enum_construction_errors() {
+    let b = |e: &str| with_shape(&format!("fn main() -> Int {{\n let v = {e}\n return 0\n}}"));
+    err(&b("Shape.Nope"), "has no variant 'Nope'");
+    err(&b("Shape.Circle"), "carries a value");
+    err(&b("Shape.Empty(1)"), "carries no value");
+    err(&b("Shape.Circle(\"x\")"), "expected Int, found Text");
+}
+
+#[test]
+fn enum_declaration_errors() {
+    err(
+        "enum E { A, A }\nfn main() -> Int { return 0 }",
+        "already declared",
+    );
+    err("enum E { }\nfn main() -> Int { return 0 }", "no variants");
+    err(
+        "enum E { A(E) }\nfn main() -> Int { return 0 }",
+        "infinite size",
+    );
+    err(
+        "enum E { A(Missing) }\nfn main() -> Int { return 0 }",
+        "unknown type 'Missing'",
+    );
+    err(
+        "enum E { A }\nenum E { B }\nfn main() -> Int { return 0 }",
+        "already declared",
+    );
+    err(
+        "enum E { A }\nstruct E { x: Int }\nfn main() -> Int { return 0 }",
+        "already declared",
+    );
+}
+
+#[test]
+fn matching_borrows_but_constructing_and_passing_move() {
+    // The match itself does not consume the value...
+    ok(
+        &with_shape("fn main() -> Int {\n let s = Shape.Circle(1)\n match s {\n Shape.Circle(r) => { emit(r) }\n _ => { emit(0) }\n }\n emit(s)\n return 0\n}"),
+        &["1", "Shape.Circle(1)"],
+    );
+    // ...passing it to a function does, and so does putting a moved Text inside a variant.
+    err(
+        &with_shape("fn take(s: Shape) -> Int {\n return 0\n}\nfn main() -> Int {\n let s = Shape.Empty\n take(s)\n emit(s)\n return 0\n}"),
+        "moved value",
+    );
+    err(
+        "enum Msg { Text(Text) }\nfn main() -> Int {\n let t = \"x\"\n let m = Msg.Text(t)\n emit(t)\n return 0\n}",
+        "moved value",
+    );
+}
+
+#[test]
+fn a_move_inside_a_match_arm_makes_the_value_maybe_moved_afterwards() {
+    err(
+        &with_shape("fn take(t: Text) -> Int {\n return 0\n}\nfn main() -> Int {\n let t = \"x\"\n match Shape.Empty {\n Shape.Empty => { take(t) }\n _ => { emit(1) }\n }\n emit(t)\n return 0\n}"),
+        "moved value",
+    );
+}
+
+#[test]
+fn match_binding_is_scoped_to_its_arm() {
+    err(
+        &with_shape("fn main() -> Int {\n match Shape.Circle(1) {\n Shape.Circle(r) => { emit(r) }\n _ => { emit(0) }\n }\n emit(r)\n return 0\n}"),
+        "Undefined identifier 'r'",
     );
 }

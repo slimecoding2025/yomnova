@@ -47,7 +47,7 @@ fn main() -> Int { emit(helper(1, 2))  return 0 }
 | `Endpoint` | Implemented | `Endpoint(ip, port)`; the port may be a `Port` or an `Int` (range-checked at runtime). |
 | `IPv6`, `TCP`, `UDP`, `Packet` | Planned | Names are reserved and parse as types; there is no constructor, value or behaviour. |
 | `struct` | Implemented | `struct P { x: Int, y: Int }`, literals `P { x: 1, y: 2 }` (any field order, every field exactly once), field reads `p.x`, structs as parameters, return values, array elements and fields of other structs. Display: `P { x: 1, y: 2 }`; equality is by value. Not supported: field assignment (`p.x = v`), methods, generics, recursive structs (rejected: infinite size). |
-| `enum` | Parsed-only | Declarations are rejected: `enum 'E' is not supported yet`. |
+| `enum` | Implemented | `enum Shape { Circle(Int), Empty }` — each variant carries at most one value. Values are built as `Shape.Circle(2)` / `Shape.Empty`, displayed the same way and compared by value. Empty enums, duplicate variants and directly recursive payloads are rejected. |
 | Generics, traits, lambdas, methods, field access | Unsupported | Rejected with an "is not supported yet" error. |
 
 Type inference is local: `let x = expr` takes the type of `expr`. Parameters and return types must be annotated.
@@ -67,7 +67,8 @@ A function with a non-`Unit` return type must return on every path (`MissingRetu
 | `return [expr]` | Implemented |
 | `flow name = source |> stage …` | Implemented (see §6) |
 | expression statement | Implemented |
-| `match`, `import`, `type` | Planned — the words are reserved, but there is no syntax for them |
+| `match value { Enum.Variant(x) => { … } … }` | Implemented, as a statement (not an expression). Patterns are `Enum.Variant`, `Enum.Variant(name)`, `Enum.Variant(_)` and `_`. The match must be exhaustive (every variant, or a `_` arm), may not repeat a variant, and arms after `_` are rejected. A function whose arms all `return` needs no `return` after the `match`. No nested patterns, guards or literal patterns. |
+| `import`, `type` | Planned — the words are reserved, but there is no syntax for them |
 
 Blocks introduce lexical scopes. A name can be shadowed in an inner block but not redeclared in the same scope.
 
@@ -107,7 +108,7 @@ Ownership is checked statically after type checking; violations stop the program
 * Using a moved value is `Use of moved value 'x'`.
 * A value moved in only one branch of an `if` is *maybe moved* afterwards and is rejected on later use.
 * Moving a value declared outside a `while` or `for` loop from inside the loop is rejected, unless it is reassigned.
-* A struct is a moved (non-copy) value; reading a field (`p.x`) does not move it. `for x in xs` only borrows `xs` (it can be used afterwards); `push` consumes its array argument and `len` only borrows.
+* A struct or enum value is a moved (non-copy) value; `match` only borrows it, and a value moved inside one arm is "maybe moved" afterwards. A struct is a moved value; reading a field (`p.x`) does not move it. `for x in xs` only borrows `xs` (it can be used afterwards); `push` consumes its array argument and `len` only borrows.
 * **Not implemented:** references/borrows, mutable borrows, lifetimes, resource types, typestate.
 
 ## 8. Runtime and limits

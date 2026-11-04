@@ -36,15 +36,18 @@ pub enum OpCode {
     Emit,
     Array, // [u16: length]
     Index,
-    Len,    // pops an Array or Text, pushes its length as Int
-    Struct, // [u16: name constant][u16: field-names constant]; pops one value per field
-    Field,  // [u16: field-name constant]; pops a struct, pushes that field
+    Len,         // pops an Array or Text, pushes its length as Int
+    Struct,      // [u16: name constant][u16: field-names constant]; pops one value per field
+    Field,       // [u16: field-name constant]; pops a struct, pushes that field
+    EnumNew, // [u16: "Enum.Variant" constant][u8: 1 if a value is carried]; pops the value if any
+    EnumIs,  // [u16: "Enum.Variant" constant]; pops an enum value, pushes Bool
+    EnumPayload, // pops an enum value, pushes the value it carries
     Halt,
 }
 
 impl OpCode {
     /// Every opcode, in discriminant order. `ALL[op as usize] == op`.
-    pub const ALL: [OpCode; 35] = [
+    pub const ALL: [OpCode; 38] = [
         OpCode::Constant,
         OpCode::Nil,
         OpCode::True,
@@ -79,6 +82,9 @@ impl OpCode {
         OpCode::Len,
         OpCode::Struct,
         OpCode::Field,
+        OpCode::EnumNew,
+        OpCode::EnumIs,
+        OpCode::EnumPayload,
         OpCode::Halt,
     ];
 
@@ -108,6 +114,12 @@ pub enum Value {
     Struct {
         name: String,
         fields: Vec<(String, Value)>,
+    },
+    /// An enum value: `Shape.Circle(5)` or `Shape.Empty`.
+    Enum {
+        name: String,
+        variant: String,
+        payload: Option<Box<Value>>,
     },
     NativeFunction(String),
     UserFunction {
@@ -161,6 +173,14 @@ impl fmt::Display for Value {
                 }
                 write!(f, " }}")
             }
+            Value::Enum {
+                name,
+                variant,
+                payload,
+            } => match payload {
+                Some(v) => write!(f, "{name}.{variant}({v})"),
+                None => write!(f, "{name}.{variant}"),
+            },
             Value::NativeFunction(name) => write!(f, "<native fn {name}>"),
             Value::UserFunction { name, .. } => write!(f, "<fn {name}>"),
         }
@@ -307,6 +327,30 @@ impl Chunk {
             OpCode::Emit => (format!("{out}OP_EMIT"), offset + 1),
             OpCode::Index => (format!("{out}OP_INDEX"), offset + 1),
             OpCode::Len => (format!("{out}OP_LEN"), offset + 1),
+            OpCode::EnumNew => {
+                let idx = ((self.code[offset + 1] as u16) << 8) | (self.code[offset + 2] as u16);
+                let name = self
+                    .constants
+                    .get(idx as usize)
+                    .map_or_else(|| "?".to_string(), |c| c.to_string());
+                let carries = self.code[offset + 3];
+                (
+                    format!(
+                        "{out}OP_ENUM_NEW {name}{}",
+                        if carries == 1 { " (with value)" } else { "" }
+                    ),
+                    offset + 4,
+                )
+            }
+            OpCode::EnumIs => {
+                let idx = ((self.code[offset + 1] as u16) << 8) | (self.code[offset + 2] as u16);
+                let name = self
+                    .constants
+                    .get(idx as usize)
+                    .map_or_else(|| "?".to_string(), |c| c.to_string());
+                (format!("{out}OP_ENUM_IS {name}"), offset + 3)
+            }
+            OpCode::EnumPayload => (format!("{out}OP_ENUM_PAYLOAD"), offset + 1),
             OpCode::Struct => {
                 let name = ((self.code[offset + 1] as usize) << 8) | self.code[offset + 2] as usize;
                 (format!("{out}OP_STRUCT (name const {name})"), offset + 5)

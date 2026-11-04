@@ -5,7 +5,7 @@ as unsupported. Lexical details are in `crates/yomnova-lexer/src/lib.rs`.
 
 ```ebnf
 program      = [ "module" IDENT ] { item } ;
-item         = function | const_decl | struct_decl | enum_decl † | statement ;
+item         = function | const_decl | struct_decl | enum_decl | statement ;
 
 function     = "fn" IDENT "(" [ param { "," param } ] ")" [ "->" type ] [ effects ] block ;
 param        = [ "mut" ] IDENT ":" type ;
@@ -13,6 +13,7 @@ effects      = "![" IDENT { "." IDENT } { "," IDENT { "." IDENT } } "]" ;   (* p
 const_decl   = "const" IDENT [ ":" type ] "=" expr ;
 struct_decl  = "struct" IDENT "{" field { "," field } [ "," ] "}" ;
 enum_decl    = "enum" IDENT "{" variant { "," variant } [ "," ] "}" ;
+variant      = IDENT [ "(" type ")" ] ;                  (* at most one carried value *)
 
 block        = "{" { statement } "}" ;
 statement    = "let" IDENT [ ":" type ] "=" expr
@@ -22,6 +23,7 @@ statement    = "let" IDENT [ ":" type ] "=" expr
              | "if" expr block [ "else" ( block | if_stmt ) ]
              | "while" expr block
              | "for" IDENT "in" expr block
+             | "match" expr "{" { pattern "=>" block [ "," ] } "}"
              | "return" [ expr ]
              | "flow" IDENT "=" pipeline
              | expr ;
@@ -40,6 +42,7 @@ postfix      = primary { "(" [ args ] ")" | "[" expr "]" | "." IDENT [ "(" [ arg
 primary      = INT | FLOAT | STRING | "true" | "false" | "(" expr ")" | "[" [ args ] "]" | IDENT | struct_lit
              | "emit" | "IPv4" | "Port" | "Endpoint" ;
 args         = expr { "," expr } ;
+pattern      = "_" | IDENT "." IDENT [ "(" ( IDENT | "_" ) ")" ] ;   (* Enum.Variant, Enum.Variant(x) *)
 struct_lit   = UPPER_IDENT "{" IDENT ":" expr { "," IDENT ":" expr } [ "," ] "}" ;   (* only when an uppercase name is followed by `{ ident :` *)
 
 type         = "Int" | "Float" | "Bool" | "Text" | "Unit"

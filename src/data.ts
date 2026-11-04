@@ -27,7 +27,7 @@ export const DOMAINS: Domain[] = [
     name: "Application programming",
     status: "partial",
     today: "Functions, recursion, let/mut bindings, if/else, while, for-in over arrays, len and push, Text, Int, Float, Bool.",
-    next: "Enums, match, imports.",
+    next: "Imports and a standard library, borrowing.",
   },
   {
     name: "Systems programming",
@@ -141,7 +141,7 @@ export const STAGES: Stage[] = [
     name: "Semantic analysis",
     crate: "yomnova-sema",
     status: "partial",
-    note: "Scopes, duplicate and undefined names, mutability, return paths, call arity. Enums, methods and lambdas are rejected as unsupported.",
+    note: "Scopes, duplicate and undefined names, mutability, return paths, call arity. Methods and lambdas are rejected as unsupported.",
   },
   {
     name: "Type checking",
@@ -222,7 +222,7 @@ export const NET_TYPES: NetType[] = [
   { name: "Port", status: "implemented", note: "Port(n) accepts 1–65535." },
   { name: "Endpoint", status: "implemented", note: "Endpoint(ip, port) pairs an IPv4 with a port." },
   { name: "IPv6", status: "planned", note: "The type name is reserved; there is no constructor or value." },
-  { name: "IPAddress", status: "planned", note: "An IPv4-or-IPv6 sum type; needs enums first." },
+  { name: "IPAddress", status: "planned", note: "An IPv4-or-IPv6 sum type; enums exist now, but IPv6 does not." },
   { name: "TCP · UDP", status: "planned", note: "Reserved type names with no behaviour." },
   { name: "Packet · NetworkBuffer", status: "planned", note: "Concept only. The VM has an unused packet value." },
 ];
@@ -249,7 +249,7 @@ export const ROADMAP: Record<Status, RoadmapItem[]> = {
     { title: "Formatter", note: "re-indents only" },
   ],
   planned: [
-    { title: "Enums and match" },
+    { title: "Field assignment and nested patterns" },
     { title: "Imports and a standard library" },
     { title: "IR lowering and optimisation" },
     { title: "Borrow checker and lifetimes" },

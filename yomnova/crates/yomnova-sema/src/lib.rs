@@ -121,6 +121,8 @@ pub struct SemanticAnalyzer {
     collected: Option<Vec<SemaError>>,
     /// Declared structs: name -> fields in declaration order.
     structs: HashMap<String, Vec<(String, Type)>>,
+    /// Enum name -> variants (name, carried value type).
+    enums: HashMap<String, Vec<(String, Option<Type>)>>,
     /// Names whose declaration failed; later "undefined" errors for them are cascades.
     poisoned: HashSet<String>,
 }
@@ -140,6 +142,7 @@ impl SemanticAnalyzer {
             expression_types: HashMap::new(),
             collected: None,
             structs: HashMap::new(),
+            enums: HashMap::new(),
             poisoned: HashSet::new(),
         };
 
@@ -244,7 +247,9 @@ impl SemanticAnalyzer {
     fn validate_annotation(&self, anno: &TypeAnnotation, span: Span) -> Result<(), SemaError> {
         match anno {
             TypeAnnotation::Array(inner) => self.validate_annotation(inner, span),
-            TypeAnnotation::Custom(name) if !self.structs.contains_key(name) => {
+            TypeAnnotation::Custom(name)
+                if !self.structs.contains_key(name) && !self.enums.contains_key(name) =>
+            {
                 Err(SemaError::Invalid {
                     message: format!("unknown type '{name}'"),
                     span,
@@ -259,7 +264,7 @@ impl SemanticAnalyzer {
         let mut seen = HashSet::new();
         for item in &program.items {
             if let TopLevelItem::Struct(d) = item {
-                if !seen.insert(d.name.clone()) {
+                if !seen.insert(d.name.clone()) || self.enums.contains_key(&d.name) {
                     return Err(SemaError::DuplicateDeclaration {
                         name: d.name.clone(),
                         span: d.span,
@@ -296,8 +301,79 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    /// Enum names first (so structs can use them), then their variants once every type name is known.
+    fn register_enum_names(&mut self, program: &Program) -> Result<(), SemaError> {
+        for item in &program.items {
+            if let TopLevelItem::Enum(d) = item {
+                if self.enums.contains_key(&d.name) {
+                    return Err(SemaError::DuplicateDeclaration {
+                        name: d.name.clone(),
+                        span: d.span,
+                    });
+                }
+                self.enums.insert(d.name.clone(), Vec::new());
+            }
+        }
+        Ok(())
+    }
+
+    fn register_enum_variants(&mut self, program: &Program) -> Result<(), SemaError> {
+        for item in &program.items {
+            if let TopLevelItem::Enum(d) = item {
+                let mut variants: Vec<(String, Option<Type>)> = Vec::new();
+                for v in &d.variants {
+                    if variants.iter().any(|(n, _)| *n == v.name) {
+                        return Err(SemaError::DuplicateDeclaration {
+                            name: v.name.clone(),
+                            span: v.span,
+                        });
+                    }
+                    let payload = match &v.payload {
+                        Some(a) => {
+                            self.validate_annotation(a, v.span)?;
+                            if matches!(a, TypeAnnotation::Custom(n) if *n == d.name) {
+                                return Err(SemaError::Invalid {
+                                    message: format!(
+                                        "enum '{}' contains itself, so it would have infinite size",
+                                        d.name
+                                    ),
+                                    span: v.span,
+                                });
+                            }
+                            Some(Type::from_annotation(a))
+                        }
+                        None => None,
+                    };
+                    variants.push((v.name.clone(), payload));
+                }
+                if variants.is_empty() {
+                    return Err(SemaError::Invalid {
+                        message: format!("enum '{}' has no variants", d.name),
+                        span: d.span,
+                    });
+                }
+                self.enums.insert(d.name.clone(), variants);
+            }
+        }
+        Ok(())
+    }
+
+    /// `Name` when `expr` is a bare identifier that names an enum and is not shadowed by a variable.
+    fn enum_name_of(&self, expr: &Expr) -> Option<String> {
+        match &expr.kind {
+            ExprKind::Identifier(n)
+                if self.enums.contains_key(n) && self.lookup_symbol(n, expr.span).is_err() =>
+            {
+                Some(n.clone())
+            }
+            _ => None,
+        }
+    }
+
     pub fn analyze_program(&mut self, program: &Program) -> Result<(), SemaError> {
+        self.register_enum_names(program)?;
         self.register_structs(program)?;
+        self.register_enum_variants(program)?;
         // First pass: collect function signatures
         for item in &program.items {
             if let TopLevelItem::Function(func) = item {
@@ -335,16 +411,6 @@ impl SemanticAnalyzer {
                         span: func.span,
                     },
                 );
-            }
-        }
-
-        // Reject declarations that have no implementation instead of silently ignoring them.
-        for item in &program.items {
-            if let TopLevelItem::Enum(d) = item {
-                return Err(SemaError::Unsupported {
-                    feature: format!("enum '{}'", d.name),
-                    span: d.span,
-                });
             }
         }
 
@@ -553,6 +619,111 @@ impl SemanticAnalyzer {
                     });
                 }
                 self.analyze_block(body)?;
+            }
+            Stmt::Match {
+                scrutinee,
+                arms,
+                span,
+            } => {
+                let sty = self.analyze_expression(scrutinee)?;
+                let ename = match &sty {
+                    Type::Custom(n) if self.enums.contains_key(n) => n.clone(),
+                    other => {
+                        return Err(SemaError::TypeMismatch {
+                            expected: "an enum value".to_string(),
+                            found: other.to_string(),
+                            span: scrutinee.span,
+                        })
+                    }
+                };
+                let variants = self.enums[&ename].clone();
+                let mut covered: HashSet<String> = HashSet::new();
+                let mut wildcard = false;
+                for arm in arms {
+                    if wildcard {
+                        return Err(SemaError::Invalid {
+                            message: "this arm can never run: `_` above already matches everything"
+                                .to_string(),
+                            span: arm.span,
+                        });
+                    }
+                    match &arm.pattern {
+                        Pattern::Wildcard => {
+                            wildcard = true;
+                            self.analyze_block(&arm.body)?;
+                        }
+                        Pattern::Variant {
+                            enum_name,
+                            variant,
+                            parens,
+                            binding,
+                        } => {
+                            if *enum_name != ename {
+                                return Err(SemaError::Invalid {
+                                    message: format!(
+                                        "pattern is for enum '{enum_name}' but the matched value is '{ename}'"
+                                    ),
+                                    span: arm.span,
+                                });
+                            }
+                            let Some((_, payload)) = variants.iter().find(|(n, _)| n == variant)
+                            else {
+                                return Err(SemaError::Invalid {
+                                    message: format!("enum '{ename}' has no variant '{variant}'"),
+                                    span: arm.span,
+                                });
+                            };
+                            if !covered.insert(variant.clone()) {
+                                return Err(SemaError::Invalid {
+                                    message: format!(
+                                        "variant '{ename}.{variant}' is matched more than once"
+                                    ),
+                                    span: arm.span,
+                                });
+                            }
+                            if payload.is_some() != *parens {
+                                return Err(SemaError::Invalid {
+                                    message: if payload.is_some() {
+                                        format!("variant '{ename}.{variant}' carries a value; write {ename}.{variant}(name) or {ename}.{variant}(_)")
+                                    } else {
+                                        format!("variant '{ename}.{variant}' carries no value; remove the parentheses")
+                                    },
+                                    span: arm.span,
+                                });
+                            }
+                            self.enter_scope();
+                            let declared = match (binding, payload) {
+                                (Some(b), Some(t)) => self.declare_symbol(
+                                    b.clone(),
+                                    t.clone(),
+                                    false,
+                                    false,
+                                    arm.span,
+                                ),
+                                _ => Ok(()),
+                            };
+                            let result = declared.and_then(|_| self.analyze_block(&arm.body));
+                            self.leave_scope();
+                            result?;
+                        }
+                    }
+                }
+                if !wildcard {
+                    let missing: Vec<String> = variants
+                        .iter()
+                        .filter(|(n, _)| !covered.contains(n))
+                        .map(|(n, _)| format!("{ename}.{n}"))
+                        .collect();
+                    if !missing.is_empty() {
+                        return Err(SemaError::Invalid {
+                            message: format!(
+                                "match is not exhaustive: missing {} (add the arms or a `_` arm)",
+                                missing.join(", ")
+                            ),
+                            span: *span,
+                        });
+                    }
+                }
             }
             Stmt::For {
                 var,
@@ -817,11 +988,53 @@ impl SemanticAnalyzer {
                     _ => sig.return_type,
                 }
             }
-            ExprKind::MethodCall { .. } => {
-                return Err(SemaError::Unsupported {
-                    feature: "method calls".to_string(),
-                    span: expr.span,
-                });
+            ExprKind::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                let Some(ename) = self.enum_name_of(receiver) else {
+                    return Err(SemaError::Unsupported {
+                        feature: "method calls".to_string(),
+                        span: expr.span,
+                    });
+                };
+                let variants = self.enums[&ename].clone();
+                let Some((_, payload)) = variants.iter().find(|(n, _)| n == method) else {
+                    return Err(SemaError::Invalid {
+                        message: format!("enum '{ename}' has no variant '{method}'"),
+                        span: expr.span,
+                    });
+                };
+                match payload {
+                    None => {
+                        return Err(SemaError::Invalid {
+                            message: format!(
+                                "variant '{ename}.{method}' carries no value; write it without parentheses"
+                            ),
+                            span: expr.span,
+                        })
+                    }
+                    Some(want) => {
+                        if args.len() != 1 {
+                            return Err(SemaError::ArgumentCountMismatch {
+                                name: format!("{ename}.{method}"),
+                                expected: 1,
+                                found: args.len(),
+                                span: expr.span,
+                            });
+                        }
+                        let got = self.analyze_expression(&args[0])?;
+                        if !got.is_assignable_to(want) {
+                            return Err(SemaError::TypeMismatch {
+                                expected: want.to_string(),
+                                found: got.to_string(),
+                                span: args[0].span,
+                            });
+                        }
+                    }
+                }
+                Type::Custom(ename)
             }
             ExprKind::Array(elements) => {
                 if elements.is_empty() {
@@ -861,6 +1074,26 @@ impl SemanticAnalyzer {
                             span: collection.span,
                         })
                     }
+                }
+            }
+            ExprKind::FieldAccess { object, field } if self.enum_name_of(object).is_some() => {
+                let ename = self.enum_name_of(object).unwrap_or_default();
+                match self.enums[&ename].iter().find(|(n, _)| n == field) {
+                    None => {
+                        return Err(SemaError::Invalid {
+                            message: format!("enum '{ename}' has no variant '{field}'"),
+                            span: expr.span,
+                        })
+                    }
+                    Some((_, Some(_))) => {
+                        return Err(SemaError::Invalid {
+                            message: format!(
+                                "variant '{ename}.{field}' carries a value; write {ename}.{field}(value)"
+                            ),
+                            span: expr.span,
+                        })
+                    }
+                    Some((_, None)) => Type::Custom(ename),
                 }
             }
             ExprKind::FieldAccess { object, field } => {
@@ -1029,6 +1262,10 @@ fn block_always_returns(block: &Block) -> bool {
             else_branch: Some(el),
             ..
         } => block_always_returns(then_branch) && block_always_returns(el),
+        // Sema has already required the arms to be exhaustive.
+        Stmt::Match { arms, .. } => {
+            !arms.is_empty() && arms.iter().all(|a| block_always_returns(&a.body))
+        }
         _ => false,
     })
 }

@@ -75,6 +75,8 @@ pub struct Compiler {
     chunk: Chunk,
     /// Struct name -> field names in declaration order (struct literals are laid out in this order).
     structs: HashMap<String, Vec<String>>,
+    /// Enum names; variants are validated by semantic analysis before code generation.
+    enums: std::collections::HashSet<String>,
 }
 
 impl Compiler {
@@ -84,6 +86,30 @@ impl Compiler {
             next_slot: 0,
             chunk: Chunk::new(),
             structs: HashMap::new(),
+            enums: std::collections::HashSet::new(),
+        }
+    }
+
+    fn enum_table(program: &Program) -> std::collections::HashSet<String> {
+        program
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                TopLevelItem::Enum(e) => Some(e.name.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `Some(enum name)` for a bare identifier naming an enum that no local variable shadows.
+    fn enum_ref(&self, expr: &Expr) -> Option<String> {
+        match &expr.kind {
+            ExprKind::Identifier(n)
+                if self.enums.contains(n) && self.resolve_local(n).is_none() =>
+            {
+                Some(n.clone())
+            }
+            _ => None,
         }
     }
 
@@ -174,12 +200,14 @@ impl Compiler {
         let fail = |e: CompilerError| vec![Diagnostic::error(e.to_string(), None)];
 
         let structs = Self::struct_table(&program);
+        let enums = Self::enum_table(&program);
         let mut functions = Vec::new();
         for item in &program.items {
             if let TopLevelItem::Function(f) = item {
                 if f.name != "main" {
                     let mut fc = Compiler::new();
                     fc.structs = structs.clone();
+                    fc.enums = enums.clone();
                     for p in &f.params {
                         fc.declare_local(&p.name).map_err(fail)?;
                     }
@@ -239,6 +267,9 @@ impl Compiler {
     pub fn generate_bytecode(&mut self, program: &Program) -> Result<Chunk, CompilerError> {
         if self.structs.is_empty() {
             self.structs = Self::struct_table(program);
+        }
+        if self.enums.is_empty() {
+            self.enums = Self::enum_table(program);
         }
         let mut main_func = None;
         let mut top_level_stmts = Vec::new();
@@ -386,6 +417,66 @@ impl Compiler {
                 self.chunk.write_op(OpCode::Jump, span.line);
                 self.chunk.write_u16(loop_start, span.line);
                 self.patch_jump(exit)?;
+            }
+            Stmt::Match {
+                scrutinee,
+                arms,
+                span,
+            } => {
+                let line = span.line;
+                self.locals.push(HashMap::new());
+                let result = (|| -> Result<(), CompilerError> {
+                    self.compile_expression(scrutinee)?;
+                    let hidden = self.declare_local("$match")?;
+                    self.chunk.write_op(OpCode::SetLocal, line);
+                    self.chunk.write_u16(hidden, line);
+                    let mut to_end = Vec::new();
+                    for arm in arms {
+                        let aline = arm.span.line;
+                        match &arm.pattern {
+                            Pattern::Wildcard => {
+                                self.compile_scoped_block(&arm.body)?;
+                                to_end.push(self.emit_jump(OpCode::Jump, aline));
+                            }
+                            Pattern::Variant {
+                                enum_name,
+                                variant,
+                                binding,
+                                ..
+                            } => {
+                                let idx =
+                                    self.constant(Value::Text(format!("{enum_name}.{variant}")))?;
+                                self.chunk.write_op(OpCode::GetLocal, aline);
+                                self.chunk.write_u16(hidden, aline);
+                                self.chunk.write_op(OpCode::EnumIs, aline);
+                                self.chunk.write_u16(idx, aline);
+                                let next = self.emit_jump(OpCode::JumpIfFalse, aline);
+                                self.locals.push(HashMap::new());
+                                let arm_result = (|| -> Result<(), CompilerError> {
+                                    if let Some(name) = binding {
+                                        self.chunk.write_op(OpCode::GetLocal, aline);
+                                        self.chunk.write_u16(hidden, aline);
+                                        self.chunk.write_op(OpCode::EnumPayload, aline);
+                                        let slot = self.declare_local(name)?;
+                                        self.chunk.write_op(OpCode::SetLocal, aline);
+                                        self.chunk.write_u16(slot, aline);
+                                    }
+                                    self.compile_block_body(&arm.body)
+                                })();
+                                self.locals.pop();
+                                arm_result?;
+                                to_end.push(self.emit_jump(OpCode::Jump, aline));
+                                self.patch_jump(next)?;
+                            }
+                        }
+                    }
+                    for j in to_end {
+                        self.patch_jump(j)?;
+                    }
+                    Ok(())
+                })();
+                self.locals.pop();
+                result?;
             }
             Stmt::For {
                 var,
@@ -649,6 +740,25 @@ impl Compiler {
                 self.chunk.write_op(OpCode::Struct, line);
                 self.chunk.write_u16(name_idx, line);
                 self.chunk.write_u16(names_idx, line);
+            }
+            ExprKind::FieldAccess { object, field } if self.enum_ref(object).is_some() => {
+                let ename = self.enum_ref(object).unwrap_or_default();
+                let idx = self.constant(Value::Text(format!("{ename}.{field}")))?;
+                self.chunk.write_op(OpCode::EnumNew, line);
+                self.chunk.write_u16(idx, line);
+                self.chunk.write_byte(0, line);
+            }
+            ExprKind::MethodCall {
+                receiver,
+                method,
+                args,
+            } if self.enum_ref(receiver).is_some() && args.len() == 1 => {
+                let ename = self.enum_ref(receiver).unwrap_or_default();
+                self.compile_expression(&args[0])?;
+                let idx = self.constant(Value::Text(format!("{ename}.{method}")))?;
+                self.chunk.write_op(OpCode::EnumNew, line);
+                self.chunk.write_u16(idx, line);
+                self.chunk.write_byte(1, line);
             }
             ExprKind::FieldAccess { object, field } => {
                 self.compile_expression(object)?;

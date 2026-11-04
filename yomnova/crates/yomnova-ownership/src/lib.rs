@@ -63,6 +63,8 @@ pub struct OwnershipChecker {
     fn_returns: HashMap<String, Type>,
     /// `Some` while collecting several errors per run (see `check_program_all`).
     collected: Option<Vec<OwnershipError>>,
+    /// Enum name -> variant name -> carried value type (`Unit` when the variant carries none).
+    enums: HashMap<String, HashMap<String, Type>>,
 }
 
 impl OwnershipChecker {
@@ -77,6 +79,7 @@ impl OwnershipChecker {
             scopes: vec![HashMap::new()],
             fn_returns,
             collected: None,
+            enums: HashMap::new(),
         }
     }
 }
@@ -119,7 +122,32 @@ impl OwnershipChecker {
         }
     }
 
+    /// `Some(enum name)` when `expr` is a bare name of an enum that no variable shadows.
+    fn enum_ref(&self, expr: &Expr) -> Option<String> {
+        match &expr.kind {
+            ExprKind::Identifier(n) if self.enums.contains_key(n) && self.lookup(n).is_none() => {
+                Some(n.clone())
+            }
+            _ => None,
+        }
+    }
+
     pub fn check_program(&mut self, program: &Program) -> Result<(), OwnershipError> {
+        for item in &program.items {
+            if let TopLevelItem::Enum(d) = item {
+                let variants = d
+                    .variants
+                    .iter()
+                    .map(|v| {
+                        (
+                            v.name.clone(),
+                            v.payload.as_ref().map_or(Type::Unit, Type::from_annotation),
+                        )
+                    })
+                    .collect();
+                self.enums.insert(d.name.clone(), variants);
+            }
+        }
         for item in &program.items {
             if let TopLevelItem::Function(f) = item {
                 let ret = f
@@ -200,6 +228,12 @@ impl OwnershipChecker {
                 _ => Type::Unknown,
             },
             ExprKind::StructLiteral { name, .. } => Type::Custom(name.clone()),
+            ExprKind::FieldAccess { object, .. }
+            | ExprKind::MethodCall {
+                receiver: object, ..
+            } if self.enum_ref(object).is_some() => {
+                Type::Custom(self.enum_ref(object).unwrap_or_default())
+            }
             ExprKind::Array(els) => Type::Array(Box::new(
                 els.first().map(|e| self.infer(e)).unwrap_or(Type::Unknown),
             )),
@@ -275,6 +309,58 @@ impl OwnershipChecker {
                 let before = self.scopes.clone();
                 self.check_block(body)?;
                 self.check_moved_in_loop(&before)?;
+            }
+            Stmt::Match {
+                scrutinee, arms, ..
+            } => {
+                // Matching borrows the value; a bound payload is a fresh binding for that arm.
+                self.check_expr_use(scrutinee)?;
+                let enum_name = match self.infer(scrutinee) {
+                    Type::Custom(n) => Some(n),
+                    _ => None,
+                };
+                let before = self.scopes.clone();
+                let mut after_arms = Vec::new();
+                for arm in arms {
+                    self.scopes = before.clone();
+                    self.enter_scope();
+                    if let Pattern::Variant {
+                        variant,
+                        binding: Some(name),
+                        ..
+                    } = &arm.pattern
+                    {
+                        let ty = enum_name
+                            .as_ref()
+                            .and_then(|e| self.enums.get(e))
+                            .and_then(|vs| vs.get(variant))
+                            .cloned()
+                            .unwrap_or(Type::Unknown);
+                        let is_copy = Self::is_copy_type(&ty);
+                        self.declare(name.clone(), ty, is_copy);
+                    }
+                    let result = self.check_block(&arm.body);
+                    self.leave_scope();
+                    result?;
+                    after_arms.push(self.scopes.clone());
+                }
+                // A value moved in any arm is "maybe moved" after the match.
+                self.scopes = before;
+                for after in &after_arms {
+                    for (scope, arm_scope) in self.scopes.iter_mut().zip(after.iter()) {
+                        for (name, binding) in scope.iter_mut() {
+                            if let Some(Binding {
+                                state: VariableState::Moved { at },
+                                ..
+                            }) = arm_scope.get(name)
+                            {
+                                if binding.state == VariableState::Owned {
+                                    binding.state = VariableState::Moved { at: *at };
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Stmt::For {
                 var,
@@ -421,8 +507,14 @@ impl OwnershipChecker {
             }
             ExprKind::MethodCall { receiver, args, .. } => {
                 self.check_expr_use(receiver)?;
+                // `Enum.Variant(value)` takes ownership of its value.
+                let constructs = self.enum_ref(receiver).is_some();
                 for arg in args {
-                    self.check_expr_use(arg)?;
+                    if constructs {
+                        self.check_expr_move(arg)?;
+                    } else {
+                        self.check_expr_use(arg)?;
+                    }
                 }
             }
             ExprKind::Array(elements) => {

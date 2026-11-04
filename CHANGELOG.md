@@ -3,6 +3,11 @@
 ## Unreleased — 2026-11-03
 
 ### Language
+* **Added** `enum` (variants carry at most one value; built as `Shape.Circle(2)` / `Shape.Empty`) and the `match` statement with
+  exhaustiveness checking, `_` and `Enum.Variant(x)` patterns, duplicate/unreachable-arm errors, and move rules
+  (`match` borrows; a move in one arm makes the value maybe-moved afterwards). New opcodes `EnumNew`, `EnumIs`,
+  `EnumPayload` (38 opcodes). 11 new regression tests (71 Rust tests total), `examples/enums.yom`.
+  Not supported: nested patterns, guards, `match` as an expression.
 * **Added** `struct`: declarations, literals (`P { x: 1, y: 2 }`), field reads, nesting, structs as parameters, return values
   and array elements; by-value equality and display; checked field names, types, duplicates and recursive structs;
   moved like other non-copy values (field reads do not move). 9 new tests (60 Rust tests total), `examples/structs.yom`.

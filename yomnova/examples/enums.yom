@@ -1,0 +1,22 @@
+module enums_demo
+
+enum Shape {
+    Circle(Int),
+    Rect(Int),
+    Empty,
+}
+
+fn area(s: Shape) -> Int {
+    match s {
+        Shape.Circle(r) => { return r * r * 3 }
+        Shape.Rect(w) => { return w * w }
+        Shape.Empty => { return 0 }
+    }
+}
+
+fn main() -> Int {
+    emit(area(Shape.Circle(2)))
+    emit(area(Shape.Rect(4)))
+    emit(area(Shape.Empty))
+    return 0
+}

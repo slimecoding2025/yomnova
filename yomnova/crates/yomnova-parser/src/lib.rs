@@ -152,6 +152,7 @@ impl Parser {
                         | TokenKind::If
                         | TokenKind::While
                         | TokenKind::For
+                        | TokenKind::Match
                         | TokenKind::Emit
                         | TokenKind::CloseBrace
                 )
@@ -411,6 +412,33 @@ impl Parser {
         Ok(Block { statements, span })
     }
 
+    /// `_`, `Enum.Variant`, `Enum.Variant(name)` or `Enum.Variant(_)`.
+    fn parse_pattern(&mut self) -> Result<Pattern, ParserError> {
+        let first = self.consume_identifier("pattern")?;
+        if first == "_" {
+            return Ok(Pattern::Wildcard);
+        }
+        self.consume(&TokenKind::Dot, "'.' (patterns look like Enum.Variant)")?;
+        let variant = self.consume_identifier("variant name")?;
+        let mut parens = false;
+        let mut binding = None;
+        if self.check(&TokenKind::OpenParen) {
+            self.advance();
+            parens = true;
+            let name = self.consume_identifier("binding name or '_'")?;
+            if name != "_" {
+                binding = Some(name);
+            }
+            self.consume(&TokenKind::CloseParen, "')'")?;
+        }
+        Ok(Pattern::Variant {
+            enum_name: first,
+            variant,
+            parens,
+            binding,
+        })
+    }
+
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
         self.enter()?;
         let result = self.parse_statement_inner();
@@ -504,6 +532,33 @@ impl Parser {
             Ok(Stmt::While {
                 condition,
                 body,
+                span,
+            })
+        } else if self.check(&TokenKind::Match) {
+            self.advance();
+            let scrutinee = self.parse_expr()?;
+            self.consume(&TokenKind::OpenBrace, "'{'")?;
+            let mut arms = Vec::new();
+            while !self.check(&TokenKind::CloseBrace) && !self.is_at_end() {
+                let a_start = self.current_span();
+                let pattern = self.parse_pattern()?;
+                self.consume(&TokenKind::FatArrow, "'=>'")?;
+                let body = self.parse_block()?;
+                let span = a_start.merge(body.span);
+                arms.push(MatchArm {
+                    pattern,
+                    body,
+                    span,
+                });
+                if self.check(&TokenKind::Comma) {
+                    self.advance();
+                }
+            }
+            self.consume(&TokenKind::CloseBrace, "'}'")?;
+            let span = start_span.merge(self.previous_span());
+            Ok(Stmt::Match {
+                scrutinee,
+                arms,
                 span,
             })
         } else if self.check(&TokenKind::For) {

@@ -108,6 +108,12 @@ pub enum Stmt {
         body: Block,
         span: Span,
     },
+    /// `match value { Enum.Variant(x) => { … } … }`
+    Match {
+        scrutinee: Expr,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
     /// `for name in iterable { body }`: iterates the elements of an array.
     For {
         var: String,
@@ -241,9 +247,32 @@ impl Stmt {
             Stmt::If { span, .. } => *span,
             Stmt::While { span, .. } => *span,
             Stmt::For { span, .. } => *span,
+            Stmt::Match { span, .. } => *span,
             Stmt::Return { span, .. } => *span,
             Stmt::Flow { span, .. } => *span,
             Stmt::Expr(e) => e.span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Block,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    /// `_`: matches anything.
+    Wildcard,
+    /// `Enum.Variant` or `Enum.Variant(name)` / `Enum.Variant(_)`.
+    Variant {
+        enum_name: String,
+        variant: String,
+        /// The pattern had parentheses (the variant carries a value).
+        parens: bool,
+        /// The name bound to the carried value (`None` for `_` or no parentheses).
+        binding: Option<String>,
+    },
 }

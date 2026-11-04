@@ -11,7 +11,7 @@ Playground backed by the real compiler.
 
 ## Next (planned, in rough order)
 1. Warnings (e.g. unused variable, unreachable code). *(Multiple errors per run — parser, semantic and ownership recovery — is implemented; lexical errors are still reported one at a time.)*
-2. `enum` with `match`. *(`struct`, `for … in` over arrays, `len` and `push` are implemented.)*
+2. *(Done: `struct`, `enum` with exhaustive `match`, `for … in` over arrays, `len` and `push`. Still missing from this item: field assignment, `xs[i] = v`, nested patterns, `match` as an expression.)*
 3. Wire `yomnova-ir`: lower AST → IR → bytecode, then simple optimisations.
 4. Borrowing (shared and mutable) and lifetimes in the ownership checker.
 5. `IPv6`, `Packet` and a `NetworkBuffer` with typed, bounds-checked access.
