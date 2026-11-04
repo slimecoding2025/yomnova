@@ -711,3 +711,69 @@ fn match_binding_is_scoped_to_its_arm() {
         "Undefined identifier 'r'",
     );
 }
+
+// ---- warnings ----
+
+fn warnings(body: &str) -> Vec<(usize, String)> {
+    let src = format!("module t\n{body}");
+    match Compiler::check_with_warnings(&src) {
+        Ok((_, ws)) => ws
+            .into_iter()
+            .map(|d| (d.span.map_or(0, |s| s.line), d.message))
+            .collect(),
+        Err(ds) => panic!("expected a valid program, got errors: {ds:?}\n{body}"),
+    }
+}
+
+#[test]
+fn unused_variable_is_a_warning_not_an_error() {
+    let src = "fn main() -> Int {\n let unused = 1\n let used = 2\n emit(used)\n return 0\n}";
+    let w = warnings(src);
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert_eq!(w[0].0, 3);
+    assert!(w[0].1.contains("'unused' is never read"), "{w:?}");
+    // The program still runs.
+    ok(src, &["2"]);
+}
+
+#[test]
+fn underscore_names_parameters_and_used_values_are_not_reported() {
+    assert!(warnings("fn f(p: Int) -> Int {\n let _ignored = 1\n return 0\n}\nfn main() -> Int {\n emit(f(1))\n return 0\n}").is_empty());
+}
+
+#[test]
+fn assignment_alone_does_not_count_as_a_read() {
+    let w = warnings("fn main() -> Int {\n mut x = 1\n x = 2\n return 0\n}");
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert!(w[0].1.contains("'x'"), "{w:?}");
+}
+
+#[test]
+fn reads_inside_nested_blocks_loops_and_pipelines_count() {
+    let w = warnings("fn inc(n: Int) -> Int {\n return n + 1\n}\nfn main() -> Int {\n let a = 1\n let b = [1, 2]\n let c = 3\n mut t = 0\n for i in b {\n if i > a { t = t + c }\n }\n flow r = 5 |> inc\n return t\n}");
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert!(w[0].1.contains("'r'"), "{w:?}");
+}
+
+#[test]
+fn unused_loop_variable_and_match_binding_are_reported() {
+    let w = warnings("enum E { A(Int), B }\nfn main() -> Int {\n for x in [1] { emit(0) }\n match E.A(1) {\n E.A(v) => { emit(0) }\n E.B => { emit(1) }\n }\n return 0\n}");
+    assert_eq!(w.len(), 2, "{w:?}");
+}
+
+#[test]
+fn code_after_return_is_reported_once_per_block() {
+    let w = warnings("fn main() -> Int {\n return 0\n emit(1)\n emit(2)\n}");
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert_eq!(w[0].0, 4);
+    assert!(w[0].1.contains("unreachable"), "{w:?}");
+}
+
+#[test]
+fn clean_program_has_no_warnings_and_errors_come_first() {
+    assert!(warnings("fn main() -> Int {\n emit(1)\n return 0\n}").is_empty());
+    assert!(
+        Compiler::check_with_warnings("fn main() -> Int {\n let a: Int = \"x\"\n return 0\n}")
+            .is_err()
+    );
+}

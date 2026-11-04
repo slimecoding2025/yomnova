@@ -2,6 +2,13 @@
 
 ## Unreleased — 2026-11-03
 
+### Warnings
+* **Added** `yomnova-compiler::lint` and `Compiler::check_with_warnings`: *variable is never read* (for `let`, `mut`, `flow`,
+  `for` and `match` bindings; `_name` and parameters exempt) and *unreachable code after `return`*. The CLI prints them to
+  stderr before `run`/`check`/`build` without changing the exit code; the Playground status line counts them. 7 new
+  regression tests (78 Rust tests total). None of the shipped examples produce warnings.
+* **Not done yet:** other warnings (unused functions, shadowing, unused imports), lexical errors are still one at a time.
+
 ### Language
 * **Added** `enum` (variants carry at most one value; built as `Shape.Circle(2)` / `Shape.Empty`) and the `match` statement with
   exhaustiveness checking, `_` and `Enum.Variant(x)` patterns, duplicate/unreachable-arm errors, and move rules

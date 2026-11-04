@@ -82,7 +82,7 @@ no scroll hijacking or smooth-scroll library. The skill's horizontal-scroll exam
 
 ## 5. Known limitations (final state)
 
-1. (Updated after this audit: several errors per run are now reported; lexical errors are still one at a time; stages are sequential.) No warnings.
+1. (Updated after this audit: several errors per run are now reported; lexical errors are still one at a time; stages are sequential.) Warnings were added later (unused binding, unreachable code).
 2. Ownership is move-only; no borrows/lifetimes/resources/typestate. Values whose type cannot be inferred are treated as
    copy (conservative against false positives, so it can miss a move).
 3. (Updated after this audit: `for … in` over arrays, `len` and `push` now exist.) methods, lambdas and `import` are not supported (`struct`, `enum` and `match` were added later).

@@ -135,7 +135,7 @@ a failing statement or function (at most 20 errors per stage). A name whose decl
 follow-on "undefined" errors. Stages are still sequential: semantic analysis runs only if parsing succeeded, and the
 ownership check only if semantic analysis succeeded, so fixing the reported errors can reveal errors from the next
 stage. Lexical errors are still reported one at a time. Runtime failures are reported as `Runtime error: …` and exit
-with code 1. There are no warnings yet.
+with code 1. Warnings are printed to stderr as `file:line:col: warning: …` before the program runs and never change the exit code. There are two: a `let`/`mut`/`flow`/`for`/`match` binding that is never read (assignments do not count; names starting with `_` and function parameters are exempt), and a statement that follows `return` in the same block. Warnings are only produced for a program that has no errors.
 
 ## 10. Formatting
 

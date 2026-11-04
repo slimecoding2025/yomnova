@@ -146,6 +146,15 @@ fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
                 file: file.clone(),
             };
 
+            // Warnings go to stderr before anything else; they never change the exit code.
+            if matches!(command, "run" | "check" | "build") {
+                if let Ok((_, warnings)) = Compiler::check_with_warnings(&source) {
+                    for w in &warnings {
+                        eprint!("{}", w.render(Some(&source), Some(&file)));
+                    }
+                }
+            }
+
             match command {
                 "run" => {
                     let out = Compiler::compile_and_run(&source).map_err(diag)?;

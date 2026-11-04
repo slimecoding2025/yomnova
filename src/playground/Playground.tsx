@@ -72,7 +72,9 @@ export function Playground({ version }: { version: string }) {
       const [r, t, a, b] = await Promise.all([api.run(code), api.tokens(code), api.ast(code), api.disassemble(code)]);
       if (id !== seq.current) return;
       setRes({ run: r, tokens: t, ast: a, bytecode: b });
-      setStatus({ ok: r.ok, text: r.ok ? `Finished in ${r.durationMs} ms` : r.timedOut ? "Timed out" : `Failed (exit ${r.exitCode})` });
+      const warns = r.ok ? (r.stderr.match(/: warning:/g) ?? []).length : 0;
+      const warnNote = warns ? ` · ${warns} warning${warns === 1 ? "" : "s"} (see Diagnostics)` : "";
+      setStatus({ ok: r.ok, text: r.ok ? `Finished in ${r.durationMs} ms${warnNote}` : r.timedOut ? "Timed out" : `Failed (exit ${r.exitCode})` });
       setTab(r.ok ? "output" : "diagnostics");
     } catch {
       setStatus({ ok: false, text: "Could not reach the compiler server" });
@@ -86,7 +88,8 @@ export function Playground({ version }: { version: string }) {
     try {
       const r = await api.check(code);
       setRes((s) => ({ ...s, run: r }));
-      setStatus({ ok: r.ok, text: r.ok ? "Check passed: types and ownership are valid" : "Check failed" });
+      const warns = r.ok ? (r.stderr.match(/: warning:/g) ?? []).length : 0;
+      setStatus({ ok: r.ok, text: r.ok ? `Check passed: types and ownership are valid${warns ? ` · ${warns} warning${warns === 1 ? "" : "s"} (see Diagnostics)` : ""}` : "Check failed" });
       setTab(r.ok ? "output" : "diagnostics");
     } catch {
       setStatus({ ok: false, text: "Could not reach the compiler server" });

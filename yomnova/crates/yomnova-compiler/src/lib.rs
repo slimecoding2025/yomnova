@@ -1,6 +1,7 @@
 //! YOMNOVA Multi-Stage Compiler Driver and Bytecode Generator.
 
 pub mod format;
+pub mod lint;
 
 use std::collections::HashMap;
 use yomnova_ast::*;
@@ -170,6 +171,15 @@ impl Compiler {
     pub fn ast_dump(source: &str) -> Result<String, Vec<Diagnostic>> {
         let program = lex_and_parse(source)?;
         Ok(format!("{program:#?}"))
+    }
+
+    /// Like [`Compiler::check`], and also returns the warnings (see [`lint`]) for a valid program.
+    pub fn check_with_warnings(
+        source: &str,
+    ) -> Result<(Program, Vec<Diagnostic>), Vec<Diagnostic>> {
+        let program = Self::check(source)?;
+        let warnings = lint::lint(&program);
+        Ok((program, warnings))
     }
 
     /// Verification only: Lex -> Parse -> Semantic Analysis -> Ownership Check

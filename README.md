@@ -154,7 +154,7 @@ the parser caps nesting (150). The language has no file, process or network acce
 `unsafe` code.
 
 ## 15. Known limitations
-Several errors per run, but lexical errors are reported one at a time and later stages wait for earlier ones · no warnings · no borrowing/lifetimes · `build` emits text, not a loadable binary ·
+Several errors per run, but lexical errors are reported one at a time and later stages wait for earlier ones · only two warnings (unused binding, unreachable code) · no borrowing/lifetimes · `build` emits text, not a loadable binary ·
 the formatter only re-indents · the Playground editor is a plain text area with a small highlighter (not Monaco) ·
 IR, `yomnova-network-core` and `yomnova-stdlib` are not wired into the pipeline.
 
