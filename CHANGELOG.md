@@ -3,6 +3,10 @@
 ## Unreleased — 2026-11-03
 
 ### Language
+* **Added** `struct`: declarations, literals (`P { x: 1, y: 2 }`), field reads, nesting, structs as parameters, return values
+  and array elements; by-value equality and display; checked field names, types, duplicates and recursive structs;
+  moved like other non-copy values (field reads do not move). 9 new tests (60 Rust tests total), `examples/structs.yom`.
+  Not supported: field assignment, methods, generics.
 * **Added** `for name in array { … }`, and the built-ins `len(Array|Text) -> Int` and `push(array, value) -> Array`
   (returns a new array; the old one is consumed). New opcode `OP_LEN` (33 opcodes). The VM caps arrays at 1,000,000
   elements. 11 new regression tests (51 Rust tests total) and `examples/arrays.yom`.

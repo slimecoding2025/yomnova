@@ -119,6 +119,8 @@ pub struct SemanticAnalyzer {
     pub expression_types: HashMap<Span, Type>,
     /// `Some` while collecting several errors per run (see `analyze_program_all`).
     collected: Option<Vec<SemaError>>,
+    /// Declared structs: name -> fields in declaration order.
+    structs: HashMap<String, Vec<(String, Type)>>,
     /// Names whose declaration failed; later "undefined" errors for them are cascades.
     poisoned: HashSet<String>,
 }
@@ -137,6 +139,7 @@ impl SemanticAnalyzer {
             current_return_type: None,
             expression_types: HashMap::new(),
             collected: None,
+            structs: HashMap::new(),
             poisoned: HashSet::new(),
         };
 
@@ -237,10 +240,73 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// A type annotation may only name built-in types or declared structs.
+    fn validate_annotation(&self, anno: &TypeAnnotation, span: Span) -> Result<(), SemaError> {
+        match anno {
+            TypeAnnotation::Array(inner) => self.validate_annotation(inner, span),
+            TypeAnnotation::Custom(name) if !self.structs.contains_key(name) => {
+                Err(SemaError::Invalid {
+                    message: format!("unknown type '{name}'"),
+                    span,
+                })
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn register_structs(&mut self, program: &Program) -> Result<(), SemaError> {
+        // Names first, so structs may refer to each other regardless of order.
+        let mut seen = HashSet::new();
+        for item in &program.items {
+            if let TopLevelItem::Struct(d) = item {
+                if !seen.insert(d.name.clone()) {
+                    return Err(SemaError::DuplicateDeclaration {
+                        name: d.name.clone(),
+                        span: d.span,
+                    });
+                }
+                self.structs.insert(d.name.clone(), Vec::new());
+            }
+        }
+        for item in &program.items {
+            if let TopLevelItem::Struct(d) = item {
+                let mut fields: Vec<(String, Type)> = Vec::new();
+                for f in &d.fields {
+                    if fields.iter().any(|(n, _)| *n == f.name) {
+                        return Err(SemaError::DuplicateDeclaration {
+                            name: f.name.clone(),
+                            span: f.span,
+                        });
+                    }
+                    self.validate_annotation(&f.ty, f.span)?;
+                    if matches!(&f.ty, TypeAnnotation::Custom(n) if *n == d.name) {
+                        return Err(SemaError::Invalid {
+                            message: format!(
+                                "struct '{}' contains itself, so it would have infinite size",
+                                d.name
+                            ),
+                            span: f.span,
+                        });
+                    }
+                    fields.push((f.name.clone(), Type::from_annotation(&f.ty)));
+                }
+                self.structs.insert(d.name.clone(), fields);
+            }
+        }
+        Ok(())
+    }
+
     pub fn analyze_program(&mut self, program: &Program) -> Result<(), SemaError> {
+        self.register_structs(program)?;
         // First pass: collect function signatures
         for item in &program.items {
             if let TopLevelItem::Function(func) = item {
+                for p in &func.params {
+                    self.validate_annotation(&p.ty, p.span)?;
+                }
+                if let Some(r) = &func.return_type {
+                    self.validate_annotation(r, func.span)?;
+                }
                 let params = func
                     .params
                     .iter()
@@ -274,20 +340,11 @@ impl SemanticAnalyzer {
 
         // Reject declarations that have no implementation instead of silently ignoring them.
         for item in &program.items {
-            match item {
-                TopLevelItem::Struct(d) => {
-                    return Err(SemaError::Unsupported {
-                        feature: format!("struct '{}'", d.name),
-                        span: d.span,
-                    })
-                }
-                TopLevelItem::Enum(d) => {
-                    return Err(SemaError::Unsupported {
-                        feature: format!("enum '{}'", d.name),
-                        span: d.span,
-                    })
-                }
-                _ => {}
+            if let TopLevelItem::Enum(d) = item {
+                return Err(SemaError::Unsupported {
+                    feature: format!("enum '{}'", d.name),
+                    span: d.span,
+                });
             }
         }
 
@@ -319,6 +376,7 @@ impl SemanticAnalyzer {
             if let TopLevelItem::Const(c) = item {
                 let val_ty = self.analyze_expression(&c.value)?;
                 let ty = if let Some(ref anno) = c.ty {
+                    self.validate_annotation(anno, c.span)?;
                     let expected = Type::from_annotation(anno);
                     if !val_ty.is_assignable_to(&expected) {
                         return Err(SemaError::TypeMismatch {
@@ -403,6 +461,7 @@ impl SemanticAnalyzer {
             } => {
                 let init_ty = self.analyze_expression(init)?;
                 let final_ty = if let Some(ref anno) = ty {
+                    self.validate_annotation(anno, *span)?;
                     let expected = Type::from_annotation(anno);
                     if !init_ty.is_assignable_to(&expected) {
                         return Err(SemaError::TypeMismatch {
@@ -425,6 +484,7 @@ impl SemanticAnalyzer {
             } => {
                 let init_ty = self.analyze_expression(init)?;
                 let final_ty = if let Some(ref anno) = ty {
+                    self.validate_annotation(anno, *span)?;
                     let expected = Type::from_annotation(anno);
                     if !init_ty.is_assignable_to(&expected) {
                         return Err(SemaError::TypeMismatch {
@@ -803,11 +863,63 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            ExprKind::FieldAccess { .. } => {
-                return Err(SemaError::Unsupported {
-                    feature: "field access".to_string(),
-                    span: expr.span,
-                });
+            ExprKind::FieldAccess { object, field } => {
+                let obj_ty = self.analyze_expression(object)?;
+                match &obj_ty {
+                    Type::Custom(name) if self.structs.contains_key(name) => self.structs[name]
+                        .iter()
+                        .find(|(n, _)| n == field)
+                        .map(|(_, t)| t.clone())
+                        .ok_or_else(|| SemaError::Invalid {
+                            message: format!("struct '{name}' has no field '{field}'"),
+                            span: expr.span,
+                        })?,
+                    Type::Unknown => Type::Unknown,
+                    other => {
+                        return Err(SemaError::Invalid {
+                            message: format!("cannot read field '{field}' of type {other}"),
+                            span: expr.span,
+                        })
+                    }
+                }
+            }
+            ExprKind::StructLiteral { name, fields } => {
+                let Some(decl) = self.structs.get(name).cloned() else {
+                    return Err(SemaError::Invalid {
+                        message: format!("unknown struct '{name}'"),
+                        span: expr.span,
+                    });
+                };
+                let mut given: HashSet<&str> = HashSet::new();
+                for (fname, value) in fields {
+                    let Some((_, want)) = decl.iter().find(|(n, _)| n == fname) else {
+                        return Err(SemaError::Invalid {
+                            message: format!("struct '{name}' has no field '{fname}'"),
+                            span: value.span,
+                        });
+                    };
+                    if !given.insert(fname.as_str()) {
+                        return Err(SemaError::Invalid {
+                            message: format!("field '{fname}' is given more than once"),
+                            span: value.span,
+                        });
+                    }
+                    let got = self.analyze_expression(value)?;
+                    if !got.is_assignable_to(want) {
+                        return Err(SemaError::TypeMismatch {
+                            expected: want.to_string(),
+                            found: got.to_string(),
+                            span: value.span,
+                        });
+                    }
+                }
+                if let Some((missing, _)) = decl.iter().find(|(n, _)| !given.contains(n.as_str())) {
+                    return Err(SemaError::Invalid {
+                        message: format!("missing field '{missing}' in '{name}'"),
+                        span: expr.span,
+                    });
+                }
+                Type::Custom(name.clone())
             }
             ExprKind::Pipe {
                 expr: source,

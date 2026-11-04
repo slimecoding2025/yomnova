@@ -73,6 +73,8 @@ pub struct Compiler {
     locals: Vec<HashMap<String, u16>>,
     next_slot: u16,
     chunk: Chunk,
+    /// Struct name -> field names in declaration order (struct literals are laid out in this order).
+    structs: HashMap<String, Vec<String>>,
 }
 
 impl Compiler {
@@ -81,7 +83,22 @@ impl Compiler {
             locals: vec![HashMap::new()],
             next_slot: 0,
             chunk: Chunk::new(),
+            structs: HashMap::new(),
         }
+    }
+
+    fn struct_table(program: &Program) -> HashMap<String, Vec<String>> {
+        program
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                TopLevelItem::Struct(s) => Some((
+                    s.name.clone(),
+                    s.fields.iter().map(|f| f.name.clone()).collect(),
+                )),
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -156,11 +173,13 @@ impl Compiler {
 
         let fail = |e: CompilerError| vec![Diagnostic::error(e.to_string(), None)];
 
+        let structs = Self::struct_table(&program);
         let mut functions = Vec::new();
         for item in &program.items {
             if let TopLevelItem::Function(f) = item {
                 if f.name != "main" {
                     let mut fc = Compiler::new();
+                    fc.structs = structs.clone();
                     for p in &f.params {
                         fc.declare_local(&p.name).map_err(fail)?;
                     }
@@ -174,6 +193,7 @@ impl Compiler {
         }
 
         let mut compiler = Compiler::new();
+        compiler.structs = structs;
         let main = compiler.generate_bytecode(&program).map_err(fail)?;
         Ok(CompiledUnit {
             ast: program,
@@ -217,6 +237,9 @@ impl Compiler {
     }
 
     pub fn generate_bytecode(&mut self, program: &Program) -> Result<Chunk, CompilerError> {
+        if self.structs.is_empty() {
+            self.structs = Self::struct_table(program);
+        }
         let mut main_func = None;
         let mut top_level_stmts = Vec::new();
 
@@ -607,6 +630,32 @@ impl Compiler {
                 self.chunk.write_op(OpCode::Array, line);
                 self.chunk.write_u16(len, line);
             }
+            ExprKind::StructLiteral { name, fields } => {
+                let order = self.structs.get(name).cloned().ok_or_else(|| {
+                    CompilerError::Codegen(format!("unknown struct '{name}' at line {line}"))
+                })?;
+                // Initialisers are evaluated in declaration order.
+                for fname in &order {
+                    let Some((_, value)) = fields.iter().find(|(n, _)| n == fname) else {
+                        return Err(CompilerError::Codegen(format!(
+                            "missing field '{fname}' in '{name}' at line {line}"
+                        )));
+                    };
+                    self.compile_expression(value)?;
+                }
+                let name_idx = self.constant(Value::Text(name.clone()))?;
+                let names = Value::Array(order.into_iter().map(Value::Text).collect());
+                let names_idx = self.constant(names)?;
+                self.chunk.write_op(OpCode::Struct, line);
+                self.chunk.write_u16(name_idx, line);
+                self.chunk.write_u16(names_idx, line);
+            }
+            ExprKind::FieldAccess { object, field } => {
+                self.compile_expression(object)?;
+                let idx = self.constant(Value::Text(field.clone()))?;
+                self.chunk.write_op(OpCode::Field, line);
+                self.chunk.write_u16(idx, line);
+            }
             ExprKind::Index { collection, index } => {
                 self.compile_expression(collection)?;
                 self.compile_expression(index)?;
@@ -650,7 +699,6 @@ impl Compiler {
 fn expr_kind_name(kind: &ExprKind) -> &'static str {
     match kind {
         ExprKind::MethodCall { .. } => "method call",
-        ExprKind::FieldAccess { .. } => "field access",
         ExprKind::Lambda { .. } => "lambda",
         _ => "expression",
     }

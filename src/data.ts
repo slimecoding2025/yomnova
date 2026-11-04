@@ -27,7 +27,7 @@ export const DOMAINS: Domain[] = [
     name: "Application programming",
     status: "partial",
     today: "Functions, recursion, let/mut bindings, if/else, while, for-in over arrays, len and push, Text, Int, Float, Bool.",
-    next: "Structs, enums, match, imports.",
+    next: "Enums, match, imports.",
   },
   {
     name: "Systems programming",
@@ -141,7 +141,7 @@ export const STAGES: Stage[] = [
     name: "Semantic analysis",
     crate: "yomnova-sema",
     status: "partial",
-    note: "Scopes, duplicate and undefined names, mutability, return paths, call arity. Structs, enums, methods and lambdas are rejected as unsupported.",
+    note: "Scopes, duplicate and undefined names, mutability, return paths, call arity. Enums, methods and lambdas are rejected as unsupported.",
   },
   {
     name: "Type checking",
@@ -249,7 +249,7 @@ export const ROADMAP: Record<Status, RoadmapItem[]> = {
     { title: "Formatter", note: "re-indents only" },
   ],
   planned: [
-    { title: "Structs, enums, match" },
+    { title: "Enums and match" },
     { title: "Imports and a standard library" },
     { title: "IR lowering and optimisation" },
     { title: "Borrow checker and lifetimes" },

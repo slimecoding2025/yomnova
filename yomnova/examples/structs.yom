@@ -1,0 +1,18 @@
+module structs_demo
+
+struct Endpoint2 {
+    host: Text,
+    port: Int,
+}
+
+fn describe(e: Endpoint2) -> Text {
+    return e.host
+}
+
+fn main() -> Int {
+    let server = Endpoint2 { host: "example.org", port: 8080 }
+    emit(server.port)
+    emit(server)
+    emit(describe(server))
+    return 0
+}

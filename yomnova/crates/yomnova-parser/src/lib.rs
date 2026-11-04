@@ -923,6 +923,33 @@ impl Parser {
                         });
                     }
 
+                    // Struct literal: `Name { field: expr, … }`. Only an uppercase name followed by
+                    // `{ ident :` is a literal, so `if x == Limit { … }` and `for a in Items { … }`
+                    // keep meaning "expression, then block".
+                    if name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                        && self.check(&TokenKind::OpenBrace)
+                        && matches!(self.peek_at(1), Some(TokenKind::Identifier(_)))
+                        && matches!(self.peek_at(2), Some(TokenKind::Colon))
+                    {
+                        self.advance(); // {
+                        let mut fields = Vec::new();
+                        while !self.check(&TokenKind::CloseBrace) && !self.is_at_end() {
+                            let f = self.consume_identifier("field name")?;
+                            self.consume(&TokenKind::Colon, "':'")?;
+                            let v = self.parse_expr()?;
+                            fields.push((f, v));
+                            if self.check(&TokenKind::Comma) {
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                        self.consume(&TokenKind::CloseBrace, "'}'")?;
+                        return Ok(Expr {
+                            kind: ExprKind::StructLiteral { name, fields },
+                            span: span.merge(self.previous_span()),
+                        });
+                    }
                     Ok(Expr {
                         kind: ExprKind::Identifier(name),
                         span,
@@ -1140,6 +1167,11 @@ impl Parser {
         } else {
             Some(&self.tokens[self.cursor].kind)
         }
+    }
+
+    /// Token kind `n` positions after the current one (`peek_at(0)` is the current token).
+    fn peek_at(&self, n: usize) -> Option<&TokenKind> {
+        self.tokens.get(self.cursor + n).map(|t| &t.kind)
     }
 
     fn peek_second_kind(&self) -> Option<&TokenKind> {

@@ -199,6 +199,7 @@ impl OwnershipChecker {
                 ExprKind::Identifier(n) => self.fn_returns.get(n).cloned().unwrap_or(Type::Unknown),
                 _ => Type::Unknown,
             },
+            ExprKind::StructLiteral { name, .. } => Type::Custom(name.clone()),
             ExprKind::Array(els) => Type::Array(Box::new(
                 els.first().map(|e| self.infer(e)).unwrap_or(Type::Unknown),
             )),
@@ -429,6 +430,14 @@ impl OwnershipChecker {
                     self.check_expr_move(el)?;
                 }
             }
+            // Building a struct moves the values put into it.
+            ExprKind::StructLiteral { fields, .. } => {
+                for (_, value) in fields {
+                    self.check_expr_move(value)?;
+                }
+            }
+            // Reading a field is a use of the struct; it does not move the struct.
+            ExprKind::FieldAccess { object, .. } => self.check_expr_use(object)?,
             ExprKind::Index { collection, index } => {
                 self.check_expr_use(collection)?;
                 self.check_expr_use(index)?;

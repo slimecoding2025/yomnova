@@ -189,7 +189,7 @@ fn static_checks() {
         "must not take parameters",
     );
     err(
-        "struct P { x: Int }\nfn main() -> Int {\n return 0\n}",
+        "enum E { A }\nfn main() -> Int {\n return 0\n}",
         "not supported",
     );
     err(
@@ -233,7 +233,7 @@ fn ownership_rules() {
 #[test]
 fn unsupported_syntax_is_reported_not_miscompiled() {
     err(
-        "fn main() -> Int {\n let y = 1\n let x = y.z\n return 0\n}",
+        "fn main() -> Int {\n let y = 1\n let x = y.z()\n return 0\n}",
         "not supported",
     );
 }
@@ -444,5 +444,113 @@ fn nested_for_loops() {
     ok(
         "fn main() -> Int {\n for a in [1, 2] { for b in [10, 20] { emit(a * b) } }\n return 0\n}",
         &["10", "20", "20", "40"],
+    );
+}
+
+// ---- structs ----
+
+const POINT: &str = "struct Point { x: Int, y: Int }\n";
+
+#[test]
+fn struct_literal_field_read_and_display() {
+    ok(
+        &format!("{POINT}fn main() -> Int {{\n let p = Point {{ y: 4, x: 3 }}\n emit(p)\n emit(p.x)\n return 0\n}}"),
+        &["Point { x: 3, y: 4 }", "3"],
+    );
+}
+
+#[test]
+fn struct_as_parameter_and_nested_struct() {
+    ok(
+        &format!(
+            "{POINT}struct Line {{ from: Point, to: Point }}\nfn d(p: Point) -> Int {{\n return p.x * p.x + p.y * p.y\n}}\nfn main() -> Int {{\n let l = Line {{ from: Point {{ x: 0, y: 0 }}, to: Point {{ x: 3, y: 4 }} }}\n emit(d(l.to))\n emit(l.to.y)\n return 0\n}}"
+        ),
+        &["25", "4"],
+    );
+}
+
+#[test]
+fn structs_compare_by_value_regardless_of_field_order_in_the_literal() {
+    ok(
+        &format!("{POINT}fn main() -> Int {{\n let a = Point {{ x: 1, y: 2 }}\n let b = Point {{ y: 2, x: 1 }}\n emit(a == b)\n return 0\n}}"),
+        &["true"],
+    );
+}
+
+#[test]
+fn array_of_structs_in_a_for_loop() {
+    ok(
+        &format!("{POINT}fn main() -> Int {{\n mut s: Int = 0\n for q in [Point {{ x: 1, y: 0 }}, Point {{ x: 2, y: 0 }}] {{ s = s + q.x }}\n emit(s)\n return 0\n}}"),
+        &["3"],
+    );
+}
+
+#[test]
+fn struct_literal_errors() {
+    let body = |lit: &str| format!("{POINT}fn main() -> Int {{\n let p = {lit}\n return 0\n}}");
+    err(&body("Point { x: 1 }"), "missing field 'y'");
+    err(
+        &body("Point { x: 1, y: \"s\" }"),
+        "expected Int, found Text",
+    );
+    err(&body("Point { x: 1, y: 2, z: 3 }"), "has no field 'z'");
+    err(&body("Point { x: 1, x: 2, y: 3 }"), "more than once");
+    err(&body("Nope { q: 1 }"), "unknown struct 'Nope'");
+}
+
+#[test]
+fn field_access_errors() {
+    err(
+        &format!("{POINT}fn main() -> Int {{\n let p = Point {{ x: 1, y: 2 }}\n emit(p.z)\n return 0\n}}"),
+        "has no field 'z'",
+    );
+    err(
+        "fn main() -> Int {\n emit(5.x)\n return 0\n}",
+        "cannot read field",
+    );
+}
+
+#[test]
+fn struct_declaration_errors() {
+    err(
+        "struct A { a: A }\nfn main() -> Int { return 0 }",
+        "infinite size",
+    );
+    err(
+        "struct A { a: Int, a: Int }\nfn main() -> Int { return 0 }",
+        "already declared",
+    );
+    err(
+        "struct A { a: Int }\nstruct A { b: Int }\nfn main() -> Int { return 0 }",
+        "already declared",
+    );
+    err(
+        "struct A { a: Missing }\nfn main() -> Int { return 0 }",
+        "unknown type 'Missing'",
+    );
+    err(
+        "fn main() -> Int {\n let x: Missing = 1\n return 0\n}",
+        "unknown type 'Missing'",
+    );
+}
+
+#[test]
+fn structs_are_moved_but_field_reads_do_not_move() {
+    ok(
+        &format!("{POINT}fn main() -> Int {{\n let p = Point {{ x: 1, y: 2 }}\n emit(p.x)\n emit(p.y)\n emit(p)\n return 0\n}}"),
+        &["1", "2", "Point { x: 1, y: 2 }"],
+    );
+    err(
+        &format!("{POINT}fn take(p: Point) -> Int {{\n return p.x\n}}\nfn main() -> Int {{\n let p = Point {{ x: 1, y: 2 }}\n take(p)\n emit(p.x)\n return 0\n}}"),
+        "moved value",
+    );
+}
+
+#[test]
+fn braces_after_an_uppercase_name_still_open_a_block() {
+    // `Limit { emit(...) }` is not a struct literal: it is not followed by `ident :`.
+    ok(
+        "const Limit = 3\nfn main() -> Int {\n if 3 == Limit { emit(\"eq\") }\n for a in [1] { emit(a) }\n return 0\n}",
+        &["eq", "1"],
     );
 }

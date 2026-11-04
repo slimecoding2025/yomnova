@@ -36,13 +36,15 @@ pub enum OpCode {
     Emit,
     Array, // [u16: length]
     Index,
-    Len, // pops an Array or Text, pushes its length as Int
+    Len,    // pops an Array or Text, pushes its length as Int
+    Struct, // [u16: name constant][u16: field-names constant]; pops one value per field
+    Field,  // [u16: field-name constant]; pops a struct, pushes that field
     Halt,
 }
 
 impl OpCode {
     /// Every opcode, in discriminant order. `ALL[op as usize] == op`.
-    pub const ALL: [OpCode; 33] = [
+    pub const ALL: [OpCode; 35] = [
         OpCode::Constant,
         OpCode::Nil,
         OpCode::True,
@@ -75,6 +77,8 @@ impl OpCode {
         OpCode::Array,
         OpCode::Index,
         OpCode::Len,
+        OpCode::Struct,
+        OpCode::Field,
         OpCode::Halt,
     ];
 
@@ -99,6 +103,11 @@ pub enum Value {
     Packet {
         header: Vec<u8>,
         payload: Vec<u8>,
+    },
+    /// A struct value; fields are kept in declaration order.
+    Struct {
+        name: String,
+        fields: Vec<(String, Value)>,
     },
     NativeFunction(String),
     UserFunction {
@@ -145,6 +154,13 @@ impl fmt::Display for Value {
             Value::Port(p) => write!(f, "{p}"),
             Value::Endpoint(ip, p) => write!(f, "{}.{}.{}.{}:{}", ip[0], ip[1], ip[2], ip[3], p),
             Value::Packet { payload, .. } => write!(f, "Packet(len={})", payload.len()),
+            Value::Struct { name, fields } => {
+                write!(f, "{name} {{")?;
+                for (i, (k, v)) in fields.iter().enumerate() {
+                    write!(f, "{}{k}: {v}", if i == 0 { " " } else { ", " })?;
+                }
+                write!(f, " }}")
+            }
             Value::NativeFunction(name) => write!(f, "<native fn {name}>"),
             Value::UserFunction { name, .. } => write!(f, "<fn {name}>"),
         }
@@ -291,6 +307,14 @@ impl Chunk {
             OpCode::Emit => (format!("{out}OP_EMIT"), offset + 1),
             OpCode::Index => (format!("{out}OP_INDEX"), offset + 1),
             OpCode::Len => (format!("{out}OP_LEN"), offset + 1),
+            OpCode::Struct => {
+                let name = ((self.code[offset + 1] as usize) << 8) | self.code[offset + 2] as usize;
+                (format!("{out}OP_STRUCT (name const {name})"), offset + 5)
+            }
+            OpCode::Field => {
+                let name = ((self.code[offset + 1] as usize) << 8) | self.code[offset + 2] as usize;
+                (format!("{out}OP_FIELD (name const {name})"), offset + 3)
+            }
             OpCode::Return => (format!("{out}OP_RETURN"), offset + 1),
             OpCode::Halt => (format!("{out}OP_HALT"), offset + 1),
         }

@@ -5,7 +5,7 @@ as unsupported. Lexical details are in `crates/yomnova-lexer/src/lib.rs`.
 
 ```ebnf
 program      = [ "module" IDENT ] { item } ;
-item         = function | const_decl | struct_decl † | enum_decl † | statement ;
+item         = function | const_decl | struct_decl | enum_decl † | statement ;
 
 function     = "fn" IDENT "(" [ param { "," param } ] ")" [ "->" type ] [ effects ] block ;
 param        = [ "mut" ] IDENT ":" type ;
@@ -36,10 +36,11 @@ cmp_expr     = add_expr { ( "<" | "<=" | ">" | ">=" ) add_expr } ;
 add_expr     = mul_expr { ( "+" | "-" ) mul_expr } ;
 mul_expr     = unary    { ( "*" | "/" | "%" ) unary } ;
 unary        = ( "-" | "!" ) unary | postfix ;
-postfix      = primary { "(" [ args ] ")" | "[" expr "]" | "." IDENT † [ "(" [ args ] ")" ] } ;
-primary      = INT | FLOAT | STRING | "true" | "false" | "(" expr ")" | "[" [ args ] "]" | IDENT
+postfix      = primary { "(" [ args ] ")" | "[" expr "]" | "." IDENT [ "(" [ args ]  ")" ] † } ;
+primary      = INT | FLOAT | STRING | "true" | "false" | "(" expr ")" | "[" [ args ] "]" | IDENT | struct_lit
              | "emit" | "IPv4" | "Port" | "Endpoint" ;
 args         = expr { "," expr } ;
+struct_lit   = UPPER_IDENT "{" IDENT ":" expr { "," IDENT ":" expr } [ "," ] "}" ;   (* only when an uppercase name is followed by `{ ident :` *)
 
 type         = "Int" | "Float" | "Bool" | "Text" | "Unit"
              | "Array" "<" type ">"

@@ -30,7 +30,7 @@ coherent language where network types, ownership and dataflow are part of the la
   limits, and the `|>` pipeline operator / `flow` bindings.
 * **Partial:** arrays (`len`, `push` returning a new array, `for … in`; no element assignment or nested-array typing beyond inference), ownership (moves only), type inference (local), formatter
   (re-indent only).
-* **Parsed but rejected:** `struct`, `enum`, methods, field access, lambdas.
+* **Parsed but rejected:** `enum`, `match`, methods, lambdas. `struct` works (literals, field reads; no field assignment).
 * **Planned / Research:** borrowing and lifetimes, `IPv6`/`Packet`/`TCP`/`UDP`, concurrency, distributed
   runtime, IR optimisation, native code generation. See [docs/ROADMAP.md](docs/ROADMAP.md).
 

@@ -17,7 +17,8 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | Static call-argument type checks | Implemented (was runtime-only) | `static_checks` |
 | Missing-return detection | Implemented | `static_checks` |
 | Ownership: moves, branches, loops, aliasing | Partial (moves only) | `ownership_rules` |
-| `struct`, `enum`, methods, lambdas, field access | Parsed-only, rejected clearly | `unsupported_syntax_is_reported_not_miscompiled` |
+| `struct` (declaration, literal, field read, nesting) | Implemented | `struct_*` and `field_access_errors` regression tests |
+| `enum`, `match`, methods, lambdas | Parsed-only, rejected clearly | `unsupported_syntax_is_reported_not_miscompiled`, `static_checks` |
 | `for`, `match`, `import`, `type` | Planned (reserved words only) | — |
 | Borrowing, lifetimes, concurrency, `IPv6`/`Packet`/`TCP`/`UDP` | Planned | — |
 
@@ -32,7 +33,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 51 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 60 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.

@@ -416,6 +416,54 @@ impl Vm {
                         }
                     }
                 }
+                OpCode::Struct => {
+                    let name_idx = self.read_u16()? as usize;
+                    let names_idx = self.read_u16()? as usize;
+                    let (name, names) = (self.constant_at(name_idx), self.constant_at(names_idx));
+                    let (Some(Value::Text(name)), Some(Value::Array(names))) = (name, names) else {
+                        return Err(VmError::TypeError("malformed struct constant".to_string()));
+                    };
+                    let mut values = Vec::with_capacity(names.len());
+                    for _ in 0..names.len() {
+                        values.push(self.pop()?);
+                    }
+                    values.reverse();
+                    let fields = names
+                        .into_iter()
+                        .zip(values)
+                        .map(|(n, v)| match n {
+                            Value::Text(s) => (s, v),
+                            _ => (String::new(), v),
+                        })
+                        .collect();
+                    self.push(Value::Struct { name, fields })?;
+                }
+                OpCode::Field => {
+                    let name_idx = self.read_u16()? as usize;
+                    let field = match self.constant_at(name_idx) {
+                        Some(Value::Text(s)) => s,
+                        _ => {
+                            return Err(VmError::TypeError("malformed field constant".to_string()))
+                        }
+                    };
+                    match self.pop()? {
+                        Value::Struct { name, fields } => {
+                            match fields.into_iter().find(|(k, _)| *k == field) {
+                                Some((_, v)) => self.push(v)?,
+                                None => {
+                                    return Err(VmError::TypeError(format!(
+                                        "{name} has no field '{field}'"
+                                    )))
+                                }
+                            }
+                        }
+                        other => {
+                            return Err(VmError::TypeError(format!(
+                                "cannot read field '{field}' of {other:?}"
+                            )))
+                        }
+                    }
+                }
                 OpCode::Len => {
                     let v = self.pop()?;
                     let n = Self::length_of(&v)?;
@@ -612,6 +660,13 @@ impl Vm {
         let b = chunk.code[ip];
         self.frames[frame_idx].ip += 1;
         Ok(b)
+    }
+
+    fn constant_at(&self, idx: usize) -> Option<Value> {
+        self.chunks[self.current_frame().chunk_index]
+            .constants
+            .get(idx)
+            .cloned()
     }
 
     fn read_u16(&mut self) -> Result<u16, VmError> {

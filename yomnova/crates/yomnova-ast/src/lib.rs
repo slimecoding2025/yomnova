@@ -176,6 +176,11 @@ pub enum ExprKind {
         object: Box<Expr>,
         field: String,
     },
+    /// `Name { field: expr, … }`
+    StructLiteral {
+        name: String,
+        fields: Vec<(String, Expr)>,
+    },
     Pipe {
         expr: Box<Expr>,
         stages: Vec<PipeStage>,
