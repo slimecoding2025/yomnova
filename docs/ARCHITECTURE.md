@@ -46,7 +46,7 @@ Errors are `Vec<Diagnostic>`. The parser recovers at statement/declaration bound
 ## CLI
 
 `yomnova run [-d] | check | build [-o] | disasm | tokens | ast | fmt [--check] | version | help`.
-`build` writes a **textual** bytecode listing (`.yomc`); it is not a loadable binary format.
+`build` writes a binary `.yomc` file (`yomnova-bytecode::module`: magic `YOMC`, format version 1, the opcode count, the entry chunk and the user functions) and `yomnova exec` runs it. Loading treats the file as untrusted: sizes and tags are validated, nesting and size are capped, trailing bytes are rejected, and the VM re-checks every operand at run time (step, stack, memory, call-depth and local-slot limits). A file is only valid for the opcode set it was built with; there is no compatibility layer and no signature.
 
 ## Web application
 

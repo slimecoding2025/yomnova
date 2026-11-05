@@ -255,7 +255,7 @@ export const ROADMAP: Record<Status, RoadmapItem[]> = {
     { title: "Borrow checker and lifetimes" },
     { title: "IPv6, Packet, TCP, UDP" },
     { title: "Concurrency and channels" },
-    { title: "Loadable bytecode format" },
+    { title: "Stable, verified bytecode format" },
   ],
   research: [
     { title: "Typestate for protocols" },

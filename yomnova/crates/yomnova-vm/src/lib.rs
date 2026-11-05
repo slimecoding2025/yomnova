@@ -50,6 +50,8 @@ impl Vm {
     pub const MAX_CALL_DEPTH: usize = 10_000;
     pub const MAX_TEXT_BYTES: usize = 16 * 1024 * 1024;
     pub const MAX_ARRAY_LEN: usize = 1_000_000;
+    /// Local-variable slots alive across all call frames at once.
+    pub const MAX_TOTAL_LOCALS: usize = 1_000_000;
 
     pub fn new() -> Self {
         let mut vm = Self {
@@ -129,9 +131,10 @@ impl Vm {
 
             match op {
                 OpCode::Constant => {
-                    let idx = self.read_u16()?;
-                    let val = self.chunks[self.current_frame().chunk_index].constants[idx as usize]
-                        .clone();
+                    let idx = self.read_u16()? as usize;
+                    let val = self.constant_at(idx).ok_or_else(|| {
+                        VmError::TypeError(format!("constant #{idx} does not exist"))
+                    })?;
                     self.push(val)?;
                 }
                 OpCode::Nil => self.push(Value::Unit)?,
@@ -153,6 +156,17 @@ impl Vm {
                 OpCode::SetLocal => {
                     let slot = self.read_u16()? as usize;
                     let val = self.pop()?;
+                    let grow = (slot + 1).saturating_sub(self.current_frame().locals.len());
+                    // Ordinary small frames are bounded by the call-depth limit; only large ones are summed.
+                    if grow > 0 && slot >= 256 {
+                        let total: usize = self.frames.iter().map(|f| f.locals.len()).sum();
+                        if total + grow > Self::MAX_TOTAL_LOCALS {
+                            return Err(VmError::ResourceLimit(format!(
+                                "more than {} local variable slots in use",
+                                Self::MAX_TOTAL_LOCALS
+                            )));
+                        }
+                    }
                     let frame = self.current_frame_mut();
                     if slot >= frame.locals.len() {
                         frame.locals.resize(slot + 1, Value::Unit);
@@ -160,26 +174,35 @@ impl Vm {
                     frame.locals[slot] = val;
                 }
                 OpCode::GetGlobal => {
-                    let idx = self.read_u16()?;
-                    let name_val =
-                        &self.chunks[self.current_frame().chunk_index].constants[idx as usize];
-                    if let Value::Text(name) = name_val {
-                        if let Some(val) = self.globals.get(name) {
-                            let v = val.clone();
-                            self.push(v)?;
-                        } else {
-                            return Err(VmError::UndefinedGlobal(name.clone()));
+                    let idx = self.read_u16()? as usize;
+                    match self.constant_at(idx) {
+                        Some(Value::Text(name)) => {
+                            if let Some(val) = self.globals.get(&name) {
+                                let v = val.clone();
+                                self.push(v)?;
+                            } else {
+                                return Err(VmError::UndefinedGlobal(name));
+                            }
+                        }
+                        _ => {
+                            return Err(VmError::TypeError(format!(
+                                "constant #{idx} is not a global name"
+                            )))
                         }
                     }
                 }
                 OpCode::SetGlobal => {
-                    let idx = self.read_u16()?;
-                    let name_val = self.chunks[self.current_frame().chunk_index].constants
-                        [idx as usize]
-                        .clone();
+                    let idx = self.read_u16()? as usize;
                     let val = self.peek(0)?.clone();
-                    if let Value::Text(name) = name_val {
-                        self.globals.insert(name, val);
+                    match self.constant_at(idx) {
+                        Some(Value::Text(name)) => {
+                            self.globals.insert(name, val);
+                        }
+                        _ => {
+                            return Err(VmError::TypeError(format!(
+                                "constant #{idx} is not a global name"
+                            )))
+                        }
                     }
                 }
                 OpCode::Equal => {

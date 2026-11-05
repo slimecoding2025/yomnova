@@ -1,5 +1,7 @@
 //! Bytecode instruction set, chunks, and disassembler for YOMNOVA.
 
+pub mod module;
+
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

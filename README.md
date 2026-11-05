@@ -96,7 +96,8 @@ cargo build --release --manifest-path yomnova/Cargo.toml     # or: npm run build
 ```text
 yomnova run [-d|--disassemble] <file>   compile and run
 yomnova check <file>                    parse, type-check, ownership-check only
-yomnova build [-o out] <file>           write a textual bytecode listing (does not run the program)
+yomnova build [-o out] <file>           compile to a .yomc bytecode file (does not run the program)
+yomnova exec <file.yomc>                run a .yomc file produced by `build`
 yomnova disasm <file>                   print the bytecode listing
 yomnova tokens <file> | ast <file>      show tokens / syntax tree
 yomnova fmt [--check] <file>            re-indent source
@@ -154,7 +155,7 @@ the parser caps nesting (150). The language has no file, process or network acce
 `unsafe` code.
 
 ## 15. Known limitations
-Several errors per run, but lexical errors are reported one at a time and later stages wait for earlier ones · only two warnings (unused binding, unreachable code) · no borrowing/lifetimes · `build` emits text, not a loadable binary ·
+Several errors per run, but lexical errors are reported one at a time and later stages wait for earlier ones · only two warnings (unused binding, unreachable code) · no borrowing/lifetimes · the `.yomc` format is version 1 only (no compatibility across opcode changes, no signatures) ·
 the formatter only re-indents · the Playground editor is a plain text area with a small highlighter (not Monaco) ·
 IR, `yomnova-network-core` and `yomnova-stdlib` are not wired into the pipeline.
 

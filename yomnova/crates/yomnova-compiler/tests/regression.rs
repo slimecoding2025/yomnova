@@ -777,3 +777,107 @@ fn clean_program_has_no_warnings_and_errors_come_first() {
             .is_err()
     );
 }
+
+// ---- .yomc files ----
+
+use yomnova_bytecode::module::{decode, encode};
+
+fn module_for(src: &str) -> yomnova_bytecode::module::Module {
+    match Compiler::compile_module(&format!("module t\n{src}")) {
+        Ok(m) => m,
+        Err(d) => panic!("compile failed: {d:?}"),
+    }
+}
+
+const SAMPLE: &str = "struct P { x: Int, y: Int }\nenum E { A(Int), B }\nfn f(n: Int) -> Int {\n return n + 1\n}\nfn main() -> Int {\n let p = P { x: 1, y: 2 }\n emit(p)\n emit(f(41))\n for v in [E.A(5), E.B] {\n match v {\n E.A(n) => { emit(n) }\n E.B => { emit(\"b\") }\n }\n }\n return 0\n}";
+
+#[test]
+fn a_saved_program_behaves_exactly_like_the_source() {
+    let direct = Compiler::compile_and_run(&format!("module t\n{SAMPLE}")).unwrap();
+    let bytes = encode(&module_for(SAMPLE)).unwrap();
+    let loaded = decode(&bytes).unwrap();
+    let (result, lines) = Compiler::run_module(&loaded).unwrap();
+    assert_eq!(lines, direct.output_lines);
+    assert_eq!(Some(result), direct.execution_result);
+    assert_eq!(lines, ["P { x: 1, y: 2 }", "42", "5", "b"]);
+}
+
+#[test]
+fn encoding_is_deterministic() {
+    let m = module_for(SAMPLE);
+    assert_eq!(encode(&m).unwrap(), encode(&m).unwrap());
+}
+
+/// Corrupt valid files in many ways: loading must never panic, and anything that still loads must
+/// run to a result or a clean error (the step limit stops loops).
+#[test]
+fn corrupted_files_never_panic_the_loader_or_the_vm() {
+    let good = encode(&module_for(SAMPLE)).unwrap();
+    let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed
+    };
+    let mut loaded = 0usize;
+    for _ in 0..4000 {
+        let mut bytes = good.clone();
+        for _ in 0..(1 + next() % 4) {
+            let i = (next() as usize) % bytes.len();
+            bytes[i] = (next() & 0xFF) as u8;
+        }
+        if let Ok(m) = decode(&bytes) {
+            loaded += 1;
+            let _ = Compiler::run_module(&m);
+        }
+    }
+    assert!(loaded > 100, "mutations should often still load ({loaded})");
+}
+
+#[test]
+fn hand_made_bad_programs_fail_cleanly() {
+    use yomnova_bytecode::{Chunk, OpCode, Value};
+    let run_main = |main: Chunk| {
+        let m = yomnova_bytecode::module::Module {
+            main,
+            functions: vec![],
+        };
+        Compiler::run_module(&m)
+    };
+    // Constant index out of range.
+    let mut c = Chunk::new();
+    c.write_op(OpCode::Constant, 1);
+    c.write_u16(9, 1);
+    assert!(run_main(c).is_err());
+    // Global name that is not text.
+    let mut c = Chunk::new();
+    c.constants.push(Value::Int(1));
+    c.write_op(OpCode::GetGlobal, 1);
+    c.write_u16(0, 1);
+    assert!(run_main(c).is_err());
+    // Stack underflow, call of a non-function, unknown opcode byte.
+    let mut c = Chunk::new();
+    c.write_op(OpCode::Add, 1);
+    assert!(run_main(c).is_err());
+    let mut c = Chunk::new();
+    c.write_op(OpCode::Nil, 1);
+    c.write_op(OpCode::Call, 1);
+    c.write_byte(0, 1);
+    assert!(run_main(c).is_err());
+    let mut c = Chunk::new();
+    c.write_byte(250, 1);
+    assert!(run_main(c).is_err());
+    // A jump to itself runs into the step limit instead of hanging.
+    let mut c = Chunk::new();
+    c.write_op(OpCode::Jump, 1);
+    c.write_u16(0, 1);
+    assert!(run_main(c).is_err());
+    // A huge local slot is budgeted, not allocated blindly (65535 slots is within the budget, so it runs).
+    let mut c = Chunk::new();
+    c.write_op(OpCode::Nil, 1);
+    c.write_op(OpCode::SetLocal, 1);
+    c.write_u16(65_535, 1);
+    c.write_op(OpCode::Halt, 1);
+    assert!(run_main(c).is_ok());
+}

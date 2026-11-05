@@ -5,6 +5,7 @@ pub mod lint;
 
 use std::collections::HashMap;
 use yomnova_ast::*;
+use yomnova_bytecode::module::Module;
 use yomnova_bytecode::{Chunk, OpCode, Value};
 use yomnova_diagnostics::Diagnostic;
 use yomnova_lexer::{Lexer, Token};
@@ -240,12 +241,22 @@ impl Compiler {
         })
     }
 
-    /// Complete pipeline: Lex -> Parse -> Sema -> Ownership -> Bytecode -> Run in VM
-    pub fn compile_and_run(source: &str) -> Result<CompilerOutput, Vec<Diagnostic>> {
+    /// Compile to a [`Module`] that can be written to a `.yomc` file (see `yomnova_bytecode::module`).
+    pub fn compile_module(source: &str) -> Result<Module, Vec<Diagnostic>> {
         let unit = Self::compile_unit(source)?;
+        Ok(Module {
+            main: unit.main,
+            functions: unit.functions,
+        })
+    }
 
+    /// Run a compiled module in a fresh VM. Returns the entry result and the emitted lines.
+    ///
+    /// The module may come from an untrusted file: the VM validates every operand as it runs and
+    /// enforces its step, stack, memory and call-depth limits.
+    pub fn run_module(module: &Module) -> Result<(Value, Vec<String>), Vec<Diagnostic>> {
         let mut vm = Vm::new();
-        for (name, chunk, arity) in &unit.functions {
+        for (name, chunk, arity) in &module.functions {
             let chunk_index = vm.chunks.len();
             vm.chunks.push(chunk.clone());
             vm.globals.insert(
@@ -257,20 +268,26 @@ impl Compiler {
                 },
             );
         }
+        match vm.run_chunk(module.main.clone()) {
+            Ok(val) => Ok((val, vm.output)),
+            Err(e) => Err(vec![Diagnostic::error(format!("Runtime error: {e}"), None)]),
+        }
+    }
 
-        let result = match vm.run_chunk(unit.main.clone()) {
-            Ok(val) => val,
-            Err(e) => {
-                return Err(vec![Diagnostic::error(format!("Runtime error: {e}"), None)]);
-            }
+    /// Complete pipeline: Lex -> Parse -> Sema -> Ownership -> Bytecode -> Run in VM
+    pub fn compile_and_run(source: &str) -> Result<CompilerOutput, Vec<Diagnostic>> {
+        let unit = Self::compile_unit(source)?;
+        let module = Module {
+            main: unit.main.clone(),
+            functions: unit.functions.clone(),
         };
-
+        let (result, output_lines) = Self::run_module(&module)?;
         Ok(CompilerOutput {
             ast: unit.ast,
             chunk: unit.main,
             functions: unit.functions,
             execution_result: Some(result),
-            output_lines: vm.output,
+            output_lines,
         })
     }
 

@@ -19,8 +19,9 @@ USAGE:
 COMMANDS:
     run [-d|--disassemble] <FILE>   Compile and run a program
     check <FILE>                    Lex, parse, type-check and ownership-check only
-    build [-o <OUT>] <FILE>         Compile to a textual bytecode listing (does not run the program)
-    disasm <FILE>                   Print the bytecode listing to stdout (does not run the program)
+    build [-o <OUT>] <FILE>         Compile to a bytecode file (.yomc) that `exec` can run later
+    exec <FILE.yomc>                Run a bytecode file produced by `build`
+    disasm <FILE>                   Print the bytecode listing of a source file or a .yomc file
     tokens <FILE>                   Print the token stream
     ast <FILE>                      Print the syntax tree
     fmt [--check] <FILE>            Re-indent a source file (in place unless --check)
@@ -103,6 +104,24 @@ fn parse_opts(command: &str, rest: &[String]) -> Result<Opts, CliError> {
     Ok(opts)
 }
 
+/// Largest `.yomc` file `exec` and `disasm` will read.
+const MAX_MODULE_BYTES: u64 = 16 * 1024 * 1024;
+
+fn load_module(path: &Path) -> Result<yomnova_bytecode::module::Module, CliError> {
+    let name = path.to_string_lossy().to_string();
+    let meta = fs::metadata(path)
+        .map_err(|e| CliError::Failure(format!("Cannot read file '{name}': {e}")))?;
+    if meta.len() > MAX_MODULE_BYTES {
+        return Err(CliError::Failure(format!(
+            "'{name}' is larger than the {MAX_MODULE_BYTES} byte limit"
+        )));
+    }
+    let bytes =
+        fs::read(path).map_err(|e| CliError::Failure(format!("Cannot read file '{name}': {e}")))?;
+    yomnova_bytecode::module::decode(&bytes)
+        .map_err(|e| CliError::Failure(format!("'{name}': {e}")))
+}
+
 fn read_source(path: &Path) -> Result<(String, String), CliError> {
     let name = path.to_string_lossy().to_string();
     match fs::read_to_string(path) {
@@ -131,6 +150,47 @@ fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
                 std::env::consts::ARCH
             );
             println!("ONE LANGUAGE. EVERY SYSTEM.");
+            Ok(ExitCode::SUCCESS)
+        }
+        "exec" => {
+            let opts = parse_opts(command, rest)?;
+            let path = opts
+                .file
+                .clone()
+                .ok_or_else(|| CliError::Usage("'exec' requires a .yomc file".to_string()))?;
+            let module = load_module(&path)?;
+            let file = path.to_string_lossy().to_string();
+            match Compiler::run_module(&module) {
+                Ok((res, _)) => {
+                    if res != Value::Unit {
+                        println!("=> {res}");
+                    }
+                    Ok(ExitCode::SUCCESS)
+                }
+                Err(diags) => Err(CliError::Diagnostics {
+                    diags,
+                    source: String::new(),
+                    file,
+                }),
+            }
+        }
+        "disasm"
+            if rest.iter().any(|a| {
+                fs::read(a).is_ok_and(|b| yomnova_bytecode::module::looks_like_module(&b))
+            }) =>
+        {
+            let opts = parse_opts(command, rest)?;
+            let path = opts
+                .file
+                .clone()
+                .ok_or_else(|| CliError::Usage("'disasm' requires a file".to_string()))?;
+            let module = load_module(&path)?;
+            let mut out = module.main.disassemble("<main>");
+            for (name, chunk, arity) in &module.functions {
+                out.push('\n');
+                out.push_str(&chunk.disassemble(&format!("fn {name}/{arity}")));
+            }
+            print!("{out}");
             Ok(ExitCode::SUCCESS)
         }
         "run" | "check" | "build" | "disasm" | "tokens" | "ast" | "fmt" => {
@@ -172,17 +232,20 @@ fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
                     println!("ok: no errors in '{file}'");
                 }
                 "build" => {
-                    let unit = Compiler::compile_unit(&source).map_err(diag)?;
+                    let module = Compiler::compile_module(&source).map_err(diag)?;
+                    let bytes = yomnova_bytecode::module::encode(&module)
+                        .map_err(|e| CliError::Failure(format!("Cannot encode program: {e}")))?;
                     let out_path = opts.output.unwrap_or_else(|| path.with_extension("yomc"));
-                    fs::write(&out_path, unit.disassemble_all()).map_err(|e| {
+                    fs::write(&out_path, &bytes).map_err(|e| {
                         CliError::Failure(format!(
                             "Cannot write output '{}': {e}",
                             out_path.display()
                         ))
                     })?;
                     println!(
-                        "ok: wrote textual bytecode listing '{}' (not an executable artifact)",
-                        out_path.display()
+                        "ok: wrote '{}' ({} bytes); run it with `yomnova exec`",
+                        out_path.display(),
+                        bytes.len()
                     );
                 }
                 "disasm" => {

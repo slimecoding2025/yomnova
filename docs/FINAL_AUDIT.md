@@ -88,7 +88,7 @@ no scroll hijacking or smooth-scroll library. The skill's horizontal-scroll exam
 3. (Updated after this audit: `for … in` over arrays, `len` and `push` now exist.) methods, lambdas and `import` are not supported (`struct`, `enum` and `match` were added later).
 4. `yomnova-ir`, `yomnova-network-core`, `yomnova-stdlib` are not wired in; the VM's `And`/`Or` opcodes and
    `IPv6`/`Packet` values are unused by generated code.
-5. `build` produces a text listing, not a loadable program. Function effects `![…]` parse but are ignored.
+5. (Updated after this audit: `build` now writes a loadable `.yomc` binary that `exec` runs.) Function effects `![…]` parse but are ignored.
 6. The Playground runs untrusted code in a child process **without OS sandboxing** (limits: 5 s, 1 MiB output, 4 jobs,
    64 KiB request). Deploy only behind container isolation.
 7. Editor is a textarea with a small highlighter (not Monaco: it could not be installed or tested here).

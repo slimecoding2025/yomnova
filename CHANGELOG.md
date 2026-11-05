@@ -2,6 +2,16 @@
 
 ## Unreleased — 2026-11-03
 
+### Bytecode files
+* **Added** a binary `.yomc` format (`yomnova-bytecode::module`) and the `exec` command; `build` now writes it (it used to write
+  a text listing; `disasm` still prints the listing, for source files and for `.yomc` files). Running a saved program gives
+  exactly the output of `run` (tested).
+* **Hardened** the VM for untrusted bytecode: constant lookups no longer index out of range, and local-variable slots are
+  budgeted (1,000,000 across frames). A corruption test mutates a valid file 4,000 times and requires that loading and running
+  never panic. 9 new tests (87 Rust tests total).
+* **Not done:** the loader checks structure only; there is no jump-target/type verifier, no signature, and the format is
+  tied to the current opcode set (version 1).
+
 ### Warnings
 * **Added** `yomnova-compiler::lint` and `Compiler::check_with_warnings`: *variable is never read* (for `let`, `mut`, `flow`,
   `for` and `match` bindings; `_name` and parameters exempt) and *unreachable code after `return`*. The CLI prints them to
