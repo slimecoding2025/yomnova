@@ -25,6 +25,14 @@ Principles (all enforced in code and covered by tests):
 
 Without a key the panel says the assistant is off; no model request is possible.
 
+### Free models (suggested setup)
+
+`render.yaml` allows three free OpenRouter models (listed as free on 2026-11-05): `google/gemma-4-26b-a4b-it:free`
+(default, structured output), `cohere/north-mini-code:free` (structured output via JSON schema) and
+`nvidia/nemotron-3-ultra-550b-a55b:free`. They have **not been called live from this project** (the build sandbox cannot
+reach OpenRouter). Free ids are renamed or withdrawn often; if one disappears it simply drops out of the list. Embedding
+and rerank models cannot answer chat requests and are not suitable. Put the API key only in the host's environment.
+
 ### Environment variables
 
 | Variable | Default | Meaning |
