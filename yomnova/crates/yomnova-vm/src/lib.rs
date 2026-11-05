@@ -77,7 +77,7 @@ impl Vm {
             "Endpoint".to_string(),
             Value::NativeFunction("Endpoint".to_string()),
         );
-        for name in ["len", "push"] {
+        for name in ["IPv6", "len", "push"] {
             vm.globals
                 .insert(name.to_string(), Value::NativeFunction(name.to_string()));
         }
@@ -601,7 +601,7 @@ impl Vm {
                 self.pop()?; // pop callee
 
                 let expected = match name.as_str() {
-                    "IPv4" | "Port" | "len" => 1,
+                    "IPv4" | "IPv6" | "Port" | "len" => 1,
                     "Endpoint" | "push" => 2,
                     other => {
                         return Err(VmError::TypeError(format!(
@@ -630,6 +630,24 @@ impl Vm {
                             Err(e) => {
                                 return Err(VmError::ProtocolError(format!(
                                     "Invalid IPv4 address: {e}"
+                                )))
+                            }
+                        }
+                    }
+                    "IPv6" => {
+                        let text = match &args[0] {
+                            Value::Text(s) => s.as_str(),
+                            _ => {
+                                return Err(VmError::TypeError(
+                                    "IPv6 expects a string argument".to_string(),
+                                ))
+                            }
+                        };
+                        match text.parse::<std::net::Ipv6Addr>() {
+                            Ok(ip) => Value::IPv6(ip.octets()),
+                            Err(e) => {
+                                return Err(VmError::ProtocolError(format!(
+                                    "Invalid IPv6 address: {e}"
                                 )))
                             }
                         }

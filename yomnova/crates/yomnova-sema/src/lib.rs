@@ -159,6 +159,7 @@ impl SemanticAnalyzer {
             Type::Unknown,
         );
         analyzer.register_builtin("IPv4", vec![("addr".to_string(), Type::Text)], Type::IPv4);
+        analyzer.register_builtin("IPv6", vec![("addr".to_string(), Type::Text)], Type::IPv6);
         analyzer.register_builtin("Port", vec![("port".to_string(), Type::Int)], Type::Port);
         analyzer.register_builtin(
             "Endpoint",

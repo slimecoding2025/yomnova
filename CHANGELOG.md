@@ -2,6 +2,10 @@
 
 ## Unreleased — 2026-11-03
 
+### IPv6
+* **Added** `IPv6("…")`: validated by `std::net::Ipv6Addr`, displayed in canonical form, comparable with `==`. Bad input is a
+  clean runtime error. 2 new tests (89 Rust tests total). `Packet`, `TCP`, `UDP` are still not implemented.
+
 ### Bytecode files
 * **Added** a binary `.yomc` format (`yomnova-bytecode::module`) and the `exec` command; `build` now writes it (it used to write
   a text listing; `disasm` still prints the listing, for source files and for `.yomc` files). Running a saved program gives

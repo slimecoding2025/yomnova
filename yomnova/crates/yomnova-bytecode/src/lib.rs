@@ -164,7 +164,7 @@ impl fmt::Display for Value {
                 write!(f, "]")
             }
             Value::IPv4(bytes) => write!(f, "{}.{}.{}.{}", bytes[0], bytes[1], bytes[2], bytes[3]),
-            Value::IPv6(bytes) => write!(f, "IPv6({:?})", bytes),
+            Value::IPv6(bytes) => write!(f, "{}", std::net::Ipv6Addr::from(*bytes)),
             Value::Port(p) => write!(f, "{p}"),
             Value::Endpoint(ip, p) => write!(f, "{}.{}.{}.{}:{}", ip[0], ip[1], ip[2], ip[3], p),
             Value::Packet { payload, .. } => write!(f, "Packet(len={})", payload.len()),

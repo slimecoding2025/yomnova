@@ -41,7 +41,7 @@ Errors are `Vec<Diagnostic>`. The parser recovers at statement/declaration bound
 * Locals live in per-frame vectors; globals hold functions and constants. Pipelines compile to ordinary calls.
 * The VM enforces: 1,000,000 steps, 65,536 stack slots, 10,000 call frames, 16 MiB text; integer arithmetic is
   checked (`IntegerOverflow`).
-* The VM has a `Packet`/`IPv6` value representation that no language construct can create.
+* The VM has a `Packet` value representation that no language construct can create.
 
 ## CLI
 

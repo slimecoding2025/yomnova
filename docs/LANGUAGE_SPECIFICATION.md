@@ -45,7 +45,8 @@ fn main() -> Int { emit(helper(1, 2))  return 0 }
 | `IPv4` | Implemented | `IPv4("a.b.c.d")`; strictly validated, leading zeros rejected. |
 | `Port` | Implemented | `Port(n)`, `1 ≤ n ≤ 65535`. |
 | `Endpoint` | Implemented | `Endpoint(ip, port)`; the port may be a `Port` or an `Int` (range-checked at runtime). |
-| `IPv6`, `TCP`, `UDP`, `Packet` | Planned | Names are reserved and parse as types; there is no constructor, value or behaviour. |
+| `IPv6` | Implemented | `IPv6("::1")` validates with `std::net::Ipv6Addr`; displays canonically; `==` works. |
+| `TCP`, `UDP`, `Packet` | Planned | Names are reserved and parse as types; there is no constructor, value or behaviour. |
 | `struct` | Implemented | `struct P { x: Int, y: Int }`, literals `P { x: 1, y: 2 }` (any field order, every field exactly once), field reads `p.x`, structs as parameters, return values, array elements and fields of other structs. Display: `P { x: 1, y: 2 }`; equality is by value. Not supported: field assignment (`p.x = v`), methods, generics, recursive structs (rejected: infinite size). |
 | `enum` | Implemented | `enum Shape { Circle(Int), Empty }` — each variant carries at most one value. Values are built as `Shape.Circle(2)` / `Shape.Empty`, displayed the same way and compared by value. Empty enums, duplicate variants and directly recursive payloads are rejected. |
 | Generics, traits, lambdas, methods, field access | Unsupported | Rejected with an "is not supported yet" error. |

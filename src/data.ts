@@ -39,7 +39,7 @@ export const DOMAINS: Domain[] = [
     name: "Networking",
     status: "partial",
     today: "IPv4, Port and Endpoint are real values with validated constructors (Port is 1–65535).",
-    next: "IPv6, Packet and socket-level types.",
+    next: "Packet and socket-level types.",
   },
   {
     name: "Protocol engineering",
@@ -221,8 +221,8 @@ export const NET_TYPES: NetType[] = [
   { name: "IPv4", status: "implemented", note: 'IPv4("192.168.0.1") validates and stores four octets.' },
   { name: "Port", status: "implemented", note: "Port(n) accepts 1–65535." },
   { name: "Endpoint", status: "implemented", note: "Endpoint(ip, port) pairs an IPv4 with a port." },
-  { name: "IPv6", status: "planned", note: "The type name is reserved; there is no constructor or value." },
-  { name: "IPAddress", status: "planned", note: "An IPv4-or-IPv6 sum type; enums exist now, but IPv6 does not." },
+  { name: "IPv6", status: "implemented", note: "IPv6(\"::1\") parses and validates an address; it displays in canonical form and compares with ==." },
+  { name: "IPAddress", status: "planned", note: "An IPv4-or-IPv6 sum type; enums and IPv6 exist now, the combined type does not." },
   { name: "TCP · UDP", status: "planned", note: "Reserved type names with no behaviour." },
   { name: "Packet · NetworkBuffer", status: "planned", note: "Concept only. The VM has an unused packet value." },
 ];

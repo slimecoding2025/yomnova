@@ -23,7 +23,8 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | `for … in` over arrays, `len`, `push` | Implemented | `for_*`, `len_*`, `push_*` regression tests |
 | methods, lambdas | Parsed-only, rejected clearly | `unsupported_syntax_is_reported_not_miscompiled`, `static_checks` |
 | `import`, `type` | Planned (reserved words only) | — |
-| Borrowing, lifetimes, concurrency, `IPv6`/`Packet`/`TCP`/`UDP` | Planned | — |
+| Borrowing, lifetimes, concurrency, `Packet`/`TCP`/`UDP` | Planned | — |
+| `IPv6` constructor, display, equality | Implemented | regression tests |
 
 ## Tooling
 | Item | Status |
@@ -36,7 +37,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 87 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 89 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.

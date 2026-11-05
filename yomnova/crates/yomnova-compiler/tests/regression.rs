@@ -881,3 +881,29 @@ fn hand_made_bad_programs_fail_cleanly() {
     c.write_op(OpCode::Halt, 1);
     assert!(run_main(c).is_ok());
 }
+
+// ---- IPv6 ----
+
+#[test]
+fn ipv6_values_parse_display_and_compare() {
+    ok(
+        "fn main() -> Int {\n let a: IPv6 = IPv6(\"::1\")\n emit(a)\n emit(IPv6(\"2001:db8:0:0:0:0:0:1\"))\n emit(IPv6(\"::1\") == a)\n emit(IPv6(\"::2\") == a)\n return 0\n}",
+        &["::1", "2001:db8::1", "true", "false"],
+    );
+}
+
+#[test]
+fn ipv6_errors_are_clean() {
+    err(
+        "fn main() -> Int {\n emit(IPv6(\"not an address\"))\n return 0\n}",
+        "Invalid IPv6 address",
+    );
+    err(
+        "fn main() -> Int {\n emit(IPv6(5))\n return 0\n}",
+        "expected Text, found Int",
+    );
+    err(
+        "fn main() -> Int {\n let a: IPv4 = IPv6(\"::1\")\n return 0\n}",
+        "expected IPv4, found IPv6",
+    );
+}

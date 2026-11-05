@@ -73,6 +73,7 @@ impl OwnershipChecker {
         fn_returns.insert("emit".to_string(), Type::Unit);
         fn_returns.insert("len".to_string(), Type::Int);
         fn_returns.insert("IPv4".to_string(), Type::IPv4);
+        fn_returns.insert("IPv6".to_string(), Type::IPv6);
         fn_returns.insert("Port".to_string(), Type::Port);
         fn_returns.insert("Endpoint".to_string(), Type::Endpoint);
         Self {

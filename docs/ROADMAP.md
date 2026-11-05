@@ -14,7 +14,7 @@ Playground backed by the real compiler.
 2. *(Done: `struct`, `enum` with exhaustive `match`, `for … in` over arrays, `len` and `push`. Still missing from this item: field assignment, `xs[i] = v`, nested patterns, `match` as an expression.)*
 3. Wire `yomnova-ir`: lower AST → IR → bytecode, then simple optimisations.
 4. Borrowing (shared and mutable) and lifetimes in the ownership checker.
-5. `IPv6`, `Packet` and a `NetworkBuffer` with typed, bounds-checked access.
+5. `IPv6` (done), `Packet` and a `NetworkBuffer` with typed, bounds-checked access.
 6. *(Done: `.yomc` binary format v1, `build` and `exec`. Still open: format stability across versions, signing, a verifier that checks jump targets and operand types before running.)*
 7. Standard library (`yomnova-stdlib`) and modules/imports.
 
