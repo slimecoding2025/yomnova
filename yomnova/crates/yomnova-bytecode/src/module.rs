@@ -180,6 +180,7 @@ pub fn decode(bytes: &[u8]) -> Result<Module, String> {
         return Err(format!("too many functions ({nfn})"));
     }
     let main = decode_chunk(&mut r)?;
+    verify_chunk(&main).map_err(|e| format!("invalid bytecode in the entry chunk: {e}"))?;
     let mut functions = Vec::with_capacity(nfn.min(r.left()));
     for _ in 0..nfn {
         let len = r.u16()? as usize;
@@ -187,7 +188,9 @@ pub fn decode(bytes: &[u8]) -> Result<Module, String> {
             .map_err(|_| "function name is not valid UTF-8".to_string())?
             .to_string();
         let arity = r.u8()? as usize;
-        functions.push((name, decode_chunk(&mut r)?, arity));
+        let chunk = decode_chunk(&mut r)?;
+        verify_chunk(&chunk).map_err(|e| format!("invalid bytecode in function '{name}': {e}"))?;
+        functions.push((name, chunk, arity));
     }
     if r.left() != 0 {
         return Err(format!(
@@ -196,6 +199,102 @@ pub fn decode(bytes: &[u8]) -> Result<Module, String> {
         ));
     }
     Ok(Module { main, functions })
+}
+
+/// Static check of one chunk, run on every loaded file so the VM never meets malformed code:
+/// every byte sequence decodes as whole instructions, constant operands exist (and are text
+/// where a name is required), jump targets land on instruction starts, and execution cannot
+/// run off the end. It does not check types or stack depth; the VM still guards those.
+pub fn verify_chunk(chunk: &Chunk) -> Result<(), String> {
+    let code = &chunk.code;
+    if code.is_empty() {
+        return Err("empty code".to_string());
+    }
+    if chunk.lines.len() != code.len() {
+        return Err("line table does not match the code length".to_string());
+    }
+    let mut starts = vec![false; code.len()];
+    let mut jumps: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0usize;
+    let mut last = OpCode::Halt;
+    let name_const = |idx: usize, at: usize| -> Result<(), String> {
+        match chunk.constants.get(idx) {
+            Some(Value::Text(_)) => Ok(()),
+            Some(_) => Err(format!("offset {at}: constant {idx} must be text")),
+            None => Err(format!("offset {at}: constant {idx} is out of range")),
+        }
+    };
+    while i < code.len() {
+        starts[i] = true;
+        let at = i;
+        let op = OpCode::from_u8(code[i])
+            .ok_or_else(|| format!("offset {at}: unknown opcode {}", code[i]))?;
+        let width = match op {
+            OpCode::Constant
+            | OpCode::GetLocal
+            | OpCode::SetLocal
+            | OpCode::GetGlobal
+            | OpCode::SetGlobal
+            | OpCode::Jump
+            | OpCode::JumpIfFalse
+            | OpCode::Array
+            | OpCode::Field
+            | OpCode::EnumIs => 2,
+            OpCode::Call => 1,
+            OpCode::Struct => 4,
+            OpCode::EnumNew => 3,
+            _ => 0,
+        };
+        if i + 1 + width > code.len() {
+            return Err(format!("offset {at}: instruction is cut off"));
+        }
+        let u16_at = |k: usize| ((code[i + 1 + k] as usize) << 8) | code[i + 2 + k] as usize;
+        match op {
+            OpCode::Constant => {
+                let idx = u16_at(0);
+                if idx >= chunk.constants.len() {
+                    return Err(format!("offset {at}: constant {idx} is out of range"));
+                }
+            }
+            OpCode::GetGlobal | OpCode::SetGlobal | OpCode::Field | OpCode::EnumIs => {
+                name_const(u16_at(0), at)?
+            }
+            OpCode::Struct => {
+                name_const(u16_at(0), at)?;
+                let idx = u16_at(2);
+                match chunk.constants.get(idx) {
+                    Some(Value::Array(items))
+                        if items.iter().all(|v| matches!(v, Value::Text(_))) => {}
+                    _ => {
+                        return Err(format!(
+                            "offset {at}: constant {idx} must be an array of field names"
+                        ))
+                    }
+                }
+            }
+            OpCode::EnumNew => {
+                name_const(u16_at(0), at)?;
+                if code[i + 3] > 1 {
+                    return Err(format!("offset {at}: invalid payload flag {}", code[i + 3]));
+                }
+            }
+            OpCode::Jump | OpCode::JumpIfFalse => jumps.push((at, u16_at(0))),
+            _ => {}
+        }
+        last = op;
+        i += 1 + width;
+    }
+    for (at, target) in jumps {
+        if target >= code.len() || !starts[target] {
+            return Err(format!(
+                "offset {at}: jump target {target} is not an instruction"
+            ));
+        }
+    }
+    if !matches!(last, OpCode::Halt | OpCode::Return | OpCode::Jump) {
+        return Err("code can run past its end (no final Halt, Return or Jump)".to_string());
+    }
+    Ok(())
 }
 
 fn decode_chunk(r: &mut Reader) -> Result<Chunk, String> {
@@ -342,5 +441,53 @@ mod tests {
             .constants
             .push(Value::NativeFunction("len".to_string()));
         assert!(encode(&m).is_err());
+    }
+
+    fn chunk_of(code: Vec<u8>, constants: Vec<Value>) -> Chunk {
+        let lines = vec![1; code.len()];
+        Chunk {
+            code,
+            constants,
+            lines,
+        }
+    }
+
+    #[test]
+    fn verifier_accepts_good_and_rejects_bad_chunks() {
+        let h = OpCode::Halt as u8;
+        let c = OpCode::Constant as u8;
+        let j = OpCode::Jump as u8;
+        assert!(verify_chunk(&chunk_of(vec![c, 0, 0, h], vec![Value::Int(1)])).is_ok());
+        let cases: Vec<(Vec<u8>, Vec<Value>, &str)> = vec![
+            (vec![], vec![], "empty"),
+            (vec![250, h], vec![], "unknown opcode"),
+            (vec![c, 0], vec![Value::Int(1)], "cut off"),
+            (vec![c, 0, 5, h], vec![Value::Int(1)], "out of range"),
+            (vec![j, 0, 1, h], vec![], "not an instruction"),
+            (vec![j, 0, 9, h], vec![], "not an instruction"),
+            (vec![OpCode::Nil as u8], vec![], "run past its end"),
+            (
+                vec![OpCode::GetGlobal as u8, 0, 0, h],
+                vec![Value::Int(1)],
+                "must be text",
+            ),
+        ];
+        for (code, consts, want) in cases {
+            let err = verify_chunk(&chunk_of(code, consts)).unwrap_err();
+            assert!(err.contains(want), "{err} should contain {want}");
+        }
+    }
+
+    #[test]
+    fn decode_runs_the_verifier() {
+        let mut m = sample();
+        m.main.code = vec![OpCode::Jump as u8, 0, 1, OpCode::Halt as u8];
+        m.main.lines = vec![1; 4];
+        let bytes = encode(&m).unwrap();
+        let err = decode(&bytes).unwrap_err();
+        assert!(
+            err.contains("entry chunk") && err.contains("not an instruction"),
+            "{err}"
+        );
     }
 }

@@ -2,6 +2,13 @@
 
 ## Unreleased — 2026-11-03
 
+### Bytecode verifier
+* **Added** `verify_chunk`, run on every chunk of a loaded `.yomc`: whole instructions only, known opcodes, constant
+  operands in range (names must be text, struct field lists arrays of text), jump targets on instruction starts, and a
+  final Halt/Return/Jump so code cannot run off the end. Corrupt files now fail at load with an offset. 2 new tests
+  (91 Rust tests total).
+* **Not done:** no stack-depth or type verification (the VM still checks those at run time), no local-slot bound check.
+
 ### IPv6
 * **Added** `IPv6("…")`: validated by `std::net::Ipv6Addr`, displayed in canonical form, comparable with `==`. Bad input is a
   clean runtime error. 2 new tests (89 Rust tests total). `Packet`, `TCP`, `UDP` are still not implemented.
@@ -13,7 +20,7 @@
 * **Hardened** the VM for untrusted bytecode: constant lookups no longer index out of range, and local-variable slots are
   budgeted (1,000,000 across frames). A corruption test mutates a valid file 4,000 times and requires that loading and running
   never panic. 9 new tests (87 Rust tests total).
-* **Not done:** the loader checks structure only; there is no jump-target/type verifier, no signature, and the format is
+* **Not done:** the loader checks structure only; there is no type/stack verifier, no signature, and the format is
   tied to the current opcode set (version 1).
 
 ### Warnings

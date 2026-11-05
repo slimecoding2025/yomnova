@@ -15,7 +15,7 @@ Playground backed by the real compiler.
 3. Wire `yomnova-ir`: lower AST → IR → bytecode, then simple optimisations.
 4. Borrowing (shared and mutable) and lifetimes in the ownership checker.
 5. `IPv6` (done), `Packet` and a `NetworkBuffer` with typed, bounds-checked access.
-6. *(Done: `.yomc` binary format v1, `build` and `exec`. Still open: format stability across versions, signing, a verifier that checks jump targets and operand types before running.)*
+6. *(Done: `.yomc` binary format v1, `build` and `exec`. Still open: format stability across versions, signing, operand-type and stack-depth verification. Done: a structural verifier for jump targets, constants and instruction boundaries.)*
 7. Standard library (`yomnova-stdlib`) and modules/imports.
 
 ## Research (no commitment)
