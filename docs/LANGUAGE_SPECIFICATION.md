@@ -113,7 +113,18 @@ Ownership is checked statically after type checking; violations stop the program
 * A value moved in only one branch of an `if` is *maybe moved* afterwards and is rejected on later use.
 * Moving a value declared outside a `while` or `for` loop from inside the loop is rejected, unless it is reassigned.
 * A struct or enum value is a moved (non-copy) value; `match` only borrows it, and a value moved inside one arm is "maybe moved" afterwards. A struct is a moved value; reading a field (`p.x`) does not move it. `for x in xs` only borrows `xs` (it can be used afterwards); `push` consumes its array argument and `len` only borrows.
-* **Not implemented:** references/borrows, mutable borrows, lifetimes, resource types, typestate.
+* **Borrowing (implemented, deliberately small).** A parameter may be `&T` (read-only) or `&mut T` (read and write). The
+  caller passes `&x` / `&mut x`, which is only legal as a call argument and only for a plain variable (`&mut x` needs `x`
+  to be `mut`). Because references cannot be stored, returned, put in a `let`, a struct or an array, a borrow can never
+  outlive its call, so **there are no lifetime annotations**. The checker rejects: `&mut x` together with any other use of
+  `x` in the same call, `&x` together with a by-value move of `x` or a `&mut x`, borrowing a moved variable, moving a
+  non-copy value out of a reference parameter, and writing through `&T`. Inside the callee a reference parameter is used
+  like the value itself (`xs[i]`, `len(xs)`, `n + 1`); a `&mut` parameter can also be assigned (`n = 0`, `xs[i] = v`).
+  Implementation: `&mut` is **copy-in, copy-out**: the callee returns its final value and the caller writes it back,
+  which is equivalent to a real reference only because `&mut` is exclusive and cannot be stored. Cost: O(size) per call
+  like any by-value argument. Pipeline stages and `flow` cannot take reference parameters.
+* **Not implemented:** stored or returned references, borrowing fields or elements (`&p.x`), reborrow rules beyond the call,
+  lifetime parameters, resource types, typestate.
 
 ## 8. Runtime and limits
 

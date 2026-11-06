@@ -21,6 +21,8 @@ pub enum Type {
     UDP,
     // Compound
     Array(Box<Type>),
+    /// A reference parameter type (`&T` when `false`, `&mut T` when `true`).
+    Ref(Box<Type>, bool),
     Function {
         params: Vec<Type>,
         return_type: Box<Type>,
@@ -38,6 +40,14 @@ pub enum Type {
 }
 
 impl Type {
+    /// The type a reference parameter refers to (the type itself otherwise).
+    pub fn referent(&self) -> &Type {
+        match self {
+            Type::Ref(inner, _) => inner,
+            other => other,
+        }
+    }
+
     pub fn is_numeric(&self) -> bool {
         matches!(self, Type::Int | Type::Float)
     }
@@ -71,6 +81,7 @@ impl Type {
             TypeAnnotation::TCP => Type::TCP,
             TypeAnnotation::UDP => Type::UDP,
             TypeAnnotation::Array(inner) => Type::Array(Box::new(Self::from_annotation(inner))),
+            TypeAnnotation::Ref(inner, m) => Type::Ref(Box::new(Self::from_annotation(inner)), *m),
             TypeAnnotation::Custom(name) if name == "NetworkBuffer" => Type::NetworkBuffer,
             TypeAnnotation::Custom(name) => Type::Custom(name.clone()),
         }
@@ -107,6 +118,8 @@ impl fmt::Display for Type {
             Type::TCP => write!(f, "TCP"),
             Type::UDP => write!(f, "UDP"),
             Type::Array(t) => write!(f, "Array<{t}>"),
+            Type::Ref(t, false) => write!(f, "&{t}"),
+            Type::Ref(t, true) => write!(f, "&mut {t}"),
             Type::Function {
                 params,
                 return_type,

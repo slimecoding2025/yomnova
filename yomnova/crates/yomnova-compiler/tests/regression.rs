@@ -1159,3 +1159,135 @@ fn optimiser_shrinks_constant_code_and_keeps_the_verifier_happy() {
     assert!(yomnova_bytecode::module::decode(&bytes).is_ok());
     assert_eq!(outcome(src, true).unwrap().0, vec!["14", "ab"]);
 }
+
+// ---- borrowing: reference parameters ----
+
+const SUM: &str = "fn total(xs: &Array<Int>) -> Int {\n mut s = 0\n for x in xs {\n s = s + x\n }\n return s\n}\n";
+const BUMP: &str =
+    "fn bump(xs: &mut Array<Int>) -> Int {\n xs[0] = xs[0] + 1\n return len(xs)\n}\n";
+
+#[test]
+fn shared_borrows_read_without_moving() {
+    ok(
+        &format!("{SUM}fn main() -> Int {{\n let d = [1, 2, 3]\n emit(total(&d))\n emit(total(&d))\n emit(d)\n return 0\n}}"),
+        &["6", "6", "[1, 2, 3]"],
+    );
+    // Two shared borrows of the same variable in one call are fine.
+    ok(
+        "fn both(a: &Array<Int>, b: &Array<Int>) -> Int {\n return len(a) + len(b)\n}\nfn main() -> Int {\n let d = [1, 2]\n emit(both(&d, &d))\n return 0\n}",
+        &["4"],
+    );
+}
+
+#[test]
+fn mutable_borrows_write_back_to_the_caller() {
+    ok(
+        &format!("{BUMP}fn main() -> Int {{\n mut d = [1, 2, 3]\n emit(bump(&mut d))\n emit(bump(&mut d))\n emit(d)\n return 0\n}}"),
+        &["3", "3", "[3, 2, 3]"],
+    );
+    ok(
+        "struct P { x: Int }\nfn inc(p: &mut P, n: &mut Int) -> Unit {\n p.x = p.x + 1\n n = n + 10\n}\nfn main() -> Int {\n mut p = P { x: 1 }\n mut n = 5\n inc(&mut p, &mut n)\n inc(&mut p, &mut n)\n emit(p.x)\n emit(n)\n return 0\n}",
+        &["3", "25"],
+    );
+    // Early returns, recursion and reborrowing all write back.
+    ok(
+        "fn count(n: &mut Int, left: Int) -> Int {\n if left == 0 {\n return n\n }\n n = n + 1\n count(&mut n, left - 1)\n return n\n}\nfn main() -> Int {\n mut c = 0\n emit(count(&mut c, 4))\n emit(c)\n return 0\n}",
+        &["4", "4"],
+    );
+    // A write-back target may be a global-less local inside a loop body.
+    ok(
+        &format!("{BUMP}fn main() -> Int {{\n mut d = [0]\n mut i = 0\n while i < 3 {{\n bump(&mut d)\n i = i + 1\n }}\n emit(d)\n return 0\n}}"),
+        &["[3]"],
+    );
+}
+
+#[test]
+fn borrow_rule_violations_are_rejected() {
+    // same call, conflicting borrows
+    err(
+        "fn f(a: &mut Array<Int>, b: &Array<Int>) -> Unit {\n a[0] = len(b)\n}\nfn main() -> Int {\n mut d = [1]\n f(&mut d, &d)\n return 0\n}",
+        "already borrowed or used",
+    );
+    err(
+        "fn f(a: &mut Array<Int>, b: &mut Array<Int>) -> Unit {\n a[0] = 1\n}\nfn main() -> Int {\n mut d = [1]\n f(&mut d, &mut d)\n return 0\n}",
+        "already borrowed or used",
+    );
+    err(
+        "fn f(a: &mut Array<Int>, n: Int) -> Unit {\n a[0] = n\n}\nfn main() -> Int {\n mut d = [1]\n f(&mut d, len(d))\n return 0\n}",
+        "already borrowed or used",
+    );
+    err(
+        "fn f(a: &Array<Int>, b: Array<Int>) -> Unit {\n emit(len(a))\n}\nfn main() -> Int {\n let d = [1]\n f(&d, d)\n return 0\n}",
+        "already borrowed or used",
+    );
+    // &mut needs a mutable variable
+    err(
+        &format!("{BUMP}fn main() -> Int {{\n let d = [1]\n bump(&mut d)\n return 0\n}}"),
+        "not declared `mut`",
+    );
+    // wrong kind of argument for the parameter
+    err(
+        &format!("{BUMP}fn main() -> Int {{\n mut d = [1]\n bump(&d)\n return 0\n}}"),
+        "expected &mut Array<Int>, found &Array<Int>",
+    );
+    err(
+        &format!("{BUMP}fn main() -> Int {{\n mut d = [1]\n bump(d)\n return 0\n}}"),
+        "expected &mut Array<Int>, found Array<Int>",
+    );
+    err(
+        &format!("{SUM}fn main() -> Int {{\n let d = [1]\n emit(total(&mut d))\n return 0\n}}"),
+        "not declared `mut`",
+    );
+    err("fn f(n: Int) -> Int {\n return n\n}\nfn main() -> Int {\n let d = 1\n emit(f(&d))\n return 0\n}", "expected Int, found &Int");
+    // borrowing a moved value
+    err(
+        &format!("{SUM}fn eat(xs: Array<Int>) -> Unit {{\n emit(len(xs))\n}}\nfn main() -> Int {{\n let d = [1]\n eat(d)\n emit(total(&d))\n return 0\n}}"),
+        "moved",
+    );
+}
+
+#[test]
+fn references_are_parameter_only_and_cannot_be_moved_out() {
+    err(
+        "fn main() -> Int {\n let d = [1]\n let r = &d\n return 0\n}",
+        "only allowed as a function-call argument",
+    );
+    err(
+        "fn main() -> Int {\n let r: &Int = 1\n return 0\n}",
+        "only allowed as function parameter types",
+    );
+    err(
+        "fn f() -> &Int {\n return 1\n}\nfn main() -> Int {\n return 0\n}",
+        "only allowed as function parameter types",
+    );
+    err(
+        "struct S { r: &Int }\nfn main() -> Int {\n return 0\n}",
+        "only allowed as function parameter types",
+    );
+    err(
+        "fn f(xs: &Array<&Int>) -> Unit {\n}\nfn main() -> Int {\n return 0\n}",
+        "only allowed as function parameter types",
+    );
+    err(
+        "fn f(mut xs: &Array<Int>) -> Unit {\n}\nfn main() -> Int {\n return 0\n}",
+        "cannot also be declared `mut`",
+    );
+    err(
+        "fn main() -> Int {\n let d = [1]\n emit(len(&d))\n return 0\n}",
+        "found &Array<Int>",
+    );
+    // only variables can be borrowed
+    err("fn f(xs: &Array<Int>) -> Unit {\n}\nfn main() -> Int {\n let d = [[1]]\n f(&d[0])\n return 0\n}", "Only a variable can be borrowed");
+    // reading is fine; moving a non-copy value out of a reference is not
+    err(
+        "fn f(xs: &Array<Int>) -> Array<Int> {\n return xs\n}\nfn main() -> Int {\n return 0\n}",
+        "Cannot move out of borrowed",
+    );
+    err("fn eat(xs: Array<Int>) -> Unit {\n}\nfn f(xs: &Array<Int>) -> Unit {\n eat(xs)\n}\nfn main() -> Int {\n return 0\n}", "Cannot move out of borrowed");
+    // a shared reference cannot be written through
+    err(
+        "fn f(xs: &Array<Int>) -> Unit {\n xs[0] = 1\n}\nfn main() -> Int {\n return 0\n}",
+        "immutable",
+    );
+    ok("fn f(n: &Int) -> Int {\n return n + 1\n}\nfn main() -> Int {\n let a = 1\n emit(f(&a))\n return 0\n}", &["2"]);
+}

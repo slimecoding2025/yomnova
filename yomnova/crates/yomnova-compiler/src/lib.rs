@@ -79,6 +79,8 @@ pub struct Compiler {
     structs: HashMap<String, Vec<String>>,
     /// Enum names; variants are validated by semantic analysis before code generation.
     enums: std::collections::HashSet<String>,
+    /// Local slots of this function's `&mut` parameters, in parameter order.
+    mut_slots: Vec<u16>,
 }
 
 impl Compiler {
@@ -89,7 +91,26 @@ impl Compiler {
             chunk: Chunk::new(),
             structs: HashMap::new(),
             enums: std::collections::HashSet::new(),
+            mut_slots: Vec::new(),
         }
+    }
+
+    /// Finishes a function: the return value is on the stack. A function with `&mut` parameters returns an array
+    /// `[value, final &mut parameter values…]`; the caller writes those values back to its variables (copy-in,
+    /// copy-out, which is equivalent to a reference because `&mut` is exclusive and cannot be stored).
+    fn emit_return(&mut self, line: usize) -> Result<(), CompilerError> {
+        if !self.mut_slots.is_empty() {
+            for slot in self.mut_slots.clone() {
+                self.chunk.write_op(OpCode::GetLocal, line);
+                self.chunk.write_u16(slot, line);
+            }
+            let n = u16::try_from(self.mut_slots.len() + 1)
+                .map_err(|_| CompilerError::Codegen("too many &mut parameters".to_string()))?;
+            self.chunk.write_op(OpCode::Array, line);
+            self.chunk.write_u16(n, line);
+        }
+        self.chunk.write_op(OpCode::Return, line);
+        Ok(())
     }
 
     fn enum_table(program: &Program) -> std::collections::HashSet<String> {
@@ -236,12 +257,15 @@ impl Compiler {
                     fc.structs = structs.clone();
                     fc.enums = enums.clone();
                     for p in &f.params {
-                        fc.declare_local(&p.name).map_err(fail)?;
+                        let slot = fc.declare_local(&p.name).map_err(fail)?;
+                        if matches!(p.ty, TypeAnnotation::Ref(_, true)) {
+                            fc.mut_slots.push(slot);
+                        }
                     }
                     fc.compile_block_body(&f.body).map_err(fail)?;
                     let end = f.body.span.line;
                     fc.chunk.write_op(OpCode::Nil, end);
-                    fc.chunk.write_op(OpCode::Return, end);
+                    fc.emit_return(end).map_err(fail)?;
                     functions.push((f.name.clone(), fc.chunk, f.params.len()));
                 }
             }
@@ -602,7 +626,7 @@ impl Compiler {
                 } else {
                     self.chunk.write_op(OpCode::Nil, span.line);
                 }
-                self.chunk.write_op(OpCode::Return, span.line);
+                self.emit_return(span.line)?;
             }
             Stmt::Flow {
                 name,
@@ -768,10 +792,47 @@ impl Compiler {
                 })?;
                 self.compile_expression(callee)?;
                 for arg in args {
-                    self.compile_expression(arg)?;
+                    match &arg.kind {
+                        ExprKind::Borrow { operand, .. } => self.compile_expression(operand)?,
+                        _ => self.compile_expression(arg)?,
+                    }
                 }
                 self.chunk.write_op(OpCode::Call, line);
                 self.chunk.write_byte(argc, line);
+                // `&mut` arguments: the callee returned [value, final values…]; write them back and keep the value.
+                let write_back: Vec<&Expr> = args
+                    .iter()
+                    .filter_map(|a| match &a.kind {
+                        ExprKind::Borrow {
+                            operand,
+                            mutable: true,
+                        } => Some(&**operand),
+                        _ => None,
+                    })
+                    .collect();
+                if !write_back.is_empty() {
+                    let tmp = match self.resolve_local("$ret") {
+                        Some(s) => s,
+                        None => self.declare_local("$ret")?,
+                    };
+                    self.chunk.write_op(OpCode::SetLocal, line);
+                    self.chunk.write_u16(tmp, line);
+                    for (k, operand) in write_back.iter().enumerate() {
+                        self.chunk.write_op(OpCode::GetLocal, line);
+                        self.chunk.write_u16(tmp, line);
+                        let idx = self.constant(Value::Int(k as i64 + 1))?;
+                        self.chunk.write_op(OpCode::Constant, line);
+                        self.chunk.write_u16(idx, line);
+                        self.chunk.write_op(OpCode::Index, line);
+                        self.store_place(operand, line)?;
+                    }
+                    self.chunk.write_op(OpCode::GetLocal, line);
+                    self.chunk.write_u16(tmp, line);
+                    let zero = self.constant(Value::Int(0))?;
+                    self.chunk.write_op(OpCode::Constant, line);
+                    self.chunk.write_u16(zero, line);
+                    self.chunk.write_op(OpCode::Index, line);
+                }
             }
             ExprKind::Array(elements) => {
                 let len = u16::try_from(elements.len()).map_err(|_| {

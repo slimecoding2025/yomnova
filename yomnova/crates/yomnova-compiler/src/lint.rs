@@ -230,6 +230,7 @@ impl Lint {
                 self.expr(right);
             }
             ExprKind::Unary { operand, .. } => self.expr(operand),
+            ExprKind::Borrow { operand, .. } => self.expr(operand),
             ExprKind::Call { callee, args } => {
                 self.expr(callee);
                 args.iter().for_each(|a| self.expr(a));

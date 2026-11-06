@@ -13,6 +13,8 @@ pub enum OwnershipError {
     },
     #[error("Cannot move out of borrowed context for '{name}' at {span}")]
     CannotMoveOut { name: String, span: Span },
+    #[error("Cannot borrow '{name}' at {span}: it is already borrowed or used in the same call")]
+    BorrowConflict { name: String, span: Span },
     #[error("Value '{name}' is moved inside a loop at {moved_at} but declared outside it")]
     MovedInLoop { name: String, moved_at: Span },
 }
@@ -39,7 +41,13 @@ impl OwnershipError {
             OwnershipError::CannotMoveOut { name, span } => Diagnostic::error(
                 format!("Cannot move out of borrowed context for '{name}'"),
                 Some(*span),
-            ),
+            )
+            .with_hint("A reference parameter can be read, but only a copy type can be taken out of it"),
+            OwnershipError::BorrowConflict { name, span } => {
+                Diagnostic::error(self.to_string(), Some(*span)).with_hint(format!(
+                    "While '{name}' is mutably borrowed, nothing else in the call may use it; shared borrows may not coexist with a move or a `&mut`"
+                ))
+            }
         }
     }
 }
@@ -56,6 +64,8 @@ pub struct Binding {
     pub ty: Type,
     pub state: VariableState,
     pub is_copy: bool,
+    /// A reference parameter: reads are fine, moving a non-copy value out is not.
+    pub borrowed: bool,
 }
 
 pub struct OwnershipChecker {
@@ -185,9 +195,16 @@ impl OwnershipChecker {
     fn check_function(&mut self, func: &FunctionDecl) -> Result<(), OwnershipError> {
         self.enter_scope();
         for param in &func.params {
-            let ty = Type::from_annotation(&param.ty);
+            let full = Type::from_annotation(&param.ty);
+            let borrowed = matches!(full, Type::Ref(..));
+            let ty = full.referent().clone();
             let is_copy = Self::is_copy_type(&ty);
             self.declare(param.name.clone(), ty, is_copy);
+            if borrowed {
+                if let Some(b) = self.lookup_mut(&param.name) {
+                    b.borrowed = true;
+                }
+            }
         }
         self.check_block(&func.body)?;
         self.leave_scope();
@@ -471,6 +488,12 @@ impl OwnershipChecker {
                         used_at: expr.span,
                     });
                 }
+                if binding.borrowed && !binding.is_copy && binding.ty != Type::Unknown {
+                    return Err(OwnershipError::CannotMoveOut {
+                        name: name.clone(),
+                        span: expr.span,
+                    });
+                }
                 if !binding.is_copy && binding.ty != Type::Unknown {
                     if let Some(b) = self.lookup_mut(name) {
                         b.state = VariableState::Moved { at: expr.span };
@@ -506,14 +529,16 @@ impl OwnershipChecker {
                 // `emit` and `len` only borrow their argument; every other call consumes identifier arguments.
                 let borrows = matches!(&callee.kind, ExprKind::Identifier(n)
                     if n == "emit" || n == "len" || yomnova_types::NET_READ_ONLY.contains(&n.as_str()));
+                self.check_borrow_conflicts(args)?;
                 for arg in args {
-                    if borrows {
+                    if borrows || matches!(arg.kind, ExprKind::Borrow { .. }) {
                         self.check_expr_use(arg)?;
                     } else {
                         self.check_expr_move(arg)?;
                     }
                 }
             }
+            ExprKind::Borrow { operand, .. } => self.check_expr_use(operand)?,
             ExprKind::MethodCall { receiver, args, .. } => {
                 self.check_expr_use(receiver)?;
                 // `Enum.Variant(value)` takes ownership of its value.
@@ -549,6 +574,45 @@ impl OwnershipChecker {
         Ok(())
     }
 
+    /// Borrow rules for one call (borrows live only as call arguments, so this is the whole borrow checker):
+    /// a `&mut x` excludes every other use of `x` in the call; a `&x` excludes a by-value move of `x` and `&mut x`.
+    fn check_borrow_conflicts(&self, args: &[Expr]) -> Result<(), OwnershipError> {
+        for (i, arg) in args.iter().enumerate() {
+            let ExprKind::Borrow { operand, mutable } = &arg.kind else {
+                continue;
+            };
+            let ExprKind::Identifier(name) = &operand.kind else {
+                continue;
+            };
+            for (j, other) in args.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+                let clash = if *mutable {
+                    mentions(other, name)
+                } else {
+                    match &other.kind {
+                        ExprKind::Identifier(n) => {
+                            n == name && self.lookup(n).is_some_and(|b| !b.is_copy)
+                        }
+                        ExprKind::Borrow {
+                            operand: o,
+                            mutable: true,
+                        } => matches!(&o.kind, ExprKind::Identifier(n) if n == name),
+                        _ => false,
+                    }
+                };
+                if clash {
+                    return Err(OwnershipError::BorrowConflict {
+                        name: name.clone(),
+                        span: other.span,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Only these types are implicitly copied; everything else moves.
     fn is_copy_type(ty: &Type) -> bool {
         matches!(
@@ -574,6 +638,7 @@ impl OwnershipChecker {
                     ty,
                     state: VariableState::Owned,
                     is_copy,
+                    borrowed: false,
                 },
             );
         }
@@ -585,5 +650,35 @@ impl OwnershipChecker {
 
     fn lookup_mut(&mut self, name: &str) -> Option<&mut Binding> {
         self.scopes.iter_mut().rev().find_map(|s| s.get_mut(name))
+    }
+}
+
+/// Whether `name` is used anywhere inside `e`.
+fn mentions(e: &Expr, name: &str) -> bool {
+    match &e.kind {
+        ExprKind::Identifier(n) => n == name,
+        ExprKind::Binary { left, right, .. } => mentions(left, name) || mentions(right, name),
+        ExprKind::Unary { operand, .. } | ExprKind::Borrow { operand, .. } => {
+            mentions(operand, name)
+        }
+        ExprKind::Call { callee, args } => {
+            mentions(callee, name) || args.iter().any(|a| mentions(a, name))
+        }
+        ExprKind::MethodCall { receiver, args, .. } => {
+            mentions(receiver, name) || args.iter().any(|a| mentions(a, name))
+        }
+        ExprKind::Array(items) => items.iter().any(|a| mentions(a, name)),
+        ExprKind::Index { collection, index } => {
+            mentions(collection, name) || mentions(index, name)
+        }
+        ExprKind::FieldAccess { object, .. } => mentions(object, name),
+        ExprKind::StructLiteral { fields, .. } => fields.iter().any(|(_, v)| mentions(v, name)),
+        ExprKind::Pipe { expr, stages } => {
+            mentions(expr, name)
+                || stages
+                    .iter()
+                    .any(|s| s.arg.as_ref().is_some_and(|a| mentions(a, name)))
+        }
+        _ => false,
     }
 }

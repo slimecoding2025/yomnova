@@ -65,6 +65,7 @@ pub enum TokenKind {
     Greater,      // >
     GreaterEqual, // >=
     AndAnd,       // &&
+    Ampersand,    // &
     OrOr,         // ||
     Bang,         // !
     PipeGreater,  // |>
@@ -134,6 +135,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Greater => write!(f, "'>'"),
             TokenKind::GreaterEqual => write!(f, "'>='"),
             TokenKind::AndAnd => write!(f, "'&&'"),
+            TokenKind::Ampersand => write!(f, "'&'"),
             TokenKind::OrOr => write!(f, "'||'"),
             TokenKind::Bang => write!(f, "'!'"),
             TokenKind::PipeGreater => write!(f, "'|>'"),

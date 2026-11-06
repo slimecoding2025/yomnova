@@ -2,6 +2,13 @@
 
 ## Unreleased — 2026-11-03
 
+### Borrowing
+* **Added** reference parameters `&T` / `&mut T` with `&x` / `&mut x` at the call site, and a call-scoped borrow checker
+  (conflicting borrows in one call, borrowing a moved value, moving out of a reference, writing through `&T`,
+  `&mut` of a non-`mut` variable). References cannot be stored or returned, so no lifetime annotations are needed.
+  `&mut` is implemented as copy-in/copy-out. 4 test groups (114 Rust tests total), `examples/borrowing.yom`.
+* **Not done:** stored/returned references, borrowing fields or elements, lifetime parameters.
+
 ### IR optimiser
 * **Added** `yomnova-ir` as a real stage: bytecode is lifted into a linear IR with symbolic jump targets, optimised and
   lowered back (constant folding that cannot change run-time errors, dead push/pop, constant-condition jumps, jump

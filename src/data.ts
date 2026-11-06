@@ -27,13 +27,13 @@ export const DOMAINS: Domain[] = [
     name: "Application programming",
     status: "partial",
     today: "Functions, recursion, let/mut bindings, if/else, while, for-in over arrays, len and push, Text, Int, Float, Bool.",
-    next: "Imports and a standard library, borrowing.",
+    next: "Imports and a standard library.",
   },
   {
     name: "Systems programming",
     status: "partial",
     today: "Move semantics are checked at compile time; execution runs on a bounded stack VM.",
-    next: "Borrowing, lifetimes, resource safety, native code generation.",
+    next: "Stored references and lifetimes, resource safety, native code generation.",
   },
   {
     name: "Networking",
@@ -153,7 +153,7 @@ export const STAGES: Stage[] = [
     name: "Ownership checking",
     crate: "yomnova-ownership",
     status: "partial",
-    note: "Tracks moves: use-after-move, moves in branches and loops. No borrows or lifetimes yet.",
+    note: "Tracks moves (use-after-move, moves in branches and loops) and call-scoped borrows of reference parameters. No stored references or lifetimes.",
   },
   {
     name: "IR",
@@ -188,9 +188,9 @@ export interface OwnershipConcept {
 
 export const OWNERSHIP_CONCEPTS: OwnershipConcept[] = [
   { name: "Move semantics", status: "implemented", note: "Passing, aliasing or returning a non-copy value moves it." },
-  { name: "Immutable borrow", status: "planned", note: "Not in the language yet." },
-  { name: "Mutable borrow", status: "planned", note: "Not in the language yet." },
-  { name: "Lifetimes", status: "planned", note: "Depends on borrowing." },
+  { name: "Immutable borrow", status: "implemented", note: "`&T` parameters, `&x` arguments; read-only, call-scoped." },
+  { name: "Mutable borrow", status: "implemented", note: "`&mut T` parameters, `&mut x` arguments; exclusive for the call, implemented as copy-in/copy-out." },
+  { name: "Lifetimes", status: "planned", note: "Not needed yet: references cannot be stored or returned, so they never outlive a call." },
   { name: "Resource safety", status: "planned", note: "No resources (files, sockets) exist yet." },
   { name: "Typestate", status: "research", note: "An idea for protocol state machines." },
 ];
@@ -246,14 +246,14 @@ export const ROADMAP: Record<Status, RoadmapItem[]> = {
   partial: [
     { title: "Network types", note: "IPv4, Port, Endpoint" },
     { title: "Type inference", note: "let only, no generics" },
-    { title: "Ownership", note: "moves, no borrows" },
+    { title: "Ownership", note: "moves and call-scoped borrows" },
     { title: "Formatter", note: "re-indents only" },
   ],
   planned: [
     { title: "Nested patterns and match as an expression" },
     { title: "Imports and a standard library" },
     { title: "A richer IR (SSA) and inlining" },
-    { title: "Borrow checker and lifetimes" },
+    { title: "Stored references and lifetimes" },
     { title: "TCP, UDP" },
     { title: "Concurrency and channels" },
     { title: "Stable, verified bytecode format" },

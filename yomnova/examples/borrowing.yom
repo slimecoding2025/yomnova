@@ -1,0 +1,34 @@
+// Reference parameters: `&T` reads, `&mut T` reads and writes. Borrows only live for the duration of a call.
+fn total(xs: &Array<Int>) -> Int {
+    mut s = 0
+    for x in xs {
+        s = s + x
+    }
+    return s
+}
+
+fn bump_all(xs: &mut Array<Int>, by: Int) -> Int {
+    mut i = 0
+    while i < len(xs) {
+        xs[i] = xs[i] + by
+        i = i + 1
+    }
+    return len(xs)
+}
+
+fn reset(n: &mut Int) -> Unit {
+    n = 0
+}
+
+fn main() -> Int {
+    mut data = [1, 2, 3]
+    emit(total(&data))
+    let n = bump_all(&mut data, 10)
+    emit(n)
+    emit(data)
+    emit(total(&data))
+    mut counter = 42
+    reset(&mut counter)
+    emit(counter)
+    return 0
+}

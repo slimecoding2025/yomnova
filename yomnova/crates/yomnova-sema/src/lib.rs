@@ -252,10 +252,27 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// A parameter may be `&T` / `&mut T`; the referenced type is validated like any other.
+    fn validate_param_annotation(
+        &self,
+        anno: &TypeAnnotation,
+        span: Span,
+    ) -> Result<(), SemaError> {
+        match anno {
+            TypeAnnotation::Ref(inner, _) => self.validate_annotation(inner, span),
+            other => self.validate_annotation(other, span),
+        }
+    }
+
     /// A type annotation may only name built-in types or declared structs.
     fn validate_annotation(&self, anno: &TypeAnnotation, span: Span) -> Result<(), SemaError> {
         match anno {
             TypeAnnotation::Array(inner) => self.validate_annotation(inner, span),
+            TypeAnnotation::Ref(..) => Err(SemaError::Invalid {
+                message: "references (&T, &mut T) are only allowed as function parameter types"
+                    .to_string(),
+                span,
+            }),
             TypeAnnotation::Custom(name)
                 if name != "NetworkBuffer"
                     && !self.structs.contains_key(name)
@@ -389,7 +406,16 @@ impl SemanticAnalyzer {
         for item in &program.items {
             if let TopLevelItem::Function(func) = item {
                 for p in &func.params {
-                    self.validate_annotation(&p.ty, p.span)?;
+                    self.validate_param_annotation(&p.ty, p.span)?;
+                    if matches!(p.ty, TypeAnnotation::Ref(..)) && p.is_mut {
+                        return Err(SemaError::Invalid {
+                            message: format!(
+                                "reference parameter '{}' cannot also be declared `mut`; use `&mut` instead",
+                                p.name
+                            ),
+                            span: p.span,
+                        });
+                    }
                 }
                 if let Some(r) = &func.return_type {
                     self.validate_annotation(r, func.span)?;
@@ -501,8 +527,13 @@ impl SemanticAnalyzer {
 
         self.enter_scope();
         for param in &func.params {
-            let ty = Type::from_annotation(&param.ty);
-            self.declare_symbol(param.name.clone(), ty, param.is_mut, false, param.span)?;
+            // Inside the body a reference parameter reads as the value it refers to; it is writable only
+            // through `&mut`.
+            let (ty, is_mut) = match Type::from_annotation(&param.ty) {
+                Type::Ref(inner, m) => (*inner, m),
+                other => (other, param.is_mut),
+            };
+            self.declare_symbol(param.name.clone(), ty, is_mut, false, param.span)?;
         }
 
         self.analyze_block(&func.body)?;
@@ -953,7 +984,13 @@ impl SemanticAnalyzer {
                 };
                 let mut arg_types = Vec::new();
                 for arg in args {
-                    arg_types.push(self.analyze_expression(arg)?);
+                    let t = match &arg.kind {
+                        ExprKind::Borrow { operand, mutable } => {
+                            self.analyze_borrow(operand, *mutable)?
+                        }
+                        _ => self.analyze_expression(arg)?,
+                    };
+                    arg_types.push(t);
                 }
                 let Some(sig) = self.functions.get(name).cloned() else {
                     return Err(if self.lookup_symbol(name, expr.span).is_ok() {
@@ -1079,6 +1116,14 @@ impl SemanticAnalyzer {
                     }
                 }
                 Type::Custom(ename)
+            }
+            ExprKind::Borrow { .. } => {
+                return Err(SemaError::Invalid {
+                    message:
+                        "a borrow (`&x`, `&mut x`) is only allowed as a function-call argument"
+                            .to_string(),
+                    span: expr.span,
+                })
             }
             ExprKind::Array(elements) => {
                 if elements.is_empty() {
@@ -1248,6 +1293,26 @@ impl SemanticAnalyzer {
             current = sig.return_type;
         }
         Ok(current)
+    }
+
+    /// `&x` / `&mut x` as a call argument: the type is a reference to the variable's type.
+    fn analyze_borrow(&mut self, operand: &Expr, mutable: bool) -> Result<Type, SemaError> {
+        let ExprKind::Identifier(name) = &operand.kind else {
+            return Err(SemaError::Invalid {
+                message: "only a variable can be borrowed".to_string(),
+                span: operand.span,
+            });
+        };
+        let sym = self.lookup_symbol(name, operand.span)?;
+        if mutable && !sym.is_mut {
+            return Err(SemaError::Invalid {
+                message: format!(
+                    "cannot borrow '{name}' as mutable because it is not declared `mut`"
+                ),
+                span: operand.span,
+            });
+        }
+        Ok(Type::Ref(Box::new(sym.ty), mutable))
     }
 
     fn enter_scope(&mut self) {

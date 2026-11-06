@@ -14,6 +14,8 @@ pub enum ParserError {
     UnexpectedEof { expected: String, span: Span },
     #[error("Invalid assignment target at {span}")]
     InvalidAssignmentTarget { span: Span },
+    #[error("Only a variable can be borrowed, at {span}")]
+    InvalidBorrow { span: Span },
     #[error("Nesting too deep at {span} (limit is {limit})")]
     NestingTooDeep { limit: usize, span: Span },
 }
@@ -31,6 +33,8 @@ impl ParserError {
                 Diagnostic::error(self.to_string(), Some(*span))
                     .with_hint("Split the expression or block into smaller parts")
             }
+            ParserError::InvalidBorrow { span } => Diagnostic::error(self.to_string(), Some(*span))
+                .with_hint("Write `&name` or `&mut name`; fields and elements cannot be borrowed"),
             ParserError::InvalidAssignmentTarget { span } => {
                 Diagnostic::error(self.to_string(), Some(*span))
                     .with_hint("Only identifiers or indexable paths can be assigned to")
@@ -802,6 +806,26 @@ impl Parser {
                 },
                 span,
             })
+        } else if self.check(&TokenKind::Ampersand) {
+            self.advance();
+            let mutable = if self.check(&TokenKind::Mut) {
+                self.advance();
+                true
+            } else {
+                false
+            };
+            let operand = self.parse_unary()?;
+            if !matches!(operand.kind, ExprKind::Identifier(_)) {
+                return Err(ParserError::InvalidBorrow { span: operand.span });
+            }
+            let span = start_span.merge(operand.span);
+            Ok(Expr {
+                kind: ExprKind::Borrow {
+                    operand: Box::new(operand),
+                    mutable,
+                },
+                span,
+            })
         } else {
             self.parse_postfix()
         }
@@ -1141,6 +1165,17 @@ impl Parser {
 
     fn parse_type_inner(&mut self) -> Result<TypeAnnotation, ParserError> {
         let span = self.current_span();
+        if self.check(&TokenKind::Ampersand) {
+            self.advance();
+            let mutable = if self.check(&TokenKind::Mut) {
+                self.advance();
+                true
+            } else {
+                false
+            };
+            let inner = self.parse_type()?;
+            return Ok(TypeAnnotation::Ref(Box::new(inner), mutable));
+        }
         if let Some(kind) = self.peek_kind() {
             let ty = match kind {
                 TokenKind::Identifier(id) => match id.as_str() {

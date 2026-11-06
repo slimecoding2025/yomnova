@@ -180,6 +180,11 @@ pub enum ExprKind {
         args: Vec<Expr>,
     },
     Array(Vec<Expr>),
+    /// `&x` / `&mut x`: only allowed as a call argument.
+    Borrow {
+        operand: Box<Expr>,
+        mutable: bool,
+    },
     Index {
         collection: Box<Expr>,
         index: Box<Expr>,
@@ -241,6 +246,8 @@ pub enum TypeAnnotation {
     TCP,
     UDP,
     Array(Box<TypeAnnotation>),
+    /// `&T` / `&mut T`: only allowed as a function parameter type.
+    Ref(Box<TypeAnnotation>, bool),
     Custom(String),
 }
 

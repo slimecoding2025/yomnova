@@ -360,7 +360,7 @@ impl<'a> Lexer<'a> {
                     let (end_idx, _) = self.advance();
                     Ok(Token::new(TokenKind::AndAnd, make_span(end_idx + 1, 0)))
                 } else {
-                    Err(LexerError::UnexpectedChar { ch, span: span1 })
+                    Ok(Token::new(TokenKind::Ampersand, span1))
                 }
             }
             '|' => {
