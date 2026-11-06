@@ -2,6 +2,14 @@
 
 ## Unreleased — 2026-11-03
 
+### Element and field assignment
+* **Added** `xs[i] = v`, `p.f = v` and chains such as `b.vals[2] = v` / `grid[1][0] = v`. The root variable must be `mut`;
+  types are checked; moved variables cannot be written to; a variable that is only written is still reported as unread.
+  New opcodes `SetIndex` and `SetField` (40 opcodes); the `.yomc` format is now **version 2** (version 1 files are rejected
+  cleanly). 7 new tests (98 Rust tests total), `examples/assignment.yom`.
+* **Limits:** arrays and structs are values, so each write copies the container (O(n)); in a nested target an index may not
+  contain a call; no compound assignment (`+=`).
+
 ### AI Assistant
 * **Changed** the model is chosen by the server from three free OpenRouter models, with fallback to the next on failure.
   The picker is gone and the browser never sees a model id (it shows "YOMNOVA AI"). A model id sent by a client is ignored.
