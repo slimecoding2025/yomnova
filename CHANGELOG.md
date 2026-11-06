@@ -2,6 +2,12 @@
 
 ## Unreleased — 2026-11-03
 
+### Bytecode verifier: operand-stack depth
+* **Added** to `verify_chunk` (run when a `.yomc` file is decoded): abstract interpretation of the operand stack. It rejects
+  stack underflow, an instruction reached with two different depths along different paths, and depth above 65 536. Every
+  compiled example (optimised and not) passes it. 2 new tests (122 Rust tests total).
+* **Not done:** operand *type* checking (the VM still checks types at run time), local-slot and call-arity checks against the callee.
+
 ### Standard library and imports
 * **Added** `import std.math` (`abs sign min max clamp pow`) and `import std.arrays` (`sum contains index_of max_of min_of`, taking `&Array<Int>`),
   called as `math.abs(x)`. The library is written in YOMNOVA and expanded before lexing (unused functions are not included,

@@ -1324,3 +1324,32 @@ fn imports_do_not_shift_error_lines() {
     };
     assert_eq!(e[0].span.as_ref().map(|s| s.line), Some(3));
 }
+
+#[test]
+fn every_compiled_example_passes_the_stack_verifier() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+    let mut checked = 0;
+    for entry in std::fs::read_dir(&dir).expect("examples dir") {
+        let p = entry.unwrap().path();
+        if !p.extension().is_some_and(|e| e == "yom") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&p).unwrap();
+        for optimize in [true, false] {
+            let Ok(unit) = Compiler::compile_unit_opt(&src, optimize) else {
+                continue;
+            };
+            yomnova_bytecode::module::verify_chunk(&unit.main)
+                .unwrap_or_else(|e| panic!("{}: main: {e}", p.display()));
+            for (name, chunk, _) in &unit.functions {
+                yomnova_bytecode::module::verify_chunk(chunk)
+                    .unwrap_or_else(|e| panic!("{}: {name}: {e}", p.display()));
+            }
+            checked += 1;
+        }
+    }
+    assert!(
+        checked >= 20,
+        "expected to verify the example programs, got {checked}"
+    );
+}

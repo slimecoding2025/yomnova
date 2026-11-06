@@ -297,6 +297,102 @@ pub fn verify_chunk(chunk: &Chunk) -> Result<(), String> {
     if !matches!(last, OpCode::Halt | OpCode::Return | OpCode::Jump) {
         return Err("code can run past its end (no final Halt, Return or Jump)".to_string());
     }
+    verify_stack(chunk)
+}
+
+/// Largest operand-stack depth a single chunk may reach (the VM's own limit).
+pub const MAX_VERIFIED_STACK: i64 = 65_536;
+
+/// Abstract interpretation of the operand stack. Walks every reachable instruction once per
+/// distinct path start and checks that (1) the stack never underflows, (2) every instruction
+/// is reached with the *same* depth along all paths (so each jump target has one depth),
+/// and (3) the depth stays within [`MAX_VERIFIED_STACK`]. A chunk starts with an empty stack
+/// (arguments live in local slots). It does **not** check operand *types*; the VM still does that.
+/// `Return` / `Halt` may leave extra values behind, which the VM discards with the frame.
+/// Precondition: the structural checks of [`verify_chunk`] passed.
+fn verify_stack(chunk: &Chunk) -> Result<(), String> {
+    let code = &chunk.code;
+    let mut depth_at: Vec<Option<i64>> = vec![None; code.len()];
+    let mut work: Vec<(usize, i64)> = vec![(0, 0)];
+    while let Some((start, d0)) = work.pop() {
+        let (mut i, mut d) = (start, d0);
+        loop {
+            match depth_at[i] {
+                Some(seen) if seen == d => break,
+                Some(seen) => {
+                    return Err(format!(
+                        "offset {i}: reached with stack depth {d} and also {seen}"
+                    ))
+                }
+                None => depth_at[i] = Some(d),
+            }
+            let op = OpCode::from_u8(code[i]).ok_or("unknown opcode")?;
+            let u16_at = |k: usize| ((code[i + 1 + k] as usize) << 8) | code[i + 2 + k] as usize;
+            // (values popped, values pushed, instruction width)
+            let (pop, push, width): (i64, i64, usize) = match op {
+                OpCode::Constant | OpCode::GetLocal | OpCode::GetGlobal => (0, 1, 2),
+                OpCode::Nil | OpCode::True | OpCode::False => (0, 1, 0),
+                OpCode::Pop => (1, 0, 0),
+                OpCode::SetLocal | OpCode::JumpIfFalse => (1, 0, 2),
+                OpCode::SetGlobal => (1, 1, 2),
+                OpCode::Equal
+                | OpCode::NotEqual
+                | OpCode::Greater
+                | OpCode::GreaterEqual
+                | OpCode::Less
+                | OpCode::LessEqual
+                | OpCode::Add
+                | OpCode::Subtract
+                | OpCode::Multiply
+                | OpCode::Divide
+                | OpCode::Modulo
+                | OpCode::And
+                | OpCode::Or
+                | OpCode::Index => (2, 1, 0),
+                OpCode::Not | OpCode::Negate | OpCode::Emit | OpCode::Len | OpCode::EnumPayload => {
+                    (1, 1, 0)
+                }
+                OpCode::Field | OpCode::EnumIs => (1, 1, 2),
+                OpCode::SetField => (2, 1, 2),
+                OpCode::SetIndex => (3, 1, 0),
+                OpCode::Jump => (0, 0, 2),
+                OpCode::Call => (code[i + 1] as i64 + 1, 1, 1),
+                OpCode::Array => (u16_at(0) as i64, 1, 2),
+                OpCode::Struct => match chunk.constants.get(u16_at(2)) {
+                    Some(Value::Array(names)) => (names.len() as i64, 1, 4),
+                    _ => return Err(format!("offset {i}: malformed struct constant")),
+                },
+                OpCode::EnumNew => (code[i + 3] as i64, 1, 3),
+                OpCode::Return | OpCode::Halt => (1, 0, 0),
+            };
+            if d < pop && !matches!(op, OpCode::Halt) {
+                return Err(format!(
+                    "offset {i}: {op:?} needs {pop} value(s) but the stack holds {d}"
+                ));
+            }
+            d = (d - pop).max(0) + push;
+            if d > MAX_VERIFIED_STACK {
+                return Err(format!(
+                    "offset {i}: stack depth exceeds {MAX_VERIFIED_STACK}"
+                ));
+            }
+            match op {
+                OpCode::Return | OpCode::Halt => break,
+                OpCode::Jump => {
+                    i = u16_at(0);
+                    continue;
+                }
+                OpCode::JumpIfFalse => {
+                    work.push((u16_at(0), d));
+                }
+                _ => {}
+            }
+            i += 1 + width;
+            if i >= code.len() {
+                break;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -453,6 +549,28 @@ mod tests {
             constants,
             lines,
         }
+    }
+
+    #[test]
+    fn stack_verifier_rejects_underflow_and_inconsistent_merges() {
+        let (h, n, p) = (OpCode::Halt as u8, OpCode::Nil as u8, OpCode::Pop as u8);
+        let (add, jf, j) = (
+            OpCode::Add as u8,
+            OpCode::JumpIfFalse as u8,
+            OpCode::Jump as u8,
+        );
+        // Pop on an empty stack, and Add with only one operand.
+        for (code, want) in [
+            (vec![p, h], "needs 1 value"),
+            (vec![n, add, h], "needs 2 value"),
+            // Nil; JumpIfFalse -> 9; Nil; Nil; Jump 9; (9) Halt: falls through with depth 2, jumps with depth 0.
+            (vec![n, jf, 0, 9, n, n, j, 0, 9, h], "also"),
+        ] {
+            let err = verify_chunk(&chunk_of(code, vec![])).unwrap_err();
+            assert!(err.contains(want), "{err} should contain {want}");
+        }
+        // A balanced branch is accepted: Nil; JumpIfFalse -> 6; Nil; Pop; (6) Halt.
+        assert!(verify_chunk(&chunk_of(vec![n, jf, 0, 6, n, p, h], vec![])).is_ok());
     }
 
     #[test]
