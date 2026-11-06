@@ -169,7 +169,10 @@ IR, `yomnova-network-core` and `yomnova-stdlib` are not wired into the pipeline.
 [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## 19. License
-MIT OR Apache-2.0.
+Dual-licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this project, as defined
+in the Apache-2.0 license, is dual-licensed as above, without any additional terms or conditions.
 
 ## 20. Author
 Created by **Mouhamed Salim Bousmina** · <https://github.com/slimecoding2025/yomnova>
