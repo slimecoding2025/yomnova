@@ -123,6 +123,10 @@ Ownership is checked statically after type checking; violations stop the program
   Implementation: `&mut` is **copy-in, copy-out**: the callee returns its final value and the caller writes it back,
   which is equivalent to a real reference only because `&mut` is exclusive and cannot be stored. Cost: O(size) per call
   like any by-value argument. Pipeline stages and `flow` cannot take reference parameters.
+* **Imports and standard library.** `import std.math` and `import std.arrays` at the start of a line; functions are always
+  qualified: `math.abs math.sign math.min math.max math.clamp math.pow`, `arrays.sum arrays.contains arrays.index_of
+  arrays.max_of arrays.min_of` (arrays are `Array<Int>`, passed as `&xs`). Implemented as source expansion before lexing;
+  there are no user-defined modules, no file imports and no bare names. An unknown module or function is a compile error.
 * **Not implemented:** stored or returned references, borrowing fields or elements (`&p.x`), reborrow rules beyond the call,
   lifetime parameters, resource types, typestate.
 

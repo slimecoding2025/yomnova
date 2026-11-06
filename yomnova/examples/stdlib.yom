@@ -1,0 +1,16 @@
+// Standard library: `import std.<module>` (built-in modules only: math, arrays).
+import std.math
+import std.arrays
+
+fn main() -> Int {
+    emit(math.abs(0 - 7))
+    emit(math.max(3, 9))
+    emit(math.clamp(15, 0, 10))
+    emit(math.pow(2, 10))
+    let xs = [4, 8, 15, 16, 23, 42]
+    emit(arrays.sum(&xs))
+    emit(arrays.contains(&xs, 15))
+    emit(arrays.index_of(&xs, 23))
+    emit(arrays.max_of(&xs))
+    return 0
+}

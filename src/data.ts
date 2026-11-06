@@ -27,7 +27,7 @@ export const DOMAINS: Domain[] = [
     name: "Application programming",
     status: "partial",
     today: "Functions, recursion, let/mut bindings, if/else, while, for-in over arrays, len and push, Text, Int, Float, Bool.",
-    next: "Imports and a standard library.",
+    next: "User modules and a larger standard library.",
   },
   {
     name: "Systems programming",
@@ -251,7 +251,7 @@ export const ROADMAP: Record<Status, RoadmapItem[]> = {
   ],
   planned: [
     { title: "Nested patterns and match as an expression" },
-    { title: "Imports and a standard library" },
+    { title: "User modules, file imports, a larger standard library" },
     { title: "A richer IR (SSA) and inlining" },
     { title: "Stored references and lifetimes" },
     { title: "TCP, UDP" },

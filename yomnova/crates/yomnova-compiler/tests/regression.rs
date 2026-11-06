@@ -1291,3 +1291,36 @@ fn references_are_parameter_only_and_cannot_be_moved_out() {
     );
     ok("fn f(n: &Int) -> Int {\n return n + 1\n}\nfn main() -> Int {\n let a = 1\n emit(f(&a))\n return 0\n}", &["2"]);
 }
+
+#[test]
+fn std_modules_can_be_imported_and_used() {
+    let out = Compiler::compile_and_run(
+        "import std.math\nimport std.arrays\nfn main() -> Int {\n    emit(math.abs(0 - 7))\n    emit(math.pow(2, 10))\n    emit(math.clamp(15, 0, 10))\n    let xs = [4, 8, 15]\n    emit(arrays.sum(&xs))\n    emit(arrays.contains(&xs, 8))\n    emit(arrays.index_of(&xs, 99))\n    emit(arrays.max_of(&xs))\n    emit(len(xs))\n    return 0\n}\n",
+    )
+    .expect("runs");
+    assert_eq!(
+        out.output_lines,
+        vec!["7", "1024", "10", "27", "true", "-1", "15", "3"]
+    );
+}
+
+#[test]
+fn bad_imports_are_reported() {
+    for src in [
+        "import std.net\nfn main() -> Int { return 0 }\n",
+        "import mylib\nfn main() -> Int { return 0 }\n",
+        "import std.math\nfn main() -> Int { return math.nope(1) }\n",
+    ] {
+        assert!(Compiler::compile_and_run(src).is_err(), "{src}");
+    }
+}
+
+#[test]
+fn imports_do_not_shift_error_lines() {
+    let Err(e) = Compiler::compile_and_run(
+        "import std.math\nfn main() -> Int {\n    let x: Int = \"a\"\n    return 0\n}\n",
+    ) else {
+        panic!("should fail")
+    };
+    assert_eq!(e[0].span.as_ref().map(|s| s.line), Some(3));
+}

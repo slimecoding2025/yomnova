@@ -2,6 +2,12 @@
 
 ## Unreleased — 2026-11-03
 
+### Standard library and imports
+* **Added** `import std.math` (`abs sign min max clamp pow`) and `import std.arrays` (`sum contains index_of max_of min_of`, taking `&Array<Int>`),
+  called as `math.abs(x)`. The library is written in YOMNOVA and expanded before lexing (unused functions are not included,
+  diagnostic line numbers do not move). `examples/stdlib.yom`, 6 tests (120 Rust tests total).
+* **Not done:** user modules / files, `import foo`, bare names, generic array functions (arrays are `Array<Int>` only).
+
 ### Borrowing
 * **Added** reference parameters `&T` / `&mut T` with `&x` / `&mut x` at the call site, and a call-scoped borrow checker
   (conflicting borrows in one call, borrowing a moved value, moving out of a reference, writing through `&T`,

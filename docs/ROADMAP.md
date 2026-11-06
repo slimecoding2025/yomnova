@@ -16,7 +16,7 @@ Playground backed by the real compiler.
 4. *(Done in a deliberately small form: `&T` / `&mut T` parameters with call-scoped borrow checking, so no lifetimes are needed. Still open: stored/returned references, borrowing fields and elements, real lifetime parameters.)*
 5. *(Done: `IPv6`, `NetworkBuffer` with typed bounds-checked access, `Packet` as a container. Still open: protocol parsing, `TCP`/`UDP`.)*
 6. *(Done: `.yomc` binary format v2, `build` and `exec`. Still open: format stability across versions, signing, operand-type and stack-depth verification. Done: a structural verifier for jump targets, constants and instruction boundaries.)*
-7. Standard library (`yomnova-stdlib`) and modules/imports.
+7. *(Done for built-in modules only: `import std.math`, `import std.arrays`, expanded from YOMNOVA source before lexing. Still open: user modules, file imports, a separate `yomnova-stdlib` crate, generic array functions, text/IO modules.)*
 
 ## Research (no commitment)
 Typestate for protocol state machines · effect system (effects are parsed in `![…]` but ignored) · tasks, channels

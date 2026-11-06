@@ -2,6 +2,7 @@
 
 pub mod format;
 pub mod lint;
+pub mod stdlib;
 
 use std::collections::HashMap;
 use yomnova_ast::*;
@@ -158,7 +159,8 @@ impl Default for Compiler {
 }
 
 fn lex_and_parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
-    let tokens = Lexer::new(source)
+    let expanded = stdlib::expand(source)?;
+    let tokens = Lexer::new(&expanded)
         .tokenize()
         .map_err(|e| vec![e.to_diagnostic()])?;
     let (program, errors) = Parser::new(tokens).parse_program_recovering();

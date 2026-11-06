@@ -24,6 +24,8 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | methods, lambdas | Parsed-only, rejected clearly | `unsupported_syntax_is_reported_not_miscompiled`, `static_checks` |
 | `import`, `type` | Planned (reserved words only) | — |
 | Borrowing: `&T`/`&mut T` parameters, `&x`/`&mut x` arguments, conflict checks | Implemented (call-scoped only) | `shared_borrows_*`, `mutable_borrows_*`, `borrow_rule_*`, `references_are_parameter_only_*`, `examples/borrowing.yom` |
+| `import std.math`, `import std.arrays` (built-in modules written in YOMNOVA) | Implemented (built-in only) | `std_modules_*`, `bad_imports_*`, `examples/stdlib.yom` |
+| User modules and file imports | Planned | — |
 | Stored references, lifetimes, concurrency, `TCP`/`UDP` | Planned | — |
 | IR optimiser (`yomnova-ir`, `--no-opt`) | Implemented | `optimiser_never_changes_behaviour`, `optimiser_shrinks_constant_code_*`, 6 unit tests |
 | `NetworkBuffer`, `Packet` | Implemented | `buffers_*`, `buffer_*`, `packets_*` regression tests, `examples/packet.yom` |
@@ -40,7 +42,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 114 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 120 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.
