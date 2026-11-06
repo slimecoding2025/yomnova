@@ -1,0 +1,25 @@
+// Build a tiny packet: a 4-byte header (version, flags, 16-bit length) and a text payload.
+fn make_header(len: Int) -> NetworkBuffer {
+    mut h: NetworkBuffer = NetworkBuffer(4)
+    h = buf_set(h, 0, 1)
+    h = buf_set(h, 1, 128)
+    h = buf_set16(h, 2, len)
+    return h
+}
+
+fn main() -> Int {
+    let payload: NetworkBuffer = bytes_of("hello")
+    let header: NetworkBuffer = make_header(len(payload))
+    emit(header)
+    let pkt: Packet = Packet(header, payload)
+    let h2: NetworkBuffer = packet_header(pkt)
+    emit(buf_get(h2, 0))
+    emit(buf_get(h2, 1))
+    emit(buf_get16(h2, 2))
+    let body: NetworkBuffer = packet_payload(pkt)
+    emit(buf_get(body, 0))
+    emit(buf_slice(body, 1, 3))
+    emit(len(buf_concat(h2, body)))
+    emit(pkt)
+    return 0
+}

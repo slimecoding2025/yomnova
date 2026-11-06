@@ -46,7 +46,9 @@ fn main() -> Int { emit(helper(1, 2))  return 0 }
 | `Port` | Implemented | `Port(n)`, `1 ≤ n ≤ 65535`. |
 | `Endpoint` | Implemented | `Endpoint(ip, port)`; the port may be a `Port` or an `Int` (range-checked at runtime). |
 | `IPv6` | Implemented | `IPv6("::1")` validates with `std::net::Ipv6Addr`; displays canonically; `==` works. |
-| `TCP`, `UDP`, `Packet` | Planned | Names are reserved and parse as types; there is no constructor, value or behaviour. |
+| `NetworkBuffer` | Implemented | `NetworkBuffer(n)` (zeroed, max 1 MiB), `bytes_of(text)`, `buf_get`/`buf_get16`/`buf_get32` (big-endian, unsigned), `buf_set`/`buf_set16`/`buf_set32` (value must fit the width), `buf_slice(b, start, len)`, `buf_concat(a, b)`, `len(b)`. Every access is bounds-checked (runtime error); writes return a new buffer, so a buffer passed to a write is moved. Reads borrow. |
+| `Packet` | Implemented | `Packet(header, payload)` of two `NetworkBuffer`s, `packet_header(p)`, `packet_payload(p)`. A container only: no protocol parsing or checksums. |
+| `TCP`, `UDP` | Planned | Names are reserved and parse as types; there is no constructor, value or behaviour. |
 | `struct` | Implemented | `struct P { x: Int, y: Int }`, literals `P { x: 1, y: 2 }` (any field order, every field exactly once), field reads `p.x`, structs as parameters, return values, array elements and fields of other structs. Display: `P { x: 1, y: 2 }`; equality is by value. Field assignment `p.x = v` (and `a.b.c = v`) requires a `mut` variable. Not supported: methods, generics, recursive structs (rejected: infinite size). |
 | `enum` | Implemented | `enum Shape { Circle(Int), Empty }` — each variant carries at most one value. Values are built as `Shape.Circle(2)` / `Shape.Empty`, displayed the same way and compared by value. Empty enums, duplicate variants and directly recursive payloads are rejected. |
 | Generics, traits, lambdas, methods, field access | Unsupported | Rejected with an "is not supported yet" error. |

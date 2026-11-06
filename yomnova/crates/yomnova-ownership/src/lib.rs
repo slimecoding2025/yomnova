@@ -76,6 +76,9 @@ impl OwnershipChecker {
         fn_returns.insert("IPv6".to_string(), Type::IPv6);
         fn_returns.insert("Port".to_string(), Type::Port);
         fn_returns.insert("Endpoint".to_string(), Type::Endpoint);
+        for (name, _, ret) in yomnova_types::net_builtins() {
+            fn_returns.insert(name.to_string(), ret);
+        }
         Self {
             scopes: vec![HashMap::new()],
             fn_returns,
@@ -501,8 +504,8 @@ impl OwnershipChecker {
             ExprKind::Call { callee, args } => {
                 self.check_expr_use(callee)?;
                 // `emit` and `len` only borrow their argument; every other call consumes identifier arguments.
-                let borrows =
-                    matches!(&callee.kind, ExprKind::Identifier(n) if n == "emit" || n == "len");
+                let borrows = matches!(&callee.kind, ExprKind::Identifier(n)
+                    if n == "emit" || n == "len" || yomnova_types::NET_READ_ONLY.contains(&n.as_str()));
                 for arg in args {
                     if borrows {
                         self.check_expr_use(arg)?;

@@ -77,7 +77,24 @@ impl Vm {
             "Endpoint".to_string(),
             Value::NativeFunction("Endpoint".to_string()),
         );
-        for name in ["IPv6", "len", "push"] {
+        for name in [
+            "IPv6",
+            "len",
+            "push",
+            "NetworkBuffer",
+            "bytes_of",
+            "buf_get",
+            "buf_get16",
+            "buf_get32",
+            "buf_set",
+            "buf_set16",
+            "buf_set32",
+            "buf_slice",
+            "buf_concat",
+            "Packet",
+            "packet_header",
+            "packet_payload",
+        ] {
             vm.globals
                 .insert(name.to_string(), Value::NativeFunction(name.to_string()));
         }
@@ -653,7 +670,10 @@ impl Vm {
 
                 let expected = match name.as_str() {
                     "IPv4" | "IPv6" | "Port" | "len" => 1,
-                    "Endpoint" | "push" => 2,
+                    "Endpoint" | "push" | "buf_get" | "buf_get16" | "buf_get32" | "buf_concat"
+                    | "Packet" => 2,
+                    "buf_set" | "buf_set16" | "buf_set32" | "buf_slice" => 3,
+                    "NetworkBuffer" | "bytes_of" | "packet_header" | "packet_payload" => 1,
                     other => {
                         return Err(VmError::TypeError(format!(
                             "Unknown native function '{other}'"
@@ -765,11 +785,7 @@ impl Vm {
                             }
                         }
                     }
-                    other => {
-                        return Err(VmError::TypeError(format!(
-                            "Unknown native function '{other}'"
-                        )))
-                    }
+                    other => Self::net_native(other, args)?,
                 };
 
                 self.push(result)?;
@@ -815,13 +831,144 @@ impl Vm {
         Ok((high << 8) | low)
     }
 
+    /// Largest NetworkBuffer a program may create or grow to.
+    pub const MAX_BUFFER_BYTES: usize = 1 << 20;
+
+    /// `NetworkBuffer` and `Packet` natives. Every access is bounds-checked; writes return a new buffer.
+    fn net_native(name: &str, args: Vec<Value>) -> Result<Value, VmError> {
+        fn int(v: &Value, what: &str) -> Result<i64, VmError> {
+            match v {
+                Value::Int(n) => Ok(*n),
+                other => Err(VmError::TypeError(format!(
+                    "{what} must be an Int, got {other:?}"
+                ))),
+            }
+        }
+        fn buf<'a>(v: &'a Value, what: &str) -> Result<&'a Vec<u8>, VmError> {
+            match v {
+                Value::Buffer(b) => Ok(b),
+                other => Err(VmError::TypeError(format!(
+                    "{what} must be a NetworkBuffer, got {other:?}"
+                ))),
+            }
+        }
+        // Checks that `width` bytes starting at `off` lie inside a buffer of length `len`.
+        fn span(off: i64, width: usize, len: usize) -> Result<usize, VmError> {
+            if off < 0 || (off as u64).saturating_add(width as u64) > len as u64 {
+                return Err(VmError::ProtocolError(format!(
+                    "buffer access out of bounds: {width} byte(s) at offset {off} in a buffer of {len}"
+                )));
+            }
+            Ok(off as usize)
+        }
+        let too_big = |n: usize| {
+            VmError::ResourceLimit(format!(
+                "buffer of {n} bytes exceeds the limit of {}",
+                Self::MAX_BUFFER_BYTES
+            ))
+        };
+        let get = |args: &[Value], width: usize| -> Result<Value, VmError> {
+            let b = buf(&args[0], "first argument")?;
+            let at = span(int(&args[1], "offset")?, width, b.len())?;
+            let mut n: i64 = 0;
+            for byte in &b[at..at + width] {
+                n = (n << 8) | *byte as i64;
+            }
+            Ok(Value::Int(n))
+        };
+        let set = |args: &[Value], width: usize| -> Result<Value, VmError> {
+            let mut b = buf(&args[0], "first argument")?.clone();
+            let at = span(int(&args[1], "offset")?, width, b.len())?;
+            let v = int(&args[2], "value")?;
+            if v < 0 || (width < 8 && v >= 1i64 << (8 * width)) {
+                return Err(VmError::ProtocolError(format!(
+                    "value {v} does not fit in {width} byte(s)"
+                )));
+            }
+            for i in 0..width {
+                b[at + i] = ((v >> (8 * (width - 1 - i))) & 0xFF) as u8;
+            }
+            Ok(Value::Buffer(b))
+        };
+        match name {
+            "NetworkBuffer" => {
+                let n = int(&args[0], "size")?;
+                if n < 0 {
+                    return Err(VmError::ProtocolError(format!("negative buffer size {n}")));
+                }
+                if n as usize > Self::MAX_BUFFER_BYTES {
+                    return Err(too_big(n as usize));
+                }
+                Ok(Value::Buffer(vec![0; n as usize]))
+            }
+            "bytes_of" => match &args[0] {
+                Value::Text(t) if t.len() <= Self::MAX_BUFFER_BYTES => {
+                    Ok(Value::Buffer(t.as_bytes().to_vec()))
+                }
+                Value::Text(t) => Err(too_big(t.len())),
+                other => Err(VmError::TypeError(format!(
+                    "bytes_of expects Text, got {other:?}"
+                ))),
+            },
+            "buf_get" => get(&args, 1),
+            "buf_get16" => get(&args, 2),
+            "buf_get32" => get(&args, 4),
+            "buf_set" => set(&args, 1),
+            "buf_set16" => set(&args, 2),
+            "buf_set32" => set(&args, 4),
+            "buf_slice" => {
+                let b = buf(&args[0], "first argument")?;
+                let len = int(&args[2], "length")?;
+                if len < 0 {
+                    return Err(VmError::ProtocolError(format!(
+                        "negative slice length {len}"
+                    )));
+                }
+                let at = span(int(&args[1], "start")?, len as usize, b.len())?;
+                Ok(Value::Buffer(b[at..at + len as usize].to_vec()))
+            }
+            "buf_concat" => {
+                let (a, b) = (
+                    buf(&args[0], "first argument")?,
+                    buf(&args[1], "second argument")?,
+                );
+                if a.len() + b.len() > Self::MAX_BUFFER_BYTES {
+                    return Err(too_big(a.len() + b.len()));
+                }
+                let mut out = a.clone();
+                out.extend_from_slice(b);
+                Ok(Value::Buffer(out))
+            }
+            "Packet" => Ok(Value::Packet {
+                header: buf(&args[0], "header")?.clone(),
+                payload: buf(&args[1], "payload")?.clone(),
+            }),
+            "packet_header" | "packet_payload" => match &args[0] {
+                Value::Packet { header, payload } => {
+                    Ok(Value::Buffer(if name == "packet_header" {
+                        header.clone()
+                    } else {
+                        payload.clone()
+                    }))
+                }
+                other => Err(VmError::TypeError(format!(
+                    "{name} expects a Packet, got {other:?}"
+                ))),
+            },
+            other => Err(VmError::TypeError(format!(
+                "Unknown native function '{other}'"
+            ))),
+        }
+    }
+
     /// Length of an Array (elements) or Text (characters) as an `Int`.
     fn length_of(v: &Value) -> Result<i64, VmError> {
         match v {
             Value::Array(a) => Ok(a.len() as i64),
             Value::Text(t) => Ok(t.chars().count() as i64),
+            Value::Buffer(b) => Ok(b.len() as i64),
             other => Err(VmError::TypeError(format!(
-                "len expects an Array or Text, got {other:?}"
+                "len expects an Array, Text or NetworkBuffer, got {other:?}"
             ))),
         }
     }

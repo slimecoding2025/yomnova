@@ -31,7 +31,7 @@ coherent language where network types, ownership and dataflow are part of the la
 * **Partial:** arrays (`len`, `push` returning a new array, `for … in`; element assignment `xs[i] = v`, which copies the array; no nested-array typing beyond inference), ownership (moves only), type inference (local), formatter
   (re-indent only).
 * **Parsed but rejected:** methods, lambdas. `struct` (literals, field reads, field assignment `p.x = v`) and `enum` with an exhaustive `match` statement work; patterns are one level deep.
-* **Planned / Research:** borrowing and lifetimes, `Packet`/`TCP`/`UDP`, concurrency, distributed
+* **Planned / Research:** borrowing and lifetimes, `TCP`/`UDP`, concurrency, distributed
   runtime, IR optimisation, native code generation. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## 4. Example

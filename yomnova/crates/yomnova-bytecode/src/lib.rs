@@ -116,6 +116,8 @@ pub enum Value {
         header: Vec<u8>,
         payload: Vec<u8>,
     },
+    /// A fixed-size block of bytes with bounds-checked typed access (values: every write returns a new buffer).
+    Buffer(Vec<u8>),
     /// A struct value; fields are kept in declaration order.
     Struct {
         name: String,
@@ -171,7 +173,22 @@ impl fmt::Display for Value {
             Value::IPv6(bytes) => write!(f, "{}", std::net::Ipv6Addr::from(*bytes)),
             Value::Port(p) => write!(f, "{p}"),
             Value::Endpoint(ip, p) => write!(f, "{}.{}.{}.{}:{}", ip[0], ip[1], ip[2], ip[3], p),
-            Value::Packet { payload, .. } => write!(f, "Packet(len={})", payload.len()),
+            Value::Packet { header, payload } => write!(
+                f,
+                "Packet(header={} bytes, payload={} bytes)",
+                header.len(),
+                payload.len()
+            ),
+            Value::Buffer(bytes) => {
+                write!(f, "NetworkBuffer[{} bytes:", bytes.len())?;
+                for b in bytes.iter().take(16) {
+                    write!(f, " {b:02x}")?;
+                }
+                if bytes.len() > 16 {
+                    write!(f, " …")?;
+                }
+                write!(f, "]")
+            }
             Value::Struct { name, fields } => {
                 write!(f, "{name} {{")?;
                 for (i, (k, v)) in fields.iter().enumerate() {

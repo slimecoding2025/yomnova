@@ -161,6 +161,14 @@ impl SemanticAnalyzer {
         analyzer.register_builtin("IPv4", vec![("addr".to_string(), Type::Text)], Type::IPv4);
         analyzer.register_builtin("IPv6", vec![("addr".to_string(), Type::Text)], Type::IPv6);
         analyzer.register_builtin("Port", vec![("port".to_string(), Type::Int)], Type::Port);
+        for (name, params, ret) in yomnova_types::net_builtins() {
+            let params = params
+                .into_iter()
+                .enumerate()
+                .map(|(i, t)| (format!("arg{i}"), t))
+                .collect();
+            analyzer.register_builtin(name, params, ret);
+        }
         analyzer.register_builtin(
             "Endpoint",
             vec![
@@ -249,7 +257,9 @@ impl SemanticAnalyzer {
         match anno {
             TypeAnnotation::Array(inner) => self.validate_annotation(inner, span),
             TypeAnnotation::Custom(name)
-                if !self.structs.contains_key(name) && !self.enums.contains_key(name) =>
+                if name != "NetworkBuffer"
+                    && !self.structs.contains_key(name)
+                    && !self.enums.contains_key(name) =>
             {
                 Err(SemaError::Invalid {
                     message: format!("unknown type '{name}'"),
@@ -984,9 +994,12 @@ impl SemanticAnalyzer {
                 }
                 match name.as_str() {
                     "len" => {
-                        if !matches!(arg_types[0], Type::Array(_) | Type::Text | Type::Unknown) {
+                        if !matches!(
+                            arg_types[0],
+                            Type::Array(_) | Type::Text | Type::NetworkBuffer | Type::Unknown
+                        ) {
                             return Err(SemaError::TypeMismatch {
-                                expected: "Array<_> or Text".to_string(),
+                                expected: "Array<_>, Text or NetworkBuffer".to_string(),
                                 found: arg_types[0].to_string(),
                                 span: args[0].span,
                             });

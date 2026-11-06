@@ -39,13 +39,13 @@ export const DOMAINS: Domain[] = [
     name: "Networking",
     status: "partial",
     today: "IPv4, Port and Endpoint are real values with validated constructors (Port is 1–65535).",
-    next: "Packet and socket-level types.",
+    next: "TCP/UDP and socket-level types.",
   },
   {
     name: "Protocol engineering",
     status: "planned",
-    today: "Type names for TCP, UDP and Packet are reserved by the lexer; they have no behaviour yet.",
-    next: "Typed packet buffers and protocol-aware parsing.",
+    today: "NetworkBuffer (bounds-checked 8/16/32-bit big-endian reads and writes, slice, concat) and Packet (header + payload) work. TCP and UDP are reserved names with no behaviour.",
+    next: "Protocol-aware parsing, then TCP/UDP.",
   },
   {
     name: "Distributed computing",
@@ -223,8 +223,9 @@ export const NET_TYPES: NetType[] = [
   { name: "Endpoint", status: "implemented", note: "Endpoint(ip, port) pairs an IPv4 with a port." },
   { name: "IPv6", status: "implemented", note: "IPv6(\"::1\") parses and validates an address; it displays in canonical form and compares with ==." },
   { name: "IPAddress", status: "planned", note: "An IPv4-or-IPv6 sum type; enums and IPv6 exist now, the combined type does not." },
+  { name: "NetworkBuffer", status: "implemented", note: "NetworkBuffer(n), bytes_of(text), buf_get/get16/get32, buf_set/set16/set32, buf_slice, buf_concat; every access is bounds-checked and writes return a new buffer (max 1 MiB)." },
+  { name: "Packet", status: "implemented", note: "Packet(header, payload) with packet_header and packet_payload; a plain container, no protocol parsing." },
   { name: "TCP · UDP", status: "planned", note: "Reserved type names with no behaviour." },
-  { name: "Packet · NetworkBuffer", status: "planned", note: "Concept only. The VM has an unused packet value." },
 ];
 
 export interface RoadmapItem {
@@ -253,7 +254,7 @@ export const ROADMAP: Record<Status, RoadmapItem[]> = {
     { title: "Imports and a standard library" },
     { title: "IR lowering and optimisation" },
     { title: "Borrow checker and lifetimes" },
-    { title: "Packet, TCP, UDP" },
+    { title: "TCP, UDP" },
     { title: "Concurrency and channels" },
     { title: "Stable, verified bytecode format" },
   ],

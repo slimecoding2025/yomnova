@@ -2,6 +2,12 @@
 
 ## Unreleased — 2026-11-03
 
+### NetworkBuffer and Packet
+* **Added** `NetworkBuffer` (bounds-checked big-endian 8/16/32-bit reads and writes, `buf_slice`, `buf_concat`, `bytes_of`,
+  `len`; max 1 MiB) and `Packet(header, payload)`. Reads borrow, writes consume and return a new buffer. 4 new tests
+  (102 Rust tests total), `examples/packet.yom`.
+* **Not done:** no protocol parsing, checksums, endianness choice (big-endian only), signed reads, or `TCP`/`UDP`.
+
 ### Element and field assignment
 * **Added** `xs[i] = v`, `p.f = v` and chains such as `b.vals[2] = v` / `grid[1][0] = v`. The root variable must be `mut`;
   types are checked; moved variables cannot be written to; a variable that is only written is still reported as unread.

@@ -405,7 +405,7 @@ fn for_loop_type_errors() {
 fn len_and_push_type_errors() {
     err(
         "fn main() -> Int {\n emit(len(true))\n return 0\n}",
-        "expected Array<_> or Text",
+        "expected Array<_>, Text or NetworkBuffer",
     );
     err(
         "fn main() -> Int {\n let a = push(7, 1)\n return 0\n}",
@@ -1003,5 +1003,86 @@ fn a_variable_that_is_only_written_is_reported_as_unread() {
             .iter()
             .any(|w| w.message.contains("'xs' is never read")),
         "{warnings:?}"
+    );
+}
+
+// ---- NetworkBuffer and Packet ----
+
+#[test]
+fn buffers_read_and_write_big_endian_with_value_semantics() {
+    ok(
+        "fn main() -> Int {\n let a: NetworkBuffer = NetworkBuffer(8)\n let b: NetworkBuffer = buf_set32(a, 0, 3735928559)\n let c: NetworkBuffer = buf_set16(b, 4, 513)\n emit(buf_get(c, 0))\n emit(buf_get16(c, 0))\n emit(buf_get32(c, 0))\n emit(buf_get(c, 4))\n emit(buf_get(c, 5))\n emit(len(c))\n return 0\n}",
+        &["222", "57005", "3735928559", "2", "1", "8"],
+    );
+    // The original is unchanged because writes return a new buffer (a is consumed, so rebuild it to check).
+    ok(
+        "fn main() -> Int {\n mut a: NetworkBuffer = NetworkBuffer(2)\n let b: NetworkBuffer = buf_set(a, 0, 9)\n emit(buf_get(b, 0))\n a = NetworkBuffer(2)\n emit(buf_get(a, 0))\n return 0\n}",
+        &["9", "0"],
+    );
+}
+
+#[test]
+fn buffer_access_is_bounds_checked() {
+    for (call, want) in [
+        ("buf_get(b, 4)", "out of bounds"),
+        ("buf_get(b, 0 - 1)", "out of bounds"),
+        ("buf_get16(b, 3)", "out of bounds"),
+        ("buf_get32(b, 1)", "out of bounds"),
+        ("len(buf_set(b, 4, 1))", "out of bounds"),
+        ("len(buf_set(b, 0, 256))", "does not fit"),
+        ("len(buf_set16(b, 0, 65536))", "does not fit"),
+        ("len(buf_set(b, 0, 0 - 1))", "does not fit"),
+        ("len(buf_slice(b, 2, 3))", "out of bounds"),
+        ("len(buf_slice(b, 0, 0 - 1))", "negative"),
+        ("len(NetworkBuffer(0 - 1))", "negative"),
+        ("len(NetworkBuffer(2000000))", "exceeds the limit"),
+    ] {
+        let e = run(&format!("fn main() -> Int {{\n let b: NetworkBuffer = NetworkBuffer(4)\n emit({call})\n return 0\n}}")).unwrap_err();
+        assert!(e.contains(want), "{call}: {e}");
+    }
+}
+
+#[test]
+fn buffer_type_errors_and_ownership() {
+    err(
+        "fn main() -> Int {\n emit(buf_get(5, 0))\n return 0\n}",
+        "expected NetworkBuffer, found Int",
+    );
+    err(
+        "fn main() -> Int {\n emit(buf_get(NetworkBuffer(1), \"a\"))\n return 0\n}",
+        "expected Int, found Text",
+    );
+    err(
+        "fn main() -> Int {\n let p: Packet = Packet(NetworkBuffer(1), 5)\n return 0\n}",
+        "expected NetworkBuffer, found Int",
+    );
+    err(
+        "fn main() -> Int {\n let b: IPv4 = NetworkBuffer(1)\n return 0\n}",
+        "expected IPv4, found NetworkBuffer",
+    );
+    err(
+        "fn main() -> Int {\n let x: Blob = NetworkBuffer(1)\n return 0\n}",
+        "unknown type 'Blob'",
+    );
+    // Reads borrow; writes and constructors consume.
+    ok(
+        "fn main() -> Int {\n let b: NetworkBuffer = NetworkBuffer(2)\n emit(buf_get(b, 0))\n emit(buf_get(b, 1))\n emit(len(b))\n return 0\n}",
+        &["0", "0", "2"],
+    );
+    err(
+        "fn main() -> Int {\n let b: NetworkBuffer = NetworkBuffer(2)\n let c: NetworkBuffer = buf_set(b, 0, 1)\n emit(buf_get(b, 0))\n return 0\n}",
+        "moved",
+    );
+}
+
+#[test]
+fn packets_hold_a_header_and_a_payload() {
+    ok(
+        "fn main() -> Int {\n let p: Packet = Packet(bytes_of(\"ab\"), bytes_of(\"xyz\"))\n emit(len(packet_header(p)))\n emit(buf_get(packet_payload(p), 2))\n emit(p)\n return 0\n}",
+        &["2", "122", "Packet(header=2 bytes, payload=3 bytes)"],
+    );
+    err(
+        "fn main() -> Int {\n emit(packet_header(NetworkBuffer(1)))\n return 0\n}",
+        "expected Packet, found NetworkBuffer",
     );
 }
