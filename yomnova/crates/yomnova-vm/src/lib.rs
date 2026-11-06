@@ -439,6 +439,57 @@ impl Vm {
                         }
                     }
                 }
+                OpCode::SetIndex => {
+                    let value = self.pop()?;
+                    let idx_val = self.pop()?;
+                    let col_val = self.pop()?;
+                    match (col_val, idx_val) {
+                        (Value::Array(mut arr), Value::Int(idx)) => {
+                            if idx >= 0 && (idx as usize) < arr.len() {
+                                arr[idx as usize] = value;
+                                self.push(Value::Array(arr))?;
+                            } else {
+                                return Err(VmError::TypeError(format!(
+                                    "Index out of bounds: index {idx} in array of length {}",
+                                    arr.len()
+                                )));
+                            }
+                        }
+                        (c, i) => {
+                            return Err(VmError::TypeError(format!(
+                                "Cannot assign to element {i:?} of {c:?}"
+                            )))
+                        }
+                    }
+                }
+                OpCode::SetField => {
+                    let name_idx = self.read_u16()? as usize;
+                    let field = match self.constant_at(name_idx) {
+                        Some(Value::Text(s)) => s,
+                        _ => {
+                            return Err(VmError::TypeError("malformed field constant".to_string()))
+                        }
+                    };
+                    let value = self.pop()?;
+                    match self.pop()? {
+                        Value::Struct { name, mut fields } => {
+                            match fields.iter_mut().find(|(k, _)| *k == field) {
+                                Some(slot) => slot.1 = value,
+                                None => {
+                                    return Err(VmError::TypeError(format!(
+                                        "{name} has no field '{field}'"
+                                    )))
+                                }
+                            }
+                            self.push(Value::Struct { name, fields })?;
+                        }
+                        other => {
+                            return Err(VmError::TypeError(format!(
+                                "cannot assign field '{field}' of {other:?}"
+                            )))
+                        }
+                    }
+                }
                 OpCode::Struct => {
                     let name_idx = self.read_u16()? as usize;
                     let names_idx = self.read_u16()? as usize;

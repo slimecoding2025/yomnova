@@ -414,6 +414,14 @@ impl Compiler {
                     self.chunk.write_op(OpCode::Pop, span.line);
                 }
             }
+            Stmt::AssignPlace {
+                target,
+                value,
+                span,
+            } => {
+                self.compile_expression(value)?;
+                self.store_place(target, span.line)?;
+            }
             Stmt::If {
                 condition,
                 then_branch,
@@ -812,6 +820,59 @@ impl Compiler {
             }
         }
         Ok(())
+    }
+
+    /// Stores the value on top of the stack into `place` (value semantics: each level rebuilds its
+    /// container and the result is stored one level up, ending at the root variable).
+    fn store_place(&mut self, place: &Expr, line: usize) -> Result<(), CompilerError> {
+        match &place.kind {
+            ExprKind::Identifier(name) => {
+                if let Some(slot) = self.resolve_local(name) {
+                    self.chunk.write_op(OpCode::SetLocal, line);
+                    self.chunk.write_u16(slot, line);
+                } else {
+                    let idx = self.constant(Value::Text(name.clone()))?;
+                    self.chunk.write_op(OpCode::SetGlobal, line);
+                    self.chunk.write_u16(idx, line);
+                    self.chunk.write_op(OpCode::Pop, line);
+                }
+                Ok(())
+            }
+            ExprKind::Index { collection, index } => {
+                let tmp = self.assign_temp()?;
+                self.chunk.write_op(OpCode::SetLocal, line);
+                self.chunk.write_u16(tmp, line);
+                self.compile_expression(collection)?;
+                self.compile_expression(index)?;
+                self.chunk.write_op(OpCode::GetLocal, line);
+                self.chunk.write_u16(tmp, line);
+                self.chunk.write_op(OpCode::SetIndex, line);
+                self.store_place(collection, line)
+            }
+            ExprKind::FieldAccess { object, field } => {
+                let tmp = self.assign_temp()?;
+                self.chunk.write_op(OpCode::SetLocal, line);
+                self.chunk.write_u16(tmp, line);
+                self.compile_expression(object)?;
+                self.chunk.write_op(OpCode::GetLocal, line);
+                self.chunk.write_u16(tmp, line);
+                let idx = self.constant(Value::Text(field.clone()))?;
+                self.chunk.write_op(OpCode::SetField, line);
+                self.chunk.write_u16(idx, line);
+                self.store_place(object, line)
+            }
+            _ => Err(CompilerError::Codegen(
+                "invalid assignment target".to_string(),
+            )),
+        }
+    }
+
+    /// A hidden local that holds the value being assigned while a container is rebuilt.
+    fn assign_temp(&mut self) -> Result<u16, CompilerError> {
+        match self.resolve_local("$assign") {
+            Some(slot) => Ok(slot),
+            None => self.declare_local("$assign"),
+        }
     }
 
     fn declare_local(&mut self, name: &str) -> Result<u16, CompilerError> {

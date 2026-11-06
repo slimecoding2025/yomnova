@@ -19,7 +19,7 @@ use crate::{Chunk, OpCode, Value};
 
 pub const MAGIC: &[u8; 4] = b"YOMC";
 /// Bumped whenever the layout or the opcode numbering changes.
-pub const FORMAT_VERSION: u16 = 1;
+pub const FORMAT_VERSION: u16 = 2;
 
 const MAX_CODE_BYTES: usize = 1 << 20;
 const MAX_FUNCTIONS: usize = 4096;
@@ -239,7 +239,8 @@ pub fn verify_chunk(chunk: &Chunk) -> Result<(), String> {
             | OpCode::JumpIfFalse
             | OpCode::Array
             | OpCode::Field
-            | OpCode::EnumIs => 2,
+            | OpCode::EnumIs
+            | OpCode::SetField => 2,
             OpCode::Call => 1,
             OpCode::Struct => 4,
             OpCode::EnumNew => 3,
@@ -256,9 +257,11 @@ pub fn verify_chunk(chunk: &Chunk) -> Result<(), String> {
                     return Err(format!("offset {at}: constant {idx} is out of range"));
                 }
             }
-            OpCode::GetGlobal | OpCode::SetGlobal | OpCode::Field | OpCode::EnumIs => {
-                name_const(u16_at(0), at)?
-            }
+            OpCode::GetGlobal
+            | OpCode::SetGlobal
+            | OpCode::Field
+            | OpCode::EnumIs
+            | OpCode::SetField => name_const(u16_at(0), at)?,
             OpCode::Struct => {
                 name_const(u16_at(0), at)?;
                 let idx = u16_at(2);

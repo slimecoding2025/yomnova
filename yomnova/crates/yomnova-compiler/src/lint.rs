@@ -124,6 +124,18 @@ impl Lint {
         }
     }
 
+    /// The variable at the root of an assignment target is written, not read; index expressions are read.
+    fn place(&mut self, e: &Expr) {
+        match &e.kind {
+            ExprKind::Index { collection, index } => {
+                self.expr(index);
+                self.place(collection);
+            }
+            ExprKind::FieldAccess { object, .. } => self.place(object),
+            _ => {}
+        }
+    }
+
     fn stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Let {
@@ -136,6 +148,10 @@ impl Lint {
                 self.declare(name, *span);
             }
             Stmt::Assign { value, .. } => self.expr(value),
+            Stmt::AssignPlace { target, value, .. } => {
+                self.expr(value);
+                self.place(target);
+            }
             Stmt::If {
                 condition,
                 then_branch,

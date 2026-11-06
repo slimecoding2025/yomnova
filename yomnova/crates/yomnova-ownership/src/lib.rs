@@ -277,6 +277,11 @@ impl OwnershipChecker {
                     binding.state = VariableState::Owned;
                 }
             }
+            Stmt::AssignPlace { target, value, .. } => {
+                self.check_expr_move(value)?;
+                // The variable must still be usable: writing into a moved value is an error.
+                self.check_expr_use(target)?;
+            }
             Stmt::If {
                 condition,
                 then_branch,

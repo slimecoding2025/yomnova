@@ -907,3 +907,101 @@ fn ipv6_errors_are_clean() {
         "expected IPv4, found IPv6",
     );
 }
+
+// ---- element and field assignment ----
+
+const PQ: &str = "struct P { x: Int, y: Int }\nstruct Box { p: P, vals: Array<Int> }\n";
+
+fn with_types(main: &str) -> String {
+    format!("{PQ}fn main() -> Int {{\n{main}\n return 0\n}}")
+}
+
+#[test]
+fn element_and_field_assignment_work_at_any_depth() {
+    ok(
+        &with_types(
+            " mut xs = [1, 2, 3]\n xs[1] = 20\n emit(xs)\n mut p = P { x: 1, y: 2 }\n p.x = 10\n emit(p.x + p.y)\n mut b = Box { p: P { x: 5, y: 6 }, vals: [7, 8, 9] }\n b.vals[2] = 90\n b.p.y = 60\n emit(b.vals[2])\n emit(b.p.y)\n mut g = [[1, 2], [3, 4]]\n g[1][0] = 33\n emit(g)",
+        ),
+        &["[1, 20, 3]", "12", "90", "60", "[[1, 2], [33, 4]]"],
+    );
+}
+
+#[test]
+fn assignment_has_value_semantics_and_works_in_loops_and_functions() {
+    ok(
+        "fn bump(xs: Array<Int>) -> Array<Int> {\n mut ys = xs\n ys[0] = 99\n return ys\n}\nfn main() -> Int {\n mut xs = [1, 2, 3]\n mut i = 0\n while i < 3 {\n xs[i] = xs[i] * 2\n i = i + 1\n }\n emit(xs)\n emit(bump(xs))\n return 0\n}",
+        &["[2, 4, 6]", "[99, 4, 6]"],
+    );
+}
+
+#[test]
+fn assignment_target_errors() {
+    err(&with_types(" let xs = [1]\n xs[0] = 2"), "immutable");
+    err(
+        &with_types(" let p = P { x: 1, y: 2 }\n p.x = 2"),
+        "immutable",
+    );
+    err(
+        &with_types(" mut xs = [1]\n xs[0] = \"no\""),
+        "expected Int, found Text",
+    );
+    err(
+        &with_types(" mut xs = [1]\n xs[\"a\"] = 1"),
+        "expected Int, found Text",
+    );
+    err(
+        &with_types(" mut p = P { x: 1, y: 2 }\n p.z = 1"),
+        "no field 'z'",
+    );
+    err(
+        &with_types(" mut p = P { x: 1, y: 2 }\n p.x = true"),
+        "expected Int, found Bool",
+    );
+    err(&with_types(" mut n = 5\n n[0] = 1"), "Array");
+    err(&with_types(" mut n = 5\n n.f = 1"), "cannot read field");
+    err(&with_types(" nope[0] = 1"), "Undefined identifier");
+    err(&with_types(" f() = 1"), "Invalid assignment target");
+    err(&with_types(" 5 = 1"), "Invalid assignment target");
+}
+
+#[test]
+fn nested_assignment_rejects_calls_in_indices_but_single_level_allows_them() {
+    err(
+        "fn k() -> Int {\n return 0\n}\nfn main() -> Int {\n mut g = [[1, 2], [3, 4]]\n g[k()][0] = 1\n return 0\n}",
+        "must not contain a call",
+    );
+    ok(
+        "fn k() -> Int {\n emit(\"k\")\n return 1\n}\nfn main() -> Int {\n mut xs = [1, 2, 3]\n xs[k()] = 7\n emit(xs)\n return 0\n}",
+        &["k", "[1, 7, 3]"],
+    );
+}
+
+#[test]
+fn assignment_out_of_bounds_is_a_runtime_error() {
+    let e = run("fn main() -> Int {\n mut xs = [1, 2]\n xs[2] = 5\n return 0\n}").unwrap_err();
+    assert!(e.contains("out of bounds"), "{e}");
+    let e = run("fn main() -> Int {\n mut xs = [1, 2]\n xs[0 - 1] = 5\n return 0\n}").unwrap_err();
+    assert!(e.contains("out of bounds"), "{e}");
+}
+
+#[test]
+fn assigning_into_a_moved_value_is_an_ownership_error() {
+    err(
+        "fn take(xs: Array<Int>) -> Unit {\n emit(len(xs))\n}\nfn main() -> Int {\n mut xs = [1, 2]\n take(xs)\n xs[0] = 1\n return 0\n}",
+        "moved",
+    );
+}
+
+#[test]
+fn a_variable_that_is_only_written_is_reported_as_unread() {
+    let (_, warnings) = Compiler::check_with_warnings(
+        "fn main() -> Int {\n mut xs = [1, 2]\n xs[0] = 5\n return 0\n}",
+    )
+    .unwrap();
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.message.contains("'xs' is never read")),
+        "{warnings:?}"
+    );
+}

@@ -97,6 +97,12 @@ pub enum Stmt {
         value: Expr,
         span: Span,
     },
+    /// `xs[i] = v`, `s.f = v`, `a[i].f[j] = v`: `target` is an index/field chain rooted at a variable.
+    AssignPlace {
+        target: Expr,
+        value: Expr,
+        span: Span,
+    },
     If {
         condition: Expr,
         then_branch: Block,
@@ -244,6 +250,7 @@ impl Stmt {
             Stmt::Let { span, .. } => *span,
             Stmt::Mut { span, .. } => *span,
             Stmt::Assign { span, .. } => *span,
+            Stmt::AssignPlace { span, .. } => *span,
             Stmt::If { span, .. } => *span,
             Stmt::While { span, .. } => *span,
             Stmt::For { span, .. } => *span,

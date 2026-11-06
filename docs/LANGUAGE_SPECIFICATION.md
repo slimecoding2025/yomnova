@@ -47,7 +47,7 @@ fn main() -> Int { emit(helper(1, 2))  return 0 }
 | `Endpoint` | Implemented | `Endpoint(ip, port)`; the port may be a `Port` or an `Int` (range-checked at runtime). |
 | `IPv6` | Implemented | `IPv6("::1")` validates with `std::net::Ipv6Addr`; displays canonically; `==` works. |
 | `TCP`, `UDP`, `Packet` | Planned | Names are reserved and parse as types; there is no constructor, value or behaviour. |
-| `struct` | Implemented | `struct P { x: Int, y: Int }`, literals `P { x: 1, y: 2 }` (any field order, every field exactly once), field reads `p.x`, structs as parameters, return values, array elements and fields of other structs. Display: `P { x: 1, y: 2 }`; equality is by value. Not supported: field assignment (`p.x = v`), methods, generics, recursive structs (rejected: infinite size). |
+| `struct` | Implemented | `struct P { x: Int, y: Int }`, literals `P { x: 1, y: 2 }` (any field order, every field exactly once), field reads `p.x`, structs as parameters, return values, array elements and fields of other structs. Display: `P { x: 1, y: 2 }`; equality is by value. Field assignment `p.x = v` (and `a.b.c = v`) requires a `mut` variable. Not supported: methods, generics, recursive structs (rejected: infinite size). |
 | `enum` | Implemented | `enum Shape { Circle(Int), Empty }` — each variant carries at most one value. Values are built as `Shape.Circle(2)` / `Shape.Empty`, displayed the same way and compared by value. Empty enums, duplicate variants and directly recursive payloads are rejected. |
 | Generics, traits, lambdas, methods, field access | Unsupported | Rejected with an "is not supported yet" error. |
 
@@ -61,7 +61,8 @@ A function with a non-`Unit` return type must return on every path (`MissingRetu
 | `let name[: T] = expr` (immutable) | Implemented |
 | `mut name[: T] = expr` (mutable) | Implemented |
 | `const name[: T] = expr` inside a function | Implemented (an immutable binding) |
-| `name = expr` | Implemented (only identifiers are assignable; the target must be `mut`) |
+| `name = expr` | Implemented (the target must be `mut`) |
+| `xs[i] = expr`, `p.f = expr`, `a[i].f[j] = expr` | Implemented — the root variable must be `mut`; the value type must match; arrays and structs have value semantics, so the container is copied (O(n) per write). In a nested target (more than one step) an index may not contain a call, so it is evaluated once. Out-of-range indices are runtime errors. |
 | `if cond { } else if cond { } else { }` | Implemented |
 | `while cond { }` | Implemented |
 | `for name in array { }` | Implemented — iterates the elements of an `Array<T>`; `name` is immutable and scoped to the loop |

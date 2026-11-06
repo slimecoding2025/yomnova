@@ -249,11 +249,11 @@ export const ROADMAP: Record<Status, RoadmapItem[]> = {
     { title: "Formatter", note: "re-indents only" },
   ],
   planned: [
-    { title: "Field assignment and nested patterns" },
+    { title: "Nested patterns and match as an expression" },
     { title: "Imports and a standard library" },
     { title: "IR lowering and optimisation" },
     { title: "Borrow checker and lifetimes" },
-    { title: "IPv6, Packet, TCP, UDP" },
+    { title: "Packet, TCP, UDP" },
     { title: "Concurrency and channels" },
     { title: "Stable, verified bytecode format" },
   ],

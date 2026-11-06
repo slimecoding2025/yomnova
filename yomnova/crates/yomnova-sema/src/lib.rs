@@ -587,6 +587,36 @@ impl SemanticAnalyzer {
                     });
                 }
             }
+            Stmt::AssignPlace {
+                target,
+                value,
+                span,
+            } => {
+                let root = place_root(target).unwrap_or_default().to_string();
+                let sym = self.lookup_symbol(&root, *span)?;
+                if !sym.is_mut {
+                    return Err(SemaError::CannotAssignImmutable {
+                        name: root,
+                        span: *span,
+                    });
+                }
+                if place_depth(target) > 1 && place_has_call(target) {
+                    return Err(SemaError::Invalid {
+                        message: "an index in a nested assignment target must not contain a call"
+                            .to_string(),
+                        span: target.span,
+                    });
+                }
+                let place_ty = self.analyze_expression(target)?;
+                let val_ty = self.analyze_expression(value)?;
+                if !val_ty.is_assignable_to(&place_ty) {
+                    return Err(SemaError::TypeMismatch {
+                        expected: place_ty.to_string(),
+                        found: val_ty.to_string(),
+                        span: value.span,
+                    });
+                }
+            }
             Stmt::If {
                 condition,
                 then_branch,
@@ -1269,4 +1299,45 @@ fn block_always_returns(block: &Block) -> bool {
         }
         _ => false,
     })
+}
+
+/// The variable at the root of an index/field chain such as `a[i].f[j]`.
+fn place_root(e: &Expr) -> Option<&str> {
+    match &e.kind {
+        ExprKind::Identifier(n) => Some(n),
+        ExprKind::Index { collection, .. } => place_root(collection),
+        ExprKind::FieldAccess { object, .. } => place_root(object),
+        _ => None,
+    }
+}
+
+/// Number of index/field steps in a place chain.
+fn place_depth(e: &Expr) -> usize {
+    match &e.kind {
+        ExprKind::Index { collection, .. } => 1 + place_depth(collection),
+        ExprKind::FieldAccess { object, .. } => 1 + place_depth(object),
+        _ => 0,
+    }
+}
+
+fn expr_has_call(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Call { .. } | ExprKind::MethodCall { .. } | ExprKind::Pipe { .. } => true,
+        ExprKind::Binary { left, right, .. } => expr_has_call(left) || expr_has_call(right),
+        ExprKind::Unary { operand, .. } => expr_has_call(operand),
+        ExprKind::Array(items) => items.iter().any(expr_has_call),
+        ExprKind::Index { collection, index } => expr_has_call(collection) || expr_has_call(index),
+        ExprKind::FieldAccess { object, .. } => expr_has_call(object),
+        ExprKind::StructLiteral { fields, .. } => fields.iter().any(|(_, v)| expr_has_call(v)),
+        _ => false,
+    }
+}
+
+/// Whether any index expression inside a place chain contains a call.
+fn place_has_call(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Index { collection, index } => expr_has_call(index) || place_has_call(collection),
+        ExprKind::FieldAccess { object, .. } => place_has_call(object),
+        _ => false,
+    }
 }

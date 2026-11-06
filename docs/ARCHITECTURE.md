@@ -34,7 +34,7 @@ Errors are `Vec<Diagnostic>`. The parser recovers at statement/declaration bound
 ## Bytecode and VM
 
 * One `Chunk` per function plus an entry chunk holding top-level `const` initialisers and `main`'s body.
-* 38 opcodes (`OpCode::ALL`, decoded safely by `OpCode::from_u8`; there is no `unsafe` in the workspace).
+* 40 opcodes (`OpCode::ALL`, decoded safely by `OpCode::from_u8`; there is no `unsafe` in the workspace).
 * Jumps and constant/slot operands are 16-bit; compilation fails with a clear error if a function exceeds them.
 * `JumpIfFalse` pops its condition. `&&`/`||` compile to jumps (short-circuit), not to `And`/`Or` opcodes
   (those opcodes remain defined but unused by the code generator).
@@ -46,7 +46,7 @@ Errors are `Vec<Diagnostic>`. The parser recovers at statement/declaration bound
 ## CLI
 
 `yomnova run [-d] | check | build [-o] | disasm | tokens | ast | fmt [--check] | version | help`.
-`build` writes a binary `.yomc` file (`yomnova-bytecode::module`: magic `YOMC`, format version 1, the opcode count, the entry chunk and the user functions) and `yomnova exec` runs it. Loading treats the file as untrusted: sizes and tags are validated, nesting and size are capped, trailing bytes are rejected, and the VM re-checks every operand at run time (step, stack, memory, call-depth and local-slot limits). A file is only valid for the opcode set it was built with; there is no compatibility layer and no signature.
+`build` writes a binary `.yomc` file (`yomnova-bytecode::module`: magic `YOMC`, format version 2, the opcode count, the entry chunk and the user functions) and `yomnova exec` runs it. Loading treats the file as untrusted: sizes and tags are validated, nesting and size are capped, trailing bytes are rejected, and the VM re-checks every operand at run time (step, stack, memory, call-depth and local-slot limits). A file is only valid for the opcode set it was built with; there is no compatibility layer and no signature.
 
 ## Web application
 

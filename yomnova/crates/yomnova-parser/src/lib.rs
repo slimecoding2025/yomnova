@@ -643,6 +643,31 @@ impl Parser {
             }
 
             let expr = self.parse_expr()?;
+            if self.check(&TokenKind::Equal) {
+                // `xs[i] = v` / `s.f = v`: the left side must be an index/field chain rooted at a variable.
+                fn rooted(e: &Expr) -> bool {
+                    match &e.kind {
+                        ExprKind::Identifier(_) => true,
+                        ExprKind::Index { collection, .. } => rooted(collection),
+                        ExprKind::FieldAccess { object, .. } => rooted(object),
+                        _ => false,
+                    }
+                }
+                if matches!(expr.kind, ExprKind::Identifier(_)) {
+                    return Err(ParserError::InvalidAssignmentTarget { span: expr.span });
+                }
+                if !rooted(&expr) {
+                    return Err(ParserError::InvalidAssignmentTarget { span: expr.span });
+                }
+                self.advance(); // '='
+                let value = self.parse_expr()?;
+                let span = start_span.merge(value.span);
+                return Ok(Stmt::AssignPlace {
+                    target: expr,
+                    value,
+                    span,
+                });
+            }
             if self.check(&TokenKind::Semicolon) {
                 self.advance();
             }

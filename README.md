@@ -28,9 +28,9 @@ coherent language where network types, ownership and dataflow are part of the la
   `Int` (checked 64-bit), `Float`, `Bool`, `Text`, arrays (literal + index), `IPv4`/`Port`/`Endpoint` values,
   static type checking including call arguments, move-based ownership checking, a bytecode VM with resource
   limits, and the `|>` pipeline operator / `flow` bindings.
-* **Partial:** arrays (`len`, `push` returning a new array, `for … in`; no element assignment or nested-array typing beyond inference), ownership (moves only), type inference (local), formatter
+* **Partial:** arrays (`len`, `push` returning a new array, `for … in`; element assignment `xs[i] = v`, which copies the array; no nested-array typing beyond inference), ownership (moves only), type inference (local), formatter
   (re-indent only).
-* **Parsed but rejected:** methods, lambdas. `struct` (literals, field reads; no field assignment) and `enum` with an exhaustive `match` statement work; patterns are one level deep.
+* **Parsed but rejected:** methods, lambdas. `struct` (literals, field reads, field assignment `p.x = v`) and `enum` with an exhaustive `match` statement work; patterns are one level deep.
 * **Planned / Research:** borrowing and lifetimes, `Packet`/`TCP`/`UDP`, concurrency, distributed
   runtime, IR optimisation, native code generation. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -155,7 +155,7 @@ the parser caps nesting (150). The language has no file, process or network acce
 `unsafe` code.
 
 ## 15. Known limitations
-Several errors per run, but lexical errors are reported one at a time and later stages wait for earlier ones · only two warnings (unused binding, unreachable code) · no borrowing/lifetimes · the `.yomc` format is version 1 only (no compatibility across opcode changes, no signatures) ·
+Several errors per run, but lexical errors are reported one at a time and later stages wait for earlier ones · only two warnings (unused binding, unreachable code) · no borrowing/lifetimes · the `.yomc` format is version 2 only (no compatibility across opcode changes, no signatures) ·
 the formatter only re-indents · the Playground editor is a plain text area with a small highlighter (not Monaco) ·
 IR, `yomnova-network-core` and `yomnova-stdlib` are not wired into the pipeline.
 

@@ -30,14 +30,14 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | Item | Status |
 |---|---|
 | CLI `run check build disasm tokens ast fmt version` | Implemented; dependency-free |
-| `build` / `exec` | Implemented: binary `.yomc` (format v1), loader validated and fuzz-tested | `a_saved_program_behaves_exactly_like_the_source`, `corrupted_files_never_panic_the_loader_or_the_vm` |
+| `build` / `exec` | Implemented: binary `.yomc` (format v2), loader validated and fuzz-tested | `a_saved_program_behaves_exactly_like_the_source`, `corrupted_files_never_panic_the_loader_or_the_vm` |
 | Formatter | Re-indent only (idempotent, string/comment safe) |
 | Web site (10 chapters, GSAP) and Playground | Implemented; see limitations in FINAL_AUDIT.md |
 | Monaco editor | Not used (text area + small highlighter) |
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 91 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 98 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.

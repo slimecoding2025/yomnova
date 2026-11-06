@@ -44,12 +44,14 @@ pub enum OpCode {
     EnumNew, // [u16: "Enum.Variant" constant][u8: 1 if a value is carried]; pops the value if any
     EnumIs,  // [u16: "Enum.Variant" constant]; pops an enum value, pushes Bool
     EnumPayload, // pops an enum value, pushes the value it carries
+    SetIndex, // pops value, index, array; pushes a copy of the array with that element replaced
+    SetField, // [u16: field-name constant]; pops value, struct; pushes a copy with that field replaced
     Halt,
 }
 
 impl OpCode {
     /// Every opcode, in discriminant order. `ALL[op as usize] == op`.
-    pub const ALL: [OpCode; 38] = [
+    pub const ALL: [OpCode; 40] = [
         OpCode::Constant,
         OpCode::Nil,
         OpCode::True,
@@ -87,6 +89,8 @@ impl OpCode {
         OpCode::EnumNew,
         OpCode::EnumIs,
         OpCode::EnumPayload,
+        OpCode::SetIndex,
+        OpCode::SetField,
         OpCode::Halt,
     ];
 
@@ -360,6 +364,11 @@ impl Chunk {
             OpCode::Field => {
                 let name = ((self.code[offset + 1] as usize) << 8) | self.code[offset + 2] as usize;
                 (format!("{out}OP_FIELD (name const {name})"), offset + 3)
+            }
+            OpCode::SetIndex => (format!("{out}OP_SET_INDEX"), offset + 1),
+            OpCode::SetField => {
+                let name = ((self.code[offset + 1] as usize) << 8) | self.code[offset + 2] as usize;
+                (format!("{out}OP_SET_FIELD (name const {name})"), offset + 3)
             }
             OpCode::Return => (format!("{out}OP_RETURN"), offset + 1),
             OpCode::Halt => (format!("{out}OP_HALT"), offset + 1),
