@@ -43,6 +43,8 @@ export interface AiConfig {
   timeoutMs: number;
   maxOutputTokens: number;
   allowlist: string[];
+  /** Free models the server picks from, in order. Visitors never choose or see them. */
+  pool: string[];
   defaultModel: string;
   appTitle: string;
   siteUrl: string;
@@ -50,17 +52,23 @@ export interface AiConfig {
   fetchImpl: typeof fetch;
 }
 
+/** Free OpenRouter chat models (listed as $0 on 2026-11-05). Override with AI_FREE_MODELS (comma-separated). */
+export const DEFAULT_FREE_POOL = ["google/gemma-4-26b-a4b-it:free", "cohere/north-mini-code:free", "nvidia/nemotron-3-ultra-550b-a55b:free"];
+
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env, fetchImpl: typeof fetch = fetch): AiConfig {
   const n = (v: string | undefined, d: number, lo: number, hi: number) => {
     const x = Number.parseInt(v ?? "", 10);
     return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d;
   };
+  const list = (v: string | undefined) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const pool = env.AI_FREE_MODELS !== undefined ? list(env.AI_FREE_MODELS).slice(0, 6) : DEFAULT_FREE_POOL;
   return {
     apiKey: (env.OPENROUTER_API_KEY ?? "").trim(),
     baseUrl: (env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/+$/, ""),
     timeoutMs: n(env.AI_TIMEOUT_MS, 60_000, 5_000, 180_000),
     maxOutputTokens: n(env.AI_MAX_OUTPUT_TOKENS, 1200, 200, 4000),
-    allowlist: (env.AI_MODEL_ALLOWLIST ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+    pool,
+    allowlist: env.AI_MODEL_ALLOWLIST !== undefined ? list(env.AI_MODEL_ALLOWLIST) : pool,
     defaultModel: (env.OPENROUTER_DEFAULT_MODEL ?? "").trim(),
     appTitle: env.OPENROUTER_APP_TITLE ?? "YOMNOVA Playground",
     siteUrl: env.OPENROUTER_SITE_URL ?? "",
@@ -179,6 +187,12 @@ export class OpenRouter {
     models.sort((a, b) => a.provider.localeCompare(b.provider) || a.name.localeCompare(b.name));
     this.cache = { at: Date.now(), models: models.slice(0, 500) };
     return this.cache.models;
+  }
+
+  /** The pool models that the provider really lists right now, in pool order. Empty when none is available. */
+  async pool(): Promise<ModelInfo[]> {
+    const live = await this.listModels();
+    return this.cfg.pool.map((id) => live.find((m) => m.id === id)).filter((m): m is ModelInfo => Boolean(m));
   }
 
   /** Looks the id up in the provider's real model list. Never falls back to an unlisted id. */

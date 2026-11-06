@@ -103,15 +103,15 @@ export const ai = {
     if (!res.ok) throw new AiRequestError(data.error ?? `Could not load models (${res.status})`, "models", res.status);
     return { configured: Boolean(data.configured), defaultModel: data.defaultModel ?? "", models: data.models ?? [], message: data.message };
   },
-  explain: (body: { model: string; code: string; diagnosticIndex?: number; messages?: ChatTurn[] }, signal?: AbortSignal) =>
+  explain: (body: { code: string; diagnosticIndex?: number; messages?: ChatTurn[] }, signal?: AbortSignal) =>
     post<StructuredResponse>("/api/ai/explain-diagnostic", body, signal),
-  suggest: (body: { model: string; code: string; question?: string; selection?: string; messages?: ChatTurn[] }, signal?: AbortSignal) =>
+  suggest: (body: { code: string; question?: string; selection?: string; messages?: ChatTurn[] }, signal?: AbortSignal) =>
     post<StructuredResponse>("/api/ai/suggest-fix", body, signal),
   validate: (code: string, signal?: AbortSignal) => post<ValidationResponse>("/api/ai/validate-suggestion", { code }, signal),
 
   /** Streams a chat answer over server-sent events. Resolves when the stream ends; throws AiRequestError on failure. */
   async chat(
-    body: { model: string; mode: "chat" | "tutor" | "explain_code" | "debug"; messages: ChatTurn[]; code?: string; selection?: string },
+    body: { mode: "chat" | "tutor" | "explain_code" | "debug"; messages: ChatTurn[]; code?: string; selection?: string },
     h: ChatHandlers,
     signal?: AbortSignal,
   ): Promise<void> {
@@ -160,6 +160,13 @@ export const ai = {
     }
   },
 };
+
+/** Removes project file names/paths a model may echo, so the UI never points at repository files. */
+export function scrubRefs(s: string): string {
+  return s
+    .replace(/\b(?:[\w-]+\/)*[\w-]+\.(?:md|ts|tsx|rs|toml|json|ya?ml|html|css)\b/gi, "")
+    .replace(/[ \t]{2,}/g, " ");
+}
 
 /** Line diff (LCS) for small snippets: lines prefixed '-', '+' or ' '. */
 export function lineDiff(before: string, after: string): Array<{ op: "-" | "+" | " "; text: string }> {

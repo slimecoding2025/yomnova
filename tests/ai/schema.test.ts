@@ -15,15 +15,15 @@ test("accepts a valid answer, forces compilerValidated=false and drops unknown r
   assert.ok(v.ok);
   if (!v.ok) return;
   assert.equal(v.value.suggestions[0].compilerValidated, false);
-  assert.deepEqual(v.value.references, ["docs/LANGUAGE_SPECIFICATION.md#3. Types"]);
-  assert.ok(v.value.limitations.some((l) => /removed/.test(l)));
+  assert.deepEqual(v.value.references, [], "public answers carry no documentation references");
+  assert.deepEqual(v.value.limitations, []);
 });
 
-test("blanks a language-rule source that was not supplied", () => {
+test("public answers carry no language rule; free-form answers keep their rule handling", () => {
   const g = good();
   g.languageRule.source = "docs/FAKE.md#y";
   const v = validateResult(g, "error_explanation", SRC);
-  assert.ok(v.ok && v.value.languageRule?.source === "");
+  assert.ok(v.ok && v.value.languageRule === null);
 });
 
 test("rejects malformed or unexpected structures", () => {

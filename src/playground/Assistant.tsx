@@ -2,12 +2,12 @@ import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 import {
   ai,
   AiRequestError,
+  scrubRefs,
   applyToCopy,
   lineDiff,
   type AssistantResult,
   type ChatTurn,
   type Diagnostic,
-  type ModelInfo,
   type StructuredResponse,
   type Suggestion,
   type ValidationResponse,
@@ -34,23 +34,6 @@ type Item =
   | { id: number; kind: "note"; text: string; tone: "info" | "error" };
 
 type Mode = "chat" | "tutor" | "debug";
-const MODEL_KEY = "yomnova.ai.model";
-
-function readSaved(): string {
-  try {
-    return localStorage.getItem(MODEL_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-function writeSaved(v: string) {
-  try {
-    localStorage.setItem(MODEL_KEY, v);
-  } catch {
-    /* storage unavailable: preference simply is not remembered */
-  }
-}
-
 /** Renders untrusted model text as plain React text. Fenced blocks become <pre>; nothing is interpreted as HTML. */
 function Rich({ text }: { text: string }) {
   const parts = text.split(/```[^\n]*\n?([\s\S]*?)```/g);
@@ -61,7 +44,7 @@ function Rich({ text }: { text: string }) {
           <pre key={i} className="ai-code"><code>{p.replace(/\n$/, "")}</code></pre>
         ) : p.trim() ? (
           <p key={i} className="ai-p">
-            {p.split(/`([^`\n]+)`/g).map((q, j) => (j % 2 === 1 ? <code key={j}>{q}</code> : q))}
+            {scrubRefs(p).split(/`([^`\n]+)`/g).map((q, j) => (j % 2 === 1 ? <code key={j}>{q}</code> : q))}
           </p>
         ) : null,
       )}
@@ -114,9 +97,8 @@ function SuggestionCard({ s, editorCode }: { s: Suggestion; editorCode: string }
     <div className="ai-sug">
       <div className="ai-sug-head">
         <strong>{s.title}</strong>
-        <span className="ai-badge" title="The model's own rating; it is not a calibrated probability.">model confidence: {s.confidence}</span>
       </div>
-      <p className="ai-p">{s.description}</p>
+      <p className="ai-p">{scrubRefs(s.description)}</p>
       <div className="ai-actions">
         <button className="btn small" onClick={() => setView(view === "code" ? "none" : "code")} aria-expanded={view === "code"}>View suggestion</button>
         <button className="btn small" onClick={() => setView(view === "diff" ? "none" : "diff")} aria-expanded={view === "diff"}>Review diff</button>
@@ -141,22 +123,15 @@ function Structured({ data, editorCode }: { data: StructuredResponse; editorCode
   const first = data.diagnostics[0];
   return (
     <div className="ai-msg ai-a">
-      <p className="ai-who">{data.model} · AI interpretation</p>
+      <p className="ai-who">YOMNOVA AI</p>
       {first && (
         <pre className="ai-code ai-diag" aria-label="Compiler diagnostic (compiler-confirmed)">
           <span className="ai-tag">compiler output</span>{"\n"}{first.raw}
         </pre>
       )}
-      <p className="ai-p"><strong>{r.summary}</strong></p>
-      <Rich text={r.explanation} />
-      {r.languageRule && (
-        <p className="ai-p">Language rule: <strong>{r.languageRule.title}</strong>{r.languageRule.source ? <> — <code>{r.languageRule.source}</code></> : <> — <em>no documentation source supplied</em></>}</p>
-      )}
+      <p className="ai-p"><strong>{scrubRefs(r.summary)}</strong></p>
+      {r.explanation && <Rich text={r.explanation} />}
       {r.suggestions.map((s, i) => <SuggestionCard key={i} s={s} editorCode={editorCode} />)}
-      {r.limitations.length > 0 && (
-        <ul className="ai-lim">{r.limitations.map((l, i) => <li key={i}>{l}</li>)}</ul>
-      )}
-      {r.references.length > 0 && <p className="ai-src">Sources: {r.references.map((x) => <code key={x}>{x}</code>)}</p>}
       <p className="ai-src">{data.disclaimer}</p>
     </div>
   );
@@ -165,9 +140,6 @@ function Structured({ data, editorCode }: { data: StructuredResponse; editorCode
 export function Assistant({ code, selection, onClose, ref }: Props) {
   const [status, setStatus] = useState<"loading" | "ready" | "unconfigured" | "error">("loading");
   const [statusMsg, setStatusMsg] = useState("");
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [model, setModel] = useState("");
-  const [filter, setFilter] = useState("");
   const [items, setItems] = useState<Item[]>([]);
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<Mode>("chat");
@@ -187,14 +159,6 @@ export function Assistant({ code, selection, onClose, ref }: Props) {
         setStatusMsg(r.message ?? "The AI Assistant is not configured on this server.");
         return;
       }
-      setModels(r.models);
-      const saved = readSaved();
-      const wanted = saved || r.defaultModel;
-      if (wanted && r.models.some((m) => m.id === wanted)) setModel(wanted);
-      else if (saved) {
-        setModel("");
-        setItems((x) => [...x, { id: nextId(), kind: "note", tone: "error", text: `Your saved model "${saved}" is no longer available. Choose another model; none was selected for you.` }]);
-      }
       setStatus("ready");
     } catch (e) {
       setStatus("error");
@@ -210,21 +174,6 @@ export function Assistant({ code, selection, onClose, ref }: Props) {
     log.current?.scrollTo({ top: log.current.scrollHeight });
   }, [items]);
 
-  const grouped = useMemo(() => {
-    const f = filter.trim().toLowerCase();
-    const list = f ? models.filter((m) => `${m.id} ${m.name}`.toLowerCase().includes(f)) : models;
-    const by = new Map<string, ModelInfo[]>();
-    for (const m of list) by.set(m.provider, [...(by.get(m.provider) ?? []), m]);
-    return [...by.entries()];
-  }, [models, filter]);
-  const current = models.find((m) => m.id === model);
-
-  const pickModel = (id: string) => {
-    setModel(id);
-    writeSaved(id);
-    if (id) setItems((x) => [...x, { id: nextId(), kind: "note", tone: "info", text: `Model changed to ${id}. The conversation is kept.` }]);
-  };
-
   const history = (): ChatTurn[] =>
     items
       .flatMap((i): ChatTurn[] =>
@@ -235,16 +184,11 @@ export function Assistant({ code, selection, onClose, ref }: Props) {
   const fail = (e: unknown) => {
     const err = e as AiRequestError;
     if (err.code === "aborted") return setItems((x) => [...x, { id: nextId(), kind: "note", tone: "info", text: "Cancelled." }]);
-    if (err.code === "invalid_model") setModel("");
     setItems((x) => [...x, { id: nextId(), kind: "note", tone: "error", text: err.message || "Request failed." }]);
   };
 
   const guard = (): boolean => {
     if (busy) return false;
-    if (!model) {
-      setItems((x) => [...x, { id: nextId(), kind: "note", tone: "error", text: "Choose a model first." }]);
-      return false;
-    }
     return true;
   };
 
@@ -257,8 +201,8 @@ export function Assistant({ code, selection, onClose, ref }: Props) {
     try {
       const data =
         kind === "explain"
-          ? await ai.explain({ model, code, messages: hist }, ctl.current.signal)
-          : await ai.suggest({ model, code, question, selection: selection || undefined, messages: hist }, ctl.current.signal);
+          ? await ai.explain({ code, messages: hist }, ctl.current.signal)
+          : await ai.suggest({ code, question, selection: selection || undefined, messages: hist }, ctl.current.signal);
       setItems((x) => [...x, { id: nextId(), kind: "structured", data }]);
     } catch (e) {
       fail(e);
@@ -274,7 +218,7 @@ export function Assistant({ code, selection, onClose, ref }: Props) {
     setItems((x) => [
       ...x,
       { id: nextId(), kind: "user", text, ctx },
-      { id, kind: "text", text: "", streaming: true, sources: [], model, diagnostics: [] },
+      { id, kind: "text", text: "", streaming: true, sources: [], model: "YOMNOVA AI", diagnostics: [] },
     ]);
     setBusy(true);
     ctl.current = new AbortController();
@@ -282,7 +226,7 @@ export function Assistant({ code, selection, onClose, ref }: Props) {
       setItems((x) => x.map((i) => (i.id === id && i.kind === "text" ? fn(i) : i)));
     try {
       await ai.chat(
-        { model, mode: m, messages: [...hist, { role: "user", content: text }], code: sendCode ? code : undefined, selection: sendSel ? selection : undefined },
+        { mode: m, messages: [...hist, { role: "user", content: text }], code: sendCode ? code : undefined, selection: sendSel ? selection : undefined },
         { onMeta: (meta) => patch((i) => ({ ...i, sources: meta.sources, diagnostics: meta.diagnostics })), onDelta: (t) => patch((i) => ({ ...i, text: i.text + t })) },
         ctl.current.signal,
       );
@@ -321,47 +265,26 @@ export function Assistant({ code, selection, onClose, ref }: Props) {
         <button className="btn small" onClick={onClose} aria-label="Collapse the AI Assistant panel">Close</button>
       </div>
 
-      {status === "loading" && <p className="ai-note" role="status">Loading models…</p>}
+      {status === "loading" && <p className="ai-note" role="status">Loading…</p>}
       {status === "unconfigured" && (
         <div className="ai-note" role="status">
           <p className="ai-p"><strong>AI Assistant is off.</strong> {statusMsg}</p>
-          <p className="ai-p">Add <code>OPENROUTER_API_KEY</code> to the server environment and restart. See <code>docs/AI_ASSISTANT.md</code>.</p>
+          <p className="ai-p">It is not available on this server right now.</p>
         </div>
       )}
       {status === "error" && (
         <div className="ai-note bad" role="alert">
-          <p className="ai-p">Could not load models: {statusMsg}</p>
+          <p className="ai-p">Could not load the assistant: {statusMsg}</p>
           <button className="btn small" onClick={() => void loadModels()}>Retry</button>
         </div>
       )}
 
       {status === "ready" && (
         <>
-          <div className="ai-model">
-            <label htmlFor="ai-model-select" className="ai-lbl">Model</label>
-            {models.length > 20 && (
-              <input type="search" aria-label="Filter models" placeholder="Filter models…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-            )}
-            <select id="ai-model-select" value={model} onChange={(e) => pickModel(e.target.value)}>
-              <option value="">Select a model…</option>
-              {grouped.map(([prov, list]) => (
-                <optgroup key={prov} label={prov}>
-                  {list.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                </optgroup>
-              ))}
-            </select>
-            {current && (
-              <p className="ai-meta">
-                {current.provider}{current.contextLength ? ` · ${Math.round(current.contextLength / 1000)}k context` : ""}
-                {current.structuredOutputs ? " · structured output" : current.jsonMode ? " · JSON mode" : " · parsed JSON fallback"}
-              </p>
-            )}
-          </div>
-
           <div className="ai-log" ref={log} role="log" aria-live="polite" aria-label="Conversation">
             {items.length === 0 && (
               <p className="ai-empty">
-                Ask about YOMNOVA syntax, or use <em>Explain with YOMNOVA AI</em> on a compiler error. Answers use this project's documentation and the real compiler's diagnostics. The assistant only suggests; it never edits your code.
+                Ask about YOMNOVA syntax, or use <em>Explain with YOMNOVA AI</em> on a compiler error. Answers are short and use the real compiler's diagnostics. The assistant only suggests; it never edits your code.
               </p>
             )}
             {items.map((i) => {
@@ -375,10 +298,9 @@ export function Assistant({ code, selection, onClose, ref }: Props) {
               if (i.kind === "structured") return <Structured key={i.id} data={i.data} editorCode={code} />;
               return (
                 <div key={i.id} className="ai-msg ai-a">
-                  <p className="ai-who">{i.model}{i.streaming ? " · writing…" : ""}</p>
+                  <p className="ai-who">YOMNOVA AI{i.streaming ? " · writing…" : ""}</p>
                   {i.diagnostics[0] && <pre className="ai-code ai-diag"><span className="ai-tag">compiler output</span>{"\n"}{i.diagnostics[0].raw}</pre>}
                   <Rich text={i.text} />
-                  {!i.streaming && i.text && i.sources.length > 0 && <p className="ai-src">Sources consulted: {i.sources.map((x) => <code key={x}>{x}</code>)}</p>}
                 </div>
               );
             })}
@@ -411,7 +333,7 @@ export function Assistant({ code, selection, onClose, ref }: Props) {
               ) : (
                 <button className="btn primary small" onClick={send} disabled={!input.trim()}>Send</button>
               )}
-              <span className="ai-src">Your prompt, selected code and compiler output are sent to the selected model provider via OpenRouter.</span>
+              <span className="ai-src">Your prompt, selected code and compiler output are sent to an AI provider.</span>
             </div>
           </div>
         </>

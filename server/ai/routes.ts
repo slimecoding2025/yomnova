@@ -52,7 +52,6 @@ const STAGE_TERMS: Record<string, string> = {
   ownership: "ownership move moved value",
   runtime: "runtime limits diagnostics",
 };
-const MODEL_ID = /^[\w.\-:/~]{1,120}$/;
 
 class HttpError extends Error {
   constructor(
@@ -113,27 +112,43 @@ export function createAiHandler(deps: AiDeps) {
     return { diagnostics: [], checkOk: true, ran: true };
   }
 
+  /** The free models that are available right now, in preference order. */
+  async function candidates(): Promise<ModelInfo[]> {
+    const pool = await client.pool();
+    if (!pool.length) throw new AiError("provider_error", "The AI Assistant is temporarily unavailable. Please try again later.", 503);
+    return pool;
+  }
+
   async function structured(
     mode: "explain_diagnostic" | "suggest_fix",
-    model: ModelInfo,
+    pool: ModelInfo[],
     userContent: string,
     sources: Set<string>,
     msgs: ChatMessage[],
     signal: AbortSignal,
     ver: string,
-  ): Promise<{ result: AssistantResult; usage: Usage }> {
+  ): Promise<{ result: AssistantResult; usage: Usage; used: string }> {
     const type = mode === "explain_diagnostic" ? "error_explanation" : "fix_suggestions";
     const messages: ChatMessage[] = [{ role: "system", content: systemPrompt(mode, ver) }, ...msgs, { role: "user", content: userContent }];
-    const { text, usage } = await client.complete({ model, messages, structured: jsonSchemaFor(type), signal });
-    let parsed: unknown;
-    try {
-      parsed = extractJson(text);
-    } catch {
-      throw new AiError("bad_response", "The model did not return the required structured answer. Try again or choose another model.");
+    let last: unknown = null;
+    for (const model of pool) {
+      try {
+        const { text, usage } = await client.complete({ model, messages, structured: jsonSchemaFor(type), signal });
+        let parsed: unknown;
+        try {
+          parsed = extractJson(text);
+        } catch {
+          throw new AiError("bad_response", "The AI did not return a usable answer. Please try again.");
+        }
+        const v = validateResult(parsed, type, sources);
+        if (!v.ok) throw new AiError("bad_response", "The AI did not return a usable answer. Please try again.");
+        return { result: v.value, usage, used: model.id };
+      } catch (e) {
+        if (signal.aborted || (e instanceof AiError && e.code === "aborted")) throw e;
+        last = e; // try the next free model
+      }
     }
-    const v = validateResult(parsed, type, sources);
-    if (!v.ok) throw new AiError("bad_response", `The model's answer failed validation (${v.error}). Try again or choose another model.`);
-    return { result: v.value, usage };
+    throw last instanceof AiError ? new AiError(last.code, "The AI could not answer right now. Please try again in a moment.", last.status) : last;
   }
 
   function errorStatus(e: unknown): { status: number; body: { error: string; code: string } } {
@@ -156,16 +171,16 @@ export function createAiHandler(deps: AiDeps) {
     try {
       if (req.method === "GET" && route === "/api/ai/models") {
         if (!client.configured) {
-          sendJson(res, 200, { configured: false, promptVersion: PROMPT_VERSION, defaultModel: "", models: [], message: "Set OPENROUTER_API_KEY on the server to enable the AI Assistant." });
+          sendJson(res, 200, { configured: false, promptVersion: PROMPT_VERSION, defaultModel: "", models: [], message: "The AI Assistant is not available right now." });
           return true;
         }
-        const models = await client.listModels();
-        sendJson(res, 200, { configured: true, promptVersion: PROMPT_VERSION, defaultModel: client.cfg.defaultModel, models });
+        // Visitors never see or choose a model: the server picks from its own free pool.
+        sendJson(res, 200, { configured: true, promptVersion: PROMPT_VERSION, defaultModel: "", models: [] });
         return true;
       }
       if (req.method !== "POST") throw new HttpError(405, "Method not allowed");
       if (!POST_ROUTES.has(route)) throw new HttpError(404, "Unknown AI route");
-      if (!client.configured) throw new AiError("not_configured", "The AI Assistant is not configured: set OPENROUTER_API_KEY on the server.", 503);
+      if (!client.configured) throw new AiError("not_configured", "The AI Assistant is not available right now.", 503);
       if (limited(req, res)) return true;
       const body = (await deps.readJson(req)) as Record<string, unknown>;
 
@@ -183,9 +198,7 @@ export function createAiHandler(deps: AiDeps) {
         return true;
       }
 
-      model = str(body.model, "model", 120, true)!;
-      if (!MODEL_ID.test(model)) throw new HttpError(400, "Invalid model id");
-      const info = await client.requireModel(model);
+      const pool = await candidates();
       const ver = await deps.version();
       const question = str(body.question, "question", 2000);
       const msgs = history(body.messages);
@@ -216,15 +229,29 @@ export function createAiHandler(deps: AiDeps) {
         // From here on the response is a stream.
         res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store", Connection: "keep-alive", "X-Content-Type-Options": "nosniff", "X-Accel-Buffering": "no" });
         const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-        send("meta", { model: info.id, promptVersion: PROMPT_VERSION, sources: hits.map((h) => h.id), diagnostics: diags });
-        try {
-          const out = await client.stream({ model: info, messages, signal: ctl.signal }, (t) => send("delta", { text: t }));
-          send("done", { finishReason: out.finishReason, usage: out.usage });
-          deps.log?.({ route, model, status: 200, ms: Date.now() - started, ...out.usage });
-        } catch (e) {
-          const { body: b } = errorStatus(e);
-          send("error", b);
-          deps.log?.({ route, model, status: errorStatus(e).status, ms: Date.now() - started, code: b.code });
+        send("meta", { model: "YOMNOVA AI", promptVersion: PROMPT_VERSION, sources: [], diagnostics: diags });
+        let sentAny = false;
+        let failure: unknown = null;
+        for (const info of pool) {
+          try {
+            model = info.id;
+            const out = await client.stream({ model: info, messages, signal: ctl.signal }, (t) => {
+              sentAny = true;
+              send("delta", { text: t });
+            });
+            send("done", { finishReason: out.finishReason, usage: out.usage });
+            deps.log?.({ route, model, status: 200, ms: Date.now() - started, ...out.usage });
+            failure = null;
+            break;
+          } catch (e) {
+            failure = e;
+            if (sentAny || ctl.signal.aborted) break; // only fall back before any text reached the visitor
+          }
+        }
+        if (failure) {
+          const { body: b, status } = errorStatus(failure);
+          send("error", { error: "The AI could not answer right now. Please try again in a moment.", code: b.code });
+          deps.log?.({ route, model, status, ms: Date.now() - started, code: b.code });
         }
         res.end();
         return true;
@@ -257,17 +284,17 @@ export function createAiHandler(deps: AiDeps) {
         if (selection) parts.push("Selected code:\n" + codeBlock("selection", selection));
         if (question) parts.push("User question:\n" + question);
         const sources = new Set(hits.map((h) => h.id));
-        const { result, usage } = await structured(explain ? "explain_diagnostic" : "suggest_fix", info, parts.join("\n\n"), sources, msgs, ctl.signal, ver);
+        const { result, usage, used } = await structured(explain ? "explain_diagnostic" : "suggest_fix", pool, parts.join("\n\n"), sources, msgs, ctl.signal, ver);
+        model = used;
         sendJson(res, 200, {
           result,
-          model: info.id,
+          model: "YOMNOVA AI",
           promptVersion: PROMPT_VERSION,
-          sources: hits.map((h) => ({ id: h.id, title: h.title })),
+          sources: [],
           diagnostics,
           selectedDiagnostic: picked?.id ?? null,
           compiler: { checkOk, ranProgram: ran },
-          usage,
-          disclaimer: "AI interpretation. Only the compiler diagnostics are compiler-confirmed. Suggestions are not applied and not compiler-validated.",
+          disclaimer: "AI suggestion: not applied to your code.",
         });
         deps.log?.({ route, model, status: 200, ms: Date.now() - started, ...usage });
         return true;

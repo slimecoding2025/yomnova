@@ -33,7 +33,7 @@ const results = [];
 const step = async (name, fn) => { await fn(); results.push(name); console.log("ok -", name); };
 
 const mock = await startMock(4010);
-const on = await startServer(3112, { OPENROUTER_API_KEY: KEY, OPENROUTER_BASE_URL: "http://127.0.0.1:4010" });
+const on = await startServer(3112, { OPENROUTER_API_KEY: KEY, OPENROUTER_BASE_URL: "http://127.0.0.1:4010", AI_FREE_MODELS: "mockco/alpha,mockco/beta", AI_MODEL_ALLOWLIST: "" });
 const off = await startServer(3113, { OPENROUTER_API_KEY: "" });
 const browser = await chromium.launch();
 const errors = [];
@@ -46,12 +46,13 @@ try {
   const editor = page.locator(".pg-code textarea");
   const panel = page.locator(".pg-ai");
 
-  await step("assistant panel opens and lists models from the provider", async () => {
+  await step("assistant panel opens with no model picker and no model names", async () => {
     assert.equal(await panel.count(), 0);
     await page.getByRole("button", { name: "AI Assistant" }).click();
     await panel.waitFor();
-    await page.locator("#ai-model-select option", { hasText: "Mock Alpha" }).waitFor({ state: "attached" });
-    assert.equal(await page.locator("#ai-model-select").inputValue(), "", "no model is chosen for the user");
+    await panel.locator("textarea").waitFor();
+    assert.equal(await page.locator("#ai-model-select").count(), 0);
+    assert.ok(!(await panel.innerText()).includes("mockco"));
   });
 
   await page.selectOption('select[aria-label="Example program"]', "type_error");
@@ -59,13 +60,7 @@ try {
   await page.getByRole("button", { name: "Run", exact: true }).click();
   await page.getByRole("button", { name: "Explain with YOMNOVA AI" }).waitFor();
 
-  await step("explain without a model asks the user to choose one (no silent default)", async () => {
-    await page.getByRole("button", { name: "Explain with YOMNOVA AI" }).click();
-    await panel.getByText("Choose a model first.").waitFor();
-  });
-
   await step("Explain Error: real diagnostic + validated structured answer + suggestion shown", async () => {
-    await page.selectOption("#ai-model-select", "mockco/alpha");
     await page.getByRole("button", { name: "Explain with YOMNOVA AI" }).click();
     await panel.getByText("The argument has the wrong type.").waitFor();
     const diag = await panel.locator(".ai-diag").first().innerText();
@@ -77,6 +72,9 @@ try {
     assert.match(call.user, /Type mismatch/);
     assert.match(call.user, /<knowledge id="docs\//);
     assert.equal(await editor.inputValue(), original, "editor untouched");
+    const shown = await panel.innerText();
+    assert.ok(!/\.md\b|mockco|docs\//.test(shown), "no project files or model names in the answer: " + shown);
+    assert.ok(!/canned output|Language rule|Sources/.test(shown), "no limitations, rule or sources lists");
   });
 
   await step("suggestion: view, diff, copy, validate with the real compiler; editor never changes", async () => {
@@ -136,13 +134,6 @@ try {
     assert.equal(await editor.inputValue(), original);
   });
 
-  await step("changing model keeps the conversation and announces the change", async () => {
-    const before = await panel.locator(".ai-msg").count();
-    await page.selectOption("#ai-model-select", "mockco/beta");
-    await panel.getByText("Model changed to mockco/beta. The conversation is kept.").waitFor();
-    assert.equal(await panel.locator(".ai-msg").count(), before);
-  });
-
   await step("cancel stops a streaming answer", async () => {
     await panel.locator("textarea").fill("SLOW please");
     await panel.getByRole("button", { name: "Send" }).click();
@@ -181,12 +172,12 @@ try {
     await page.locator(".pg").screenshot({ path: path.join(SHOTS, "assistant-mobile.png") });
   }
 
-  await step("server without a key: panel explains how to enable it; no model calls possible", async () => {
+  await step("server without a key: panel says it is off, without naming settings; no model calls possible", async () => {
     const p2 = await (await browser.newContext({ viewport: { width: 1440, height: 1000 } })).newPage();
     await p2.goto("http://localhost:3113/#playground", { waitUntil: "networkidle" });
     await p2.getByRole("button", { name: "AI Assistant" }).click();
     await p2.getByText("AI Assistant is off.").waitFor();
-    assert.equal(await p2.locator("#ai-model-select").count(), 0);
+    assert.ok(!(await p2.locator(".pg-ai").innerText()).includes("OPENROUTER"));
     const r = await p2.request.post("http://localhost:3113/api/ai/suggest-fix", { data: { model: "x/y", code: "x" } });
     assert.equal(r.status(), 503);
   });

@@ -2,6 +2,12 @@
 
 ## Unreleased — 2026-11-03
 
+### AI Assistant
+* **Changed** the model is chosen by the server from three free OpenRouter models, with fallback to the next on failure.
+  The picker is gone and the browser never sees a model id (it shows "YOMNOVA AI"). A model id sent by a client is ignored.
+* **Changed** *Explain error* is now short (one sentence what, at most one why, one fix). Rule/source/caveat lists are
+  removed, file names in model text are stripped, and the limits are enforced in code. Not exercised against live OpenRouter.
+
 ### Bytecode verifier
 * **Added** `verify_chunk`, run on every chunk of a loaded `.yomc`: whole instructions only, known opcodes, constant
   operands in range (names must be text, struct field lists arrays of text), jump targets on instruction starts, and a

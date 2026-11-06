@@ -21,25 +21,32 @@ Principles (all enforced in code and covered by tests):
    ```bash
    OPENROUTER_API_KEY=sk-or-...  npm run dev
    ```
-3. Build the compiler (`npm run build:compiler`), open the Playground, press **AI Assistant**, choose a model.
+3. Build the compiler (`npm run build:compiler`), open the Playground, press **AI Assistant**.
 
 Without a key the panel says the assistant is off; no model request is possible.
 
-### Free models (suggested setup)
+### Free models, chosen by the server
 
-`render.yaml` allows three free OpenRouter models (listed as free on 2026-11-05): `google/gemma-4-26b-a4b-it:free`
-(default, structured output), `cohere/north-mini-code:free` (structured output via JSON schema) and
-`nvidia/nemotron-3-ultra-550b-a55b:free`. They have **not been called live from this project** (the build sandbox cannot
-reach OpenRouter). Free ids are renamed or withdrawn often; if one disappears it simply drops out of the list. Embedding
-and rerank models cannot answer chat requests and are not suitable. Put the API key only in the host's environment.
+Visitors never see or choose a model. The server tries three built-in free OpenRouter models in order and falls back to
+the next one when a request fails: `google/gemma-4-26b-a4b-it:free`, `cohere/north-mini-code:free`,
+`nvidia/nemotron-3-ultra-550b-a55b:free` (listed as free on 2026-11-05). Override with `AI_FREE_MODELS` (comma-separated,
+max 6). They have **not been called live from this project** (the build sandbox cannot reach OpenRouter); free ids change
+often, and an id OpenRouter no longer lists is simply skipped. Responses and the UI show only "YOMNOVA AI", never a model
+id, documentation id or file name.
+
+### Short answers
+
+*Explain error* returns one short sentence on what is wrong, at most one on why, and exactly one fix (before/after). Rule
+titles, source lists and caveat lists are removed on the server, file names in model text are stripped, and sentence and
+length caps are enforced by the server, not only requested in the prompt.
 
 ### Environment variables
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | Enables the assistant. Server-side only. |
-| `OPENROUTER_DEFAULT_MODEL` | — | Model id pre-selected in the panel. If unset (and the user has no saved choice) no model is pre-selected. |
-| `AI_MODEL_ALLOWLIST` | all text models | Comma-separated model ids or prefixes to offer, e.g. `vendor-a/,vendor-b/model-x`. |
+| `AI_FREE_MODELS` | the three above | Models the server may use, in preference order. |
+| `AI_MODEL_ALLOWLIST` | the pool | Optional extra filter on the provider's list (ids or prefixes). Normally unset. |
 | `AI_MAX_OUTPUT_TOKENS` | 1200 | Output cap per request (200–4000, also capped by the model's own limit). |
 | `AI_TIMEOUT_MS` | 60000 | Provider timeout (covers the whole stream). |
 | `AI_RATE_PER_MINUTE` / `AI_RATE_PER_HOUR` | 20 / 300 | Per-client-address limit, and a global hourly cap. |

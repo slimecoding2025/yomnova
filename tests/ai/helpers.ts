@@ -103,7 +103,7 @@ export function mockUpstream(): Upstream {
 export const KEY = "sk-or-test-SECRET-1234567890";
 
 export function makeClient(up: Upstream, env: Record<string, string> = {}): OpenRouter {
-  const cfg: AiConfig = configFromEnv({ OPENROUTER_API_KEY: KEY, ...env } as NodeJS.ProcessEnv, up.fetch);
+  const cfg: AiConfig = configFromEnv({ OPENROUTER_API_KEY: KEY, AI_MODEL_ALLOWLIST: "", AI_FREE_MODELS: "acme/alpha,acme/beta-json", ...env } as NodeJS.ProcessEnv, up.fetch);
   return new OpenRouter(cfg);
 }
 

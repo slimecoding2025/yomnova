@@ -79,6 +79,23 @@ export function cleanText(s: string, max: number): string {
   return s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/g, "").slice(0, max);
 }
 
+/** Replaces project file names and doc paths (e.g. `docs/GRAMMAR.md`) that a model may echo from its context. */
+export function scrubProjectRefs(s: string): string {
+  return s
+    .replace(/\(?\s*(?:see|check|inspect|refer to|consult)[^.\n]*?\b[\w\-./]+\.(?:md|ts|tsx|rs|toml|json|ya?ml|html|css)\b[^.\n]*\)?\.?/gi, "")
+    .replace(/\b(?:[\w\-]+\/)*[\w\-]+\.(?:md|ts|tsx|rs|toml|json|ya?ml|html|css)\b(?:#[\w\-]+)?/gi, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([.,;:])/g, "$1")
+    .trim();
+}
+
+/** First `n` sentences of `s`, capped at `max` characters. */
+export function brief(s: string, n: number, max: number): string {
+  const parts = s.trim().match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) ?? [s];
+  const out = parts.slice(0, n).join("").trim();
+  return out.length > max ? out.slice(0, max - 1).trimEnd() + "…" : out;
+}
+
 export function extractJson(text: string): unknown {
   const t = text.trim();
   try {
@@ -151,6 +168,7 @@ export function validateResult(raw: unknown, expected: AssistantResult["type"], 
     }
   }
 
+  const publicMode = expected !== "answer";
   let dropped = 0;
   const references: string[] = [];
   if (raw.references !== undefined) {
@@ -178,16 +196,25 @@ export function validateResult(raw: unknown, expected: AssistantResult["type"], 
       }
     }
   }
+  if (publicMode) {
+    // The public UI shows a short explanation and a fix only: no documentation ids, rules or caveat lists.
+    languageRule = null;
+    references.length = 0;
+    limitations.length = 0;
+    dropped = 0;
+  }
   if (dropped > 0) limitations.push(`${dropped} source reference(s) from the model were removed because they do not match the documentation that was supplied.`);
 
   return {
     ok: true,
     value: {
       type: type as AssistantResult["type"],
-      summary: cleanText(raw.summary, 400),
-      explanation: cleanText(raw.explanation, 4000),
+      summary: publicMode ? brief(scrubProjectRefs(cleanText(raw.summary, 400)), 2, 240) : cleanText(raw.summary, 400),
+      explanation: publicMode ? brief(scrubProjectRefs(cleanText(raw.explanation, 4000)), 2, 320) : cleanText(raw.explanation, 4000),
       languageRule,
-      suggestions,
+      suggestions: publicMode
+        ? suggestions.slice(0, expected === "error_explanation" ? 1 : 2).map((s) => ({ ...s, title: scrubProjectRefs(s.title), description: brief(scrubProjectRefs(s.description), 2, 240) }))
+        : suggestions,
       limitations,
       references,
     },

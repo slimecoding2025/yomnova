@@ -9,11 +9,6 @@ services:
       - key: NODE_ENV
         value: production
       # The AI Assistant stays OFF until you paste OPENROUTER_API_KEY in the Render dashboard (never commit it).
-      # The values below are not secrets: three free models, checked against OpenRouter's free-models page on
-      # 2026-11-05. Free model ids change often; the server only offers ids that OpenRouter's live list returns.
+      # The server itself picks from three built-in free models; visitors never see or choose a model.
       - key: OPENROUTER_API_KEY
         sync: false
-      - key: AI_MODEL_ALLOWLIST
-        value: "google/gemma-4-26b-a4b-it:free,cohere/north-mini-code:free,nvidia/nemotron-3-ultra-550b-a55b:free"
-      - key: OPENROUTER_DEFAULT_MODEL
-        value: "google/gemma-4-26b-a4b-it:free"

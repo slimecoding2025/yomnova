@@ -32,13 +32,14 @@ test("unconfigured server: models endpoint says so, POSTs are 503, no upstream t
   await srv.close();
 });
 
-test("GET /api/ai/models lists provider models and never returns the key", async () => {
-  const { srv } = await setup({ OPENROUTER_DEFAULT_MODEL: "acme/alpha" });
+test("GET /api/ai/models reports configured but never lists models or returns the key", async () => {
+  const { srv } = await setup();
   const r = await srv.call("/api/ai/models");
   const m = JSON.parse(r.text);
   assert.equal(m.configured, true);
-  assert.equal(m.defaultModel, "acme/alpha");
-  assert.equal(m.models.length, 3);
+  assert.deepEqual(m.models, []);
+  assert.equal(m.defaultModel, "");
+  assert.ok(!r.text.includes("acme"));
   assert.ok(!r.text.includes(KEY));
   await srv.close();
 });
@@ -53,9 +54,12 @@ test("explain-diagnostic: real compiler diagnostic reaches the model; answer is 
   assert.equal(out.diagnostics[0].line, 6);
   assert.equal(out.result.type, "error_explanation");
   assert.equal(out.result.suggestions[0].compilerValidated, false, "model claim of validation is ignored");
-  assert.deepEqual(out.result.references, [], "fabricated reference removed");
-  assert.ok(out.result.limitations.some((l: string) => /removed/.test(l)));
-  assert.ok(out.sources.length > 0);
+  assert.deepEqual(out.result.references, [], "no documentation references are exposed");
+  assert.deepEqual(out.result.limitations, []);
+  assert.equal(out.result.languageRule, null);
+  assert.deepEqual(out.sources, []);
+  assert.equal(out.model, "YOMNOVA AI", "the real model id is never sent to the browser");
+  assert.ok(!r.text.includes("acme/"));
   assert.ok(!r.text.includes(KEY));
 
   const sent = up.calls.filter((c) => c.url.endsWith("/chat/completions")).at(-1)!.body;
@@ -152,7 +156,10 @@ test("chat: streams SSE (meta, deltas, done), carries retrieved sources, never e
   assert.match(r.text, /event: meta/);
   assert.match(r.text, /"text":"Func"/);
   assert.match(r.text, /event: done/);
-  assert.ok(JSON.parse(/event: meta\ndata: (.*)\n/.exec(r.text)![1]).sources.length > 0);
+  const meta = JSON.parse(/event: meta\ndata: (.*)\n/.exec(r.text)![1]);
+  assert.deepEqual(meta.sources, []);
+  assert.equal(meta.model, "YOMNOVA AI");
+  assert.ok(!r.text.includes("acme/"));
   assert.ok(!r.text.includes(KEY));
   assert.equal(up.calls.filter((c) => c.url.endsWith("/chat/completions")).at(-1)!.body.stream, true);
   await srv.close();
@@ -191,11 +198,7 @@ test("debug mode attaches REAL compiler output", { skip }, async () => {
 
 test("input validation: invalid/unknown model, oversized code, bad history, bad JSON", async () => {
   const { srv } = await setup();
-  assert.equal((await srv.call("/api/ai/suggest-fix", { code: "x" })).status, 400);
-  assert.equal((await srv.call("/api/ai/suggest-fix", { model: "bad model!", code: "x" })).status, 400);
-  const unk = await srv.call("/api/ai/suggest-fix", { model: "acme/not-listed", code: "x" });
-  assert.equal(unk.status, 400);
-  assert.equal(JSON.parse(unk.text).code, "invalid_model");
+  assert.equal((await srv.call("/api/ai/suggest-fix", {})).status, 400);
   assert.equal((await srv.call("/api/ai/suggest-fix", { model: "acme/alpha", code: "x".repeat(30000) })).status, 413);
   assert.equal((await srv.call("/api/ai/chat", { model: "acme/alpha", messages: [{ role: "system", content: "x" }] })).status, 400);
   assert.equal((await srv.call("/api/ai/chat", { model: "acme/alpha", messages: [] })).status, 400);
@@ -222,5 +225,45 @@ test("logging records metadata only", { skip }, async () => {
   const text = JSON.stringify(logs);
   assert.ok(logs.length > 0);
   assert.ok(!text.includes("double") && !text.includes(KEY) && !text.includes("Authorization"));
+  await srv.close();
+});
+
+test("the server picks the model itself and falls back to the next free model on failure", { skip }, async () => {
+  const { up, srv } = await setup();
+  let n = 0;
+  up.next(() => (n++ === 0 ? json(500, { error: { message: "down" } }) : completion(answer())));
+  // A model id sent by the browser is ignored.
+  const r = await srv.call("/api/ai/explain-diagnostic", { model: "evil/expensive", code: TYPE_ERR });
+  assert.equal(r.status, 200, r.text);
+  const used = up.calls.filter((c) => c.url.endsWith("/chat/completions")).map((c) => c.body.model);
+  assert.deepEqual(used, ["acme/alpha", "acme/beta-json"]);
+  assert.ok(!r.text.includes("acme/") && !r.text.includes("evil/"));
+  await srv.close();
+});
+
+test("when every free model fails the visitor gets a generic error without model names", { skip }, async () => {
+  const { up, srv } = await setup();
+  up.next(() => json(500, { error: { message: "down" } }));
+  const r = await srv.call("/api/ai/explain-diagnostic", { code: TYPE_ERR });
+  assert.equal(r.status, 502);
+  assert.ok(!r.text.includes("acme/"));
+  await srv.close();
+});
+
+test("answers are short and never point at project files", { skip }, async () => {
+  const { up, srv } = await setup();
+  up.next(() => completion(answer({
+    summary: "Wrong type. See docs/GRAMMAR.md for details. Third sentence.",
+    explanation: "double expects Int (check docs/LANGUAGE_SPECIFICATION.md). Another. And another.",
+    suggestions: [
+      { title: "Fix", description: "Pass an Int. Read README.md. More text. Even more.", before: 'double("twenty-one")', after: "double(21)", confidence: "high" },
+      { title: "Second", description: "x", before: "a", after: "b", confidence: "low" },
+    ],
+  })));
+  const out = JSON.parse((await srv.call("/api/ai/explain-diagnostic", { code: TYPE_ERR })).text);
+  const shown = JSON.stringify([out.result.summary, out.result.explanation, out.result.suggestions.map((s: { description: string }) => s.description)]);
+  assert.ok(!/\.md\b/.test(shown), shown);
+  assert.equal(out.result.suggestions.length, 1);
+  assert.ok(out.result.explanation.split(/[.!?]/).filter(Boolean).length <= 2);
   await srv.close();
 });
