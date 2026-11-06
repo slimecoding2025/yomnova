@@ -2,6 +2,15 @@
 
 ## Unreleased — 2026-11-03
 
+### IR optimiser
+* **Added** `yomnova-ir` as a real stage: bytecode is lifted into a linear IR with symbolic jump targets, optimised and
+  lowered back (constant folding that cannot change run-time errors, dead push/pop, constant-condition jumps, jump
+  threading, unreachable code). On by default; `--no-opt` disables it. A differential test runs every example and
+  extra programs (including ones that must fail) with and without it and requires identical results. 8 new tests
+  (110 Rust tests total). The old, unused 3-address data types were removed.
+* **Not done:** no lowering from the AST, no SSA, inlining or float folding; the speed-up was not benchmarked, only the
+  size of the code (e.g. a constant-heavy example went from 24 to 9 listing lines).
+
 ### NetworkBuffer and Packet
 * **Added** `NetworkBuffer` (bounds-checked big-endian 8/16/32-bit reads and writes, `buf_slice`, `buf_concat`, `bytes_of`,
   `len`; max 1 MiB) and `Packet(header, payload)`. Reads borrow, writes consume and return a new buffer. 4 new tests
