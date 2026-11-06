@@ -201,7 +201,17 @@ fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
                 .file
                 .clone()
                 .ok_or_else(|| CliError::Usage(format!("'{command}' requires a source file")))?;
-            let (source, file) = read_source(&path)?;
+            let (mut source, file) = read_source(&path)?;
+            if matches!(command, "run" | "check" | "build" | "disasm") {
+                let base = path.parent().unwrap_or(Path::new("."));
+                source = yomnova_compiler::files::resolve(&source, base).map_err(|diags| {
+                    CliError::Diagnostics {
+                        diags,
+                        source: source.clone(),
+                        file: file.clone(),
+                    }
+                })?;
+            }
             let diag = |diags: Vec<Diagnostic>| CliError::Diagnostics {
                 diags,
                 source: source.clone(),

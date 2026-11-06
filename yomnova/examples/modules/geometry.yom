@@ -1,0 +1,8 @@
+// A library: functions only, no `main`.
+fn area(w: Int, h: Int) -> Int {
+    return w * h
+}
+
+fn perimeter(w: Int, h: Int) -> Int {
+    return 2 * (w + h)
+}

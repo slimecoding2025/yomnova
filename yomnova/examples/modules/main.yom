@@ -1,0 +1,11 @@
+// File import: `import "file.yom" as name`, used as `name.function(...)`.
+// Run with the CLI: yomnova run examples/modules/main.yom
+import "geometry.yom" as geo
+import std.math
+
+fn main() -> Int {
+    emit(geo.area(3, 4))
+    emit(geo.perimeter(3, 4))
+    emit(math.max(geo.area(2, 2), 3))
+    return 0
+}

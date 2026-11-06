@@ -1,5 +1,6 @@
 //! YOMNOVA Multi-Stage Compiler Driver and Bytecode Generator.
 
+pub mod files;
 pub mod format;
 pub mod lint;
 pub mod stdlib;

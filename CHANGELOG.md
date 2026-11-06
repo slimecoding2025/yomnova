@@ -2,6 +2,13 @@
 
 ## Unreleased — 2026-11-03
 
+### File imports
+* **Added** `import "file.yom" as name` (CLI only: `run`, `check`, `build`, `disasm`). The file is inlined, its functions are renamed
+  `name_fn`, callers write `name.fn(...)`. Nested imports (paths relative to the importing file), cycle and missing-file errors,
+  a library may not define `main`. `examples/modules/`, 2 tests (124 Rust tests total).
+* **Limits:** it is renaming, not a real module system: only functions are namespaced (structs/enums stay global), no `pub`,
+  no re-exports. The browser playground has no files, so it supports only `import std.<module>`.
+
 ### Bytecode verifier: operand-stack depth
 * **Added** to `verify_chunk` (run when a `.yomc` file is decoded): abstract interpretation of the operand stack. It rejects
   stack underflow, an instruction reached with two different depths along different paths, and depth above 65 536. Every
