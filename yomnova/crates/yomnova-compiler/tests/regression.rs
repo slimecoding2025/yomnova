@@ -1086,3 +1086,76 @@ fn packets_hold_a_header_and_a_payload() {
         "expected Packet, found NetworkBuffer",
     );
 }
+
+// ---- IR optimiser: must never change what a program does ----
+
+fn outcome(source: &str, optimize: bool) -> Result<(Vec<String>, String), String> {
+    match Compiler::compile_and_run_opt(source, optimize) {
+        Ok(out) => Ok((out.output_lines, format!("{:?}", out.execution_result))),
+        Err(d) => Err(d
+            .iter()
+            .map(|x| x.message.clone())
+            .collect::<Vec<_>>()
+            .join("\n")),
+    }
+}
+
+#[test]
+fn optimiser_never_changes_behaviour() {
+    let mut programs: Vec<String> = Vec::new();
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+    for entry in std::fs::read_dir(&dir).expect("examples dir") {
+        let p = entry.unwrap().path();
+        if p.extension().is_some_and(|e| e == "yom") {
+            programs.push(std::fs::read_to_string(&p).unwrap());
+        }
+    }
+    assert!(programs.len() >= 5, "expected the example programs");
+    let inline = [
+        // folding, including signs, division and modulo
+        "fn main() -> Int {\n emit(2 + 3 * 4)\n emit(7 / 2)\n emit(0 - 7 / 2)\n emit((0 - 7) % 3)\n emit(7 % (0 - 3))\n emit(-5)\n emit(1 < 2)\n emit(2 <= 1)\n emit(\"a\" + \"b\")\n emit(\"a\" == \"a\")\n emit(true == false)\n emit(!true)\n return 0\n}",
+        // constant conditions in if/while/else-if chains
+        "fn main() -> Int {\n if true {\n emit(\"t\")\n } else {\n emit(\"f\")\n }\n if false {\n emit(\"no\")\n } else if 1 < 2 {\n emit(\"yes\")\n }\n while false {\n emit(\"never\")\n }\n mut i = 0\n while i < 3 {\n i = i + 1\n }\n emit(i)\n return i\n}",
+        // errors must survive optimisation unchanged
+        "fn main() -> Int {\n emit(1)\n emit(1 / 0)\n return 0\n}",
+        "fn main() -> Int {\n emit(9223372036854775807 + 1)\n return 0\n}",
+        "fn main() -> Int {\n emit(1 % 0)\n return 0\n}",
+        // returns in branches and nested loops
+        "fn f(n: Int) -> Int {\n if n < 0 {\n return 0 - 1\n }\n mut s = 0\n mut i = 0\n while i < n {\n mut j = 0\n while j < 2 {\n s = s + i * j\n j = j + 1\n }\n i = i + 1\n }\n return s\n}\nfn main() -> Int {\n emit(f(0 - 3))\n emit(f(5))\n return 0\n}",
+        // recursion, short-circuit, match, for
+        "fn fib(n: Int) -> Int {\n if n < 2 {\n return n\n }\n return fib(n - 1) + fib(n - 2)\n}\nfn main() -> Int {\n emit(fib(15))\n emit(true && false || true)\n for x in [1, 2, 3] {\n emit(x * 2)\n }\n return 0\n}",
+    ];
+    programs.extend(inline.iter().map(|s| s.to_string()));
+    let mut compared = 0;
+    for src in &programs {
+        assert_eq!(
+            outcome(src, true),
+            outcome(src, false),
+            "optimiser changed behaviour of:\n{src}"
+        );
+        compared += 1;
+    }
+    assert!(compared >= 10);
+}
+
+#[test]
+fn optimiser_shrinks_constant_code_and_keeps_the_verifier_happy() {
+    let src = "fn main() -> Int {\n emit(2 + 3 * 4)\n if true {\n emit(\"a\" + \"b\")\n } else {\n emit(\"dead\")\n }\n return 1 + 1\n}";
+    let raw = Compiler::compile_unit_opt(src, false).unwrap();
+    let opt = Compiler::compile_unit_opt(src, true).unwrap();
+    assert!(
+        opt.main.code.len() < raw.main.code.len(),
+        "{} !< {}",
+        opt.main.code.len(),
+        raw.main.code.len()
+    );
+    assert!(
+        !opt.disassemble_all().contains("dead"),
+        "unreachable else branch was removed"
+    );
+    // Optimised modules still pass the loader's structural verifier after a round trip through `.yomc`.
+    let module = Compiler::compile_module_opt(src, true).unwrap();
+    let bytes = yomnova_bytecode::module::encode(&module).unwrap();
+    assert!(yomnova_bytecode::module::decode(&bytes).is_ok());
+    assert_eq!(outcome(src, true).unwrap().0, vec!["14", "ab"]);
+}

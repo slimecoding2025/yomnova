@@ -86,7 +86,7 @@ no scroll hijacking or smooth-scroll library. The skill's horizontal-scroll exam
 2. Ownership is move-only; no borrows/lifetimes/resources/typestate. Values whose type cannot be inferred are treated as
    copy (conservative against false positives, so it can miss a move).
 3. (Updated after this audit: `for … in` over arrays, `len` and `push` now exist.) methods, lambdas and `import` are not supported (`struct`, `enum` and `match` were added later).
-4. `yomnova-ir`, `yomnova-network-core`, `yomnova-stdlib` are not wired in; the VM's `And`/`Or` opcodes and
+4. (Updated: `yomnova-ir` is now the bytecode optimiser.) `yomnova-network-core` and `yomnova-stdlib` are not wired in; the VM's `And`/`Or` opcodes and
    `IPv6`/`Packet` values are unused by generated code.
 5. (Updated after this audit: `build` now writes a loadable `.yomc` binary that `exec` runs.) Function effects `![…]` parse but are ignored.
 6. The Playground runs untrusted code in a child process **without OS sandboxing** (limits: 5 s, 1 MiB output, 4 jobs,

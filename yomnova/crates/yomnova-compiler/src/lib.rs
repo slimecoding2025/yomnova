@@ -206,6 +206,22 @@ impl Compiler {
 
     /// Compile to bytecode without running anything.
     pub fn compile_unit(source: &str) -> Result<CompiledUnit, Vec<Diagnostic>> {
+        Self::compile_unit_opt(source, true)
+    }
+
+    /// Like [`compile_unit`](Self::compile_unit), with the IR optimiser (`yomnova-ir`) switched on or off.
+    pub fn compile_unit_opt(source: &str, optimize: bool) -> Result<CompiledUnit, Vec<Diagnostic>> {
+        let mut unit = Self::compile_unit_raw(source)?;
+        if optimize {
+            unit.main = yomnova_ir::optimize_chunk(&unit.main).0;
+            for (_, chunk, _) in &mut unit.functions {
+                *chunk = yomnova_ir::optimize_chunk(chunk).0;
+            }
+        }
+        Ok(unit)
+    }
+
+    fn compile_unit_raw(source: &str) -> Result<CompiledUnit, Vec<Diagnostic>> {
         let program = Self::check(source)?;
 
         let fail = |e: CompilerError| vec![Diagnostic::error(e.to_string(), None)];
@@ -243,7 +259,11 @@ impl Compiler {
 
     /// Compile to a [`Module`] that can be written to a `.yomc` file (see `yomnova_bytecode::module`).
     pub fn compile_module(source: &str) -> Result<Module, Vec<Diagnostic>> {
-        let unit = Self::compile_unit(source)?;
+        Self::compile_module_opt(source, true)
+    }
+
+    pub fn compile_module_opt(source: &str, optimize: bool) -> Result<Module, Vec<Diagnostic>> {
+        let unit = Self::compile_unit_opt(source, optimize)?;
         Ok(Module {
             main: unit.main,
             functions: unit.functions,
@@ -276,7 +296,14 @@ impl Compiler {
 
     /// Complete pipeline: Lex -> Parse -> Sema -> Ownership -> Bytecode -> Run in VM
     pub fn compile_and_run(source: &str) -> Result<CompilerOutput, Vec<Diagnostic>> {
-        let unit = Self::compile_unit(source)?;
+        Self::compile_and_run_opt(source, true)
+    }
+
+    pub fn compile_and_run_opt(
+        source: &str,
+        optimize: bool,
+    ) -> Result<CompilerOutput, Vec<Diagnostic>> {
+        let unit = Self::compile_unit_opt(source, optimize)?;
         let module = Module {
             main: unit.main.clone(),
             functions: unit.functions.clone(),

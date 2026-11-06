@@ -8,7 +8,7 @@ honestly: *used* means the real pipeline calls it today.
 ```
 source ─▶ lexer ─▶ parser ─▶ AST ─▶ sema (scopes + types) ─▶ ownership ─▶ codegen ─▶ bytecode ─▶ VM
                                                                   │
-                                                          yomnova-ir  (data types only; NOT used)
+                                                          yomnova-ir  (lift → optimise → lower, on the emitted bytecode)
 ```
 
 | Stage | Crate | Status |
@@ -18,7 +18,7 @@ source ─▶ lexer ─▶ parser ─▶ AST ─▶ sema (scopes + types) ─▶
 | Syntax tree | `yomnova-ast` | Used |
 | Scopes, names, types, return paths, call checking | `yomnova-sema`, `yomnova-types` | Used (partial language coverage) |
 | Move-based ownership | `yomnova-ownership` | Used (moves only) |
-| IR | `yomnova-ir` | **Not used.** Defines types; nothing lowers to it. |
+| IR + optimiser | `yomnova-ir` | Used. Lifts bytecode to a linear IR (jump targets are instruction indices), runs constant folding of `Int`/`Bool`/`Text` operations that cannot fail, dead push/pop removal, constant-condition jumps, jump threading and unreachable-code removal until nothing changes, then lowers it back. Chunks it cannot lift are left as they were. `--no-opt` skips it. The original 3-address/basic-block data types were removed: nothing used them. |
 | Bytecode + disassembler | `yomnova-bytecode` | Used |
 | AST → bytecode, driver, formatter | `yomnova-compiler` | Used |
 | Stack VM | `yomnova-vm` | Used |

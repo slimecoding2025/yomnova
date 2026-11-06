@@ -81,8 +81,9 @@ error: Use of moved value 'msg'
 ```
 
 ## 5. Architecture
-`source → lexer → parser → AST → semantic analysis / types → ownership → bytecode → VM`. `yomnova-ir` exists but is
-**not** part of the pipeline yet. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+`source → lexer → parser → AST → semantic analysis / types → ownership → bytecode → IR optimiser → VM`. The optimiser
+(`yomnova-ir`) lifts each chunk of bytecode into a linear IR with symbolic jump targets, optimises it and lowers it back;
+`--no-opt` turns it off. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## 6. Requirements
 Rust (stable, edition 2021) and Node.js ≥ 20 for the web app. No other tools are required.

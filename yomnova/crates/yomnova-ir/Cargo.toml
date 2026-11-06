@@ -6,4 +6,4 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-yomnova-ast = { path = "../yomnova-ast" }
+yomnova-bytecode = { path = "../yomnova-bytecode" }

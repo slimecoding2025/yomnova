@@ -17,7 +17,7 @@ USAGE:
     yomnova <COMMAND> [OPTIONS] <FILE>
 
 COMMANDS:
-    run [-d|--disassemble] <FILE>   Compile and run a program
+    run [-d] [--no-opt] <FILE>      Compile and run a program (--no-opt skips the IR optimiser)
     check <FILE>                    Lex, parse, type-check and ownership-check only
     build [-o <OUT>] <FILE>         Compile to a bytecode file (.yomc) that `exec` can run later
     exec <FILE.yomc>                Run a bytecode file produced by `build`
@@ -71,6 +71,7 @@ struct Opts {
     disassemble: bool,
     check: bool,
     output: Option<PathBuf>,
+    no_opt: bool,
 }
 
 fn parse_opts(command: &str, rest: &[String]) -> Result<Opts, CliError> {
@@ -80,6 +81,7 @@ fn parse_opts(command: &str, rest: &[String]) -> Result<Opts, CliError> {
         match (command, arg.as_str()) {
             ("run", "-d" | "--disassemble") => opts.disassemble = true,
             ("fmt", "--check") => opts.check = true,
+            ("run" | "build" | "disasm", "--no-opt") => opts.no_opt = true,
             ("build", "-o" | "--output") => {
                 let value = it
                     .next()
@@ -217,7 +219,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
 
             match command {
                 "run" => {
-                    let out = Compiler::compile_and_run(&source).map_err(diag)?;
+                    let out = Compiler::compile_and_run_opt(&source, !opts.no_opt).map_err(diag)?;
                     if opts.disassemble {
                         println!("{}", out.disassemble_all());
                     }
@@ -232,7 +234,8 @@ fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
                     println!("ok: no errors in '{file}'");
                 }
                 "build" => {
-                    let module = Compiler::compile_module(&source).map_err(diag)?;
+                    let module =
+                        Compiler::compile_module_opt(&source, !opts.no_opt).map_err(diag)?;
                     let bytes = yomnova_bytecode::module::encode(&module)
                         .map_err(|e| CliError::Failure(format!("Cannot encode program: {e}")))?;
                     let out_path = opts.output.unwrap_or_else(|| path.with_extension("yomc"));
@@ -249,7 +252,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
                     );
                 }
                 "disasm" => {
-                    let unit = Compiler::compile_unit(&source).map_err(diag)?;
+                    let unit = Compiler::compile_unit_opt(&source, !opts.no_opt).map_err(diag)?;
                     print!("{}", unit.disassemble_all());
                 }
                 "tokens" => {
