@@ -1339,10 +1339,10 @@ fn every_compiled_example_passes_the_stack_verifier() {
             let Ok(unit) = Compiler::compile_unit_opt(&src, optimize) else {
                 continue;
             };
-            yomnova_bytecode::module::verify_chunk(&unit.main)
+            yomnova_bytecode::module::verify_chunk_arity(&unit.main, 0)
                 .unwrap_or_else(|e| panic!("{}: main: {e}", p.display()));
-            for (name, chunk, _) in &unit.functions {
-                yomnova_bytecode::module::verify_chunk(chunk)
+            for (name, chunk, arity) in &unit.functions {
+                yomnova_bytecode::module::verify_chunk_arity(chunk, *arity)
                     .unwrap_or_else(|e| panic!("{}: {name}: {e}", p.display()));
             }
             checked += 1;

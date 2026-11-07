@@ -2,6 +2,12 @@
 
 ## Unreleased — 2026-11-03
 
+### Bytecode verifier: local variables
+* **Added** flow-sensitive typing of local slots to the verifier (argument slots start unknown, other slots start as `Unit`, types are joined at
+  merge points), so `let x = "a"` followed by `x - 1` in a hostile `.yomc` is rejected before it runs. `.yomc` decoding passes each function's
+  arity (`verify_chunk_arity`). 1 new test (129 Rust tests total).
+* **Still open:** call results, fields and array elements are unknown; no call-arity check against the callee.
+
 ### Text library
 * **Added** 13 pure natives: `str_upper str_lower str_trim str_contains str_starts_with str_ends_with str_find str_slice str_repeat
   str_replace str_split str_from_int str_parse_int`, and `import std.text` (`text.upper(&s)` ...). Positions are in characters (like `len`),

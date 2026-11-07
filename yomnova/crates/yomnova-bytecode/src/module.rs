@@ -180,7 +180,8 @@ pub fn decode(bytes: &[u8]) -> Result<Module, String> {
         return Err(format!("too many functions ({nfn})"));
     }
     let main = decode_chunk(&mut r)?;
-    verify_chunk(&main).map_err(|e| format!("invalid bytecode in the entry chunk: {e}"))?;
+    verify_chunk_arity(&main, 0)
+        .map_err(|e| format!("invalid bytecode in the entry chunk: {e}"))?;
     let mut functions = Vec::with_capacity(nfn.min(r.left()));
     for _ in 0..nfn {
         let len = r.u16()? as usize;
@@ -189,7 +190,8 @@ pub fn decode(bytes: &[u8]) -> Result<Module, String> {
             .to_string();
         let arity = r.u8()? as usize;
         let chunk = decode_chunk(&mut r)?;
-        verify_chunk(&chunk).map_err(|e| format!("invalid bytecode in function '{name}': {e}"))?;
+        verify_chunk_arity(&chunk, arity)
+            .map_err(|e| format!("invalid bytecode in function '{name}': {e}"))?;
         functions.push((name, chunk, arity));
     }
     if r.left() != 0 {
@@ -206,6 +208,12 @@ pub fn decode(bytes: &[u8]) -> Result<Module, String> {
 /// where a name is required), jump targets land on instruction starts, and execution cannot
 /// run off the end. It does not check types or stack depth; the VM still guards those.
 pub fn verify_chunk(chunk: &Chunk) -> Result<(), String> {
+    verify_chunk_arity(chunk, usize::MAX)
+}
+
+/// Like [`verify_chunk`], knowing that local slots `0..arity` hold the call arguments (type
+/// unknown) and every other local starts out as `Unit`. With `usize::MAX` all locals start unknown.
+pub fn verify_chunk_arity(chunk: &Chunk, arity: usize) -> Result<(), String> {
     let code = &chunk.code;
     if code.is_empty() {
         return Err("empty code".to_string());
@@ -297,7 +305,7 @@ pub fn verify_chunk(chunk: &Chunk) -> Result<(), String> {
     if !matches!(last, OpCode::Halt | OpCode::Return | OpCode::Jump) {
         return Err("code can run past its end (no final Halt, Return or Jump)".to_string());
     }
-    verify_stack(chunk)
+    verify_stack(chunk, arity)
 }
 
 /// Largest operand-stack depth a single chunk may reach (the VM's own limit).
@@ -357,16 +365,51 @@ impl Ty {
 /// A chunk starts with an empty stack (arguments live in local slots). `Return` and `Halt` may
 /// leave extra values behind, which the VM discards with the frame.
 /// Precondition: the structural checks of [`verify_chunk`] passed.
-fn verify_stack(chunk: &Chunk) -> Result<(), String> {
+fn verify_stack(chunk: &Chunk, arity: usize) -> Result<(), String> {
     let code = &chunk.code;
-    let mut state: Vec<Option<Vec<Ty>>> = vec![None; code.len()];
-    let mut work: Vec<(usize, Vec<Ty>)> = vec![(0, Vec::new())];
-    while let Some((start, st0)) = work.pop() {
-        let (mut i, mut st) = (start, st0);
+    // Number of local slots the chunk touches, found by a plain instruction walk.
+    let mut nlocals = 0usize;
+    let mut k = 0usize;
+    while k < code.len() {
+        let op = OpCode::from_u8(code[k]).ok_or("unknown opcode")?;
+        let w = match op {
+            OpCode::Constant
+            | OpCode::GetLocal
+            | OpCode::SetLocal
+            | OpCode::GetGlobal
+            | OpCode::SetGlobal
+            | OpCode::Jump
+            | OpCode::JumpIfFalse
+            | OpCode::Array
+            | OpCode::Field
+            | OpCode::EnumIs
+            | OpCode::SetField => 2,
+            OpCode::Call => 1,
+            OpCode::Struct => 4,
+            OpCode::EnumNew => 3,
+            _ => 0,
+        };
+        if matches!(op, OpCode::GetLocal | OpCode::SetLocal) {
+            nlocals = nlocals.max((((code[k + 1] as usize) << 8) | code[k + 2] as usize) + 1);
+        }
+        k += 1 + w;
+    }
+    let initial: Vec<Ty> = (0..nlocals)
+        .map(|i| if i < arity { Ty::Unknown } else { Ty::Other })
+        .collect();
+    let initial = if arity == usize::MAX {
+        vec![Ty::Unknown; nlocals]
+    } else {
+        initial
+    };
+    let mut state: Vec<Option<(Vec<Ty>, Vec<Ty>)>> = vec![None; code.len()];
+    let mut work: Vec<(usize, Vec<Ty>, Vec<Ty>)> = vec![(0, Vec::new(), initial)];
+    while let Some((start, st0, lc0)) = work.pop() {
+        let (mut i, mut st, mut lc) = (start, st0, lc0);
         loop {
             match &mut state[i] {
-                None => state[i] = Some(st.clone()),
-                Some(seen) => {
+                None => state[i] = Some((st.clone(), lc.clone())),
+                Some((seen, seen_lc)) => {
                     if seen.len() != st.len() {
                         return Err(format!(
                             "offset {i}: reached with stack depth {} and also {}",
@@ -375,11 +418,15 @@ fn verify_stack(chunk: &Chunk) -> Result<(), String> {
                         ));
                     }
                     let merged: Vec<Ty> = seen.iter().zip(&st).map(|(a, b)| a.join(*b)).collect();
-                    if merged == *seen {
+                    let merged_lc: Vec<Ty> =
+                        seen_lc.iter().zip(&lc).map(|(a, b)| a.join(*b)).collect();
+                    if merged == *seen && merged_lc == *seen_lc {
                         break;
                     }
                     *seen = merged.clone();
+                    *seen_lc = merged_lc.clone();
                     st = merged;
+                    lc = merged_lc;
                 }
             }
             let op = OpCode::from_u8(code[i]).ok_or("unknown opcode")?;
@@ -448,7 +495,8 @@ fn verify_stack(chunk: &Chunk) -> Result<(), String> {
                 OpCode::Constant => Some(Ty::of(&chunk.constants[u16_at(0)])),
                 OpCode::True | OpCode::False => Some(Ty::Bool),
                 OpCode::Nil => Some(Ty::Other),
-                OpCode::GetLocal | OpCode::GetGlobal | OpCode::Call => Some(Ty::Unknown),
+                OpCode::GetLocal => Some(lc[u16_at(0)]),
+                OpCode::GetGlobal | OpCode::Call => Some(Ty::Unknown),
                 OpCode::SetGlobal => Some(a),
                 OpCode::Emit => Some(Ty::Other),
                 OpCode::Equal | OpCode::NotEqual | OpCode::And | OpCode::Or | OpCode::Not => {
@@ -527,8 +575,11 @@ fn verify_stack(chunk: &Chunk) -> Result<(), String> {
                     Some(Ty::Other)
                 }
                 OpCode::EnumNew => Some(Ty::Other),
-                OpCode::SetLocal
-                | OpCode::Pop
+                OpCode::SetLocal => {
+                    lc[u16_at(0)] = a;
+                    None
+                }
+                OpCode::Pop
                 | OpCode::Jump
                 | OpCode::JumpIfFalse
                 | OpCode::Return
@@ -548,7 +599,7 @@ fn verify_stack(chunk: &Chunk) -> Result<(), String> {
                     i = u16_at(0);
                     continue;
                 }
-                OpCode::JumpIfFalse => work.push((u16_at(0), st.clone())),
+                OpCode::JumpIfFalse => work.push((u16_at(0), st.clone(), lc.clone())),
                 _ => {}
             }
             i += 1 + width;
@@ -758,6 +809,24 @@ mod tests {
         assert!(verify_chunk(&chunk_of(bin(OpCode::Multiply, 1, 1), consts.clone())).is_ok());
         let local = vec![OpCode::GetLocal as u8, 0, 0, c, 0, 0, OpCode::Add as u8, h];
         assert!(verify_chunk(&chunk_of(local, consts)).is_ok());
+    }
+
+    #[test]
+    fn local_types_are_tracked_through_the_chunk() {
+        let (c, h) = (OpCode::Constant as u8, OpCode::Halt as u8);
+        let (set, get) = (OpCode::SetLocal as u8, OpCode::GetLocal as u8);
+        let sub = OpCode::Subtract as u8;
+        let consts = vec![Value::Text("a".into()), Value::Int(1)];
+        // local 0 = "a"; local 0 - 1  -> certainly wrong
+        let bad = vec![c, 0, 0, set, 0, 0, get, 0, 0, c, 0, 1, sub, h];
+        let err = verify_chunk_arity(&chunk_of(bad.clone(), consts.clone()), 0).unwrap_err();
+        assert!(err.contains("number operands"), "{err}");
+        // an overwritten argument slot takes the new type, so it is still wrong
+        assert!(verify_chunk_arity(&chunk_of(bad, consts.clone()), 1).is_err());
+        // reading a never-written local (Unit) as a number is wrong; an argument slot is unknown
+        let unit = vec![get, 0, 0, c, 0, 1, sub, h];
+        assert!(verify_chunk_arity(&chunk_of(unit.clone(), consts.clone()), 0).is_err());
+        assert!(verify_chunk_arity(&chunk_of(unit, consts), 1).is_ok());
     }
 
     #[test]
