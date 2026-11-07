@@ -301,77 +301,243 @@ pub fn verify_chunk(chunk: &Chunk) -> Result<(), String> {
 }
 
 /// Largest operand-stack depth a single chunk may reach (the VM's own limit).
-pub const MAX_VERIFIED_STACK: i64 = 65_536;
+pub const MAX_VERIFIED_STACK: usize = 65_536;
 
-/// Abstract interpretation of the operand stack. Walks every reachable instruction once per
-/// distinct path start and checks that (1) the stack never underflows, (2) every instruction
-/// is reached with the *same* depth along all paths (so each jump target has one depth),
-/// and (3) the depth stays within [`MAX_VERIFIED_STACK`]. A chunk starts with an empty stack
-/// (arguments live in local slots). It does **not** check operand *types*; the VM still does that.
-/// `Return` / `Halt` may leave extra values behind, which the VM discards with the frame.
+/// What the verifier statically knows about one stack slot. Locals, call results, fields and
+/// anything that differs between two paths are `Unknown`; the VM still checks those at run time.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Ty {
+    Unknown,
+    Int,
+    Float,
+    Bool,
+    Text,
+    Array,
+    Other,
+}
+
+impl Ty {
+    fn of(v: &Value) -> Ty {
+        match v {
+            Value::Int(_) => Ty::Int,
+            Value::Float(_) => Ty::Float,
+            Value::Bool(_) => Ty::Bool,
+            Value::Text(_) => Ty::Text,
+            Value::Array(_) => Ty::Array,
+            _ => Ty::Other,
+        }
+    }
+    fn join(self, o: Ty) -> Ty {
+        if self == o {
+            self
+        } else {
+            Ty::Unknown
+        }
+    }
+    fn numeric_ok(self) -> bool {
+        matches!(self, Ty::Unknown | Ty::Int | Ty::Float)
+    }
+    /// Could this be something with elements (array, text, buffer, ...)?
+    fn indexable_ok(self) -> bool {
+        !matches!(self, Ty::Int | Ty::Float | Ty::Bool)
+    }
+    /// Could this be a struct or an enum value?
+    fn record_ok(self) -> bool {
+        matches!(self, Ty::Unknown | Ty::Other)
+    }
+}
+
+/// Abstract interpretation of the operand stack over every reachable instruction. It rejects
+/// (1) stack underflow, (2) an instruction reached with different depths along different paths,
+/// (3) depth above [`MAX_VERIFIED_STACK`], and (4) operands whose type is *statically known* to
+/// be wrong for the instruction (for example `Subtract` on a text constant, `Index` with a
+/// `Bool` index, `Len` of an `Int`). Types are tracked only for constants and the results of
+/// operators; locals, call results, fields and values that differ between paths are unknown,
+/// so a program can still fail with a type error at run time, which the VM reports.
+/// A chunk starts with an empty stack (arguments live in local slots). `Return` and `Halt` may
+/// leave extra values behind, which the VM discards with the frame.
 /// Precondition: the structural checks of [`verify_chunk`] passed.
 fn verify_stack(chunk: &Chunk) -> Result<(), String> {
     let code = &chunk.code;
-    let mut depth_at: Vec<Option<i64>> = vec![None; code.len()];
-    let mut work: Vec<(usize, i64)> = vec![(0, 0)];
-    while let Some((start, d0)) = work.pop() {
-        let (mut i, mut d) = (start, d0);
+    let mut state: Vec<Option<Vec<Ty>>> = vec![None; code.len()];
+    let mut work: Vec<(usize, Vec<Ty>)> = vec![(0, Vec::new())];
+    while let Some((start, st0)) = work.pop() {
+        let (mut i, mut st) = (start, st0);
         loop {
-            match depth_at[i] {
-                Some(seen) if seen == d => break,
+            match &mut state[i] {
+                None => state[i] = Some(st.clone()),
                 Some(seen) => {
-                    return Err(format!(
-                        "offset {i}: reached with stack depth {d} and also {seen}"
-                    ))
+                    if seen.len() != st.len() {
+                        return Err(format!(
+                            "offset {i}: reached with stack depth {} and also {}",
+                            st.len(),
+                            seen.len()
+                        ));
+                    }
+                    let merged: Vec<Ty> = seen.iter().zip(&st).map(|(a, b)| a.join(*b)).collect();
+                    if merged == *seen {
+                        break;
+                    }
+                    *seen = merged.clone();
+                    st = merged;
                 }
-                None => depth_at[i] = Some(d),
             }
             let op = OpCode::from_u8(code[i]).ok_or("unknown opcode")?;
             let u16_at = |k: usize| ((code[i + 1 + k] as usize) << 8) | code[i + 2 + k] as usize;
-            // (values popped, values pushed, instruction width)
-            let (pop, push, width): (i64, i64, usize) = match op {
-                OpCode::Constant | OpCode::GetLocal | OpCode::GetGlobal => (0, 1, 2),
-                OpCode::Nil | OpCode::True | OpCode::False => (0, 1, 0),
-                OpCode::Pop => (1, 0, 0),
-                OpCode::SetLocal | OpCode::JumpIfFalse => (1, 0, 2),
-                OpCode::SetGlobal => (1, 1, 2),
-                OpCode::Equal
-                | OpCode::NotEqual
-                | OpCode::Greater
-                | OpCode::GreaterEqual
-                | OpCode::Less
-                | OpCode::LessEqual
-                | OpCode::Add
-                | OpCode::Subtract
-                | OpCode::Multiply
-                | OpCode::Divide
-                | OpCode::Modulo
-                | OpCode::And
-                | OpCode::Or
-                | OpCode::Index => (2, 1, 0),
-                OpCode::Not | OpCode::Negate | OpCode::Emit | OpCode::Len | OpCode::EnumPayload => {
-                    (1, 1, 0)
-                }
-                OpCode::Field | OpCode::EnumIs => (1, 1, 2),
-                OpCode::SetField => (2, 1, 2),
-                OpCode::SetIndex => (3, 1, 0),
-                OpCode::Jump => (0, 0, 2),
-                OpCode::Call => (code[i + 1] as i64 + 1, 1, 1),
-                OpCode::Array => (u16_at(0) as i64, 1, 2),
+            let width = match op {
+                OpCode::Constant
+                | OpCode::GetLocal
+                | OpCode::SetLocal
+                | OpCode::GetGlobal
+                | OpCode::SetGlobal
+                | OpCode::Jump
+                | OpCode::JumpIfFalse
+                | OpCode::Array
+                | OpCode::Field
+                | OpCode::EnumIs
+                | OpCode::SetField => 2,
+                OpCode::Call => 1,
+                OpCode::Struct => 4,
+                OpCode::EnumNew => 3,
+                _ => 0,
+            };
+            let pop = match op {
+                OpCode::Constant
+                | OpCode::GetLocal
+                | OpCode::GetGlobal
+                | OpCode::Nil
+                | OpCode::True
+                | OpCode::False
+                | OpCode::Jump => 0,
+                OpCode::Pop
+                | OpCode::SetLocal
+                | OpCode::SetGlobal
+                | OpCode::JumpIfFalse
+                | OpCode::Not
+                | OpCode::Negate
+                | OpCode::Emit
+                | OpCode::Len
+                | OpCode::EnumPayload
+                | OpCode::Field
+                | OpCode::EnumIs
+                | OpCode::Return
+                | OpCode::Halt => 1,
+                OpCode::SetField => 2,
+                OpCode::SetIndex => 3,
+                OpCode::Call => code[i + 1] as usize + 1,
+                OpCode::Array => u16_at(0),
                 OpCode::Struct => match chunk.constants.get(u16_at(2)) {
-                    Some(Value::Array(names)) => (names.len() as i64, 1, 4),
+                    Some(Value::Array(names)) => names.len(),
                     _ => return Err(format!("offset {i}: malformed struct constant")),
                 },
-                OpCode::EnumNew => (code[i + 3] as i64, 1, 3),
-                OpCode::Return | OpCode::Halt => (1, 0, 0),
+                OpCode::EnumNew => code[i + 3] as usize,
+                _ => 2, // binary operators and Index
             };
-            if d < pop && !matches!(op, OpCode::Halt) {
+            if st.len() < pop && op != OpCode::Halt {
                 return Err(format!(
-                    "offset {i}: {op:?} needs {pop} value(s) but the stack holds {d}"
+                    "offset {i}: {op:?} needs {pop} value(s) but the stack holds {}",
+                    st.len()
                 ));
             }
-            d = (d - pop).max(0) + push;
-            if d > MAX_VERIFIED_STACK {
+            let at = st.len().saturating_sub(pop);
+            let args: Vec<Ty> = st.split_off(at);
+            let bad = |what: &str| format!("offset {i}: {op:?} {what}");
+            let a = args.first().copied().unwrap_or(Ty::Unknown);
+            let b = args.get(1).copied().unwrap_or(Ty::Unknown);
+            let push: Option<Ty> = match op {
+                OpCode::Constant => Some(Ty::of(&chunk.constants[u16_at(0)])),
+                OpCode::True | OpCode::False => Some(Ty::Bool),
+                OpCode::Nil => Some(Ty::Other),
+                OpCode::GetLocal | OpCode::GetGlobal | OpCode::Call => Some(Ty::Unknown),
+                OpCode::SetGlobal => Some(a),
+                OpCode::Emit => Some(Ty::Other),
+                OpCode::Equal | OpCode::NotEqual | OpCode::And | OpCode::Or | OpCode::Not => {
+                    Some(Ty::Bool)
+                }
+                OpCode::Greater | OpCode::GreaterEqual | OpCode::Less | OpCode::LessEqual => {
+                    if !a.numeric_ok() || !b.numeric_ok() {
+                        return Err(bad("compares operands that are not numbers"));
+                    }
+                    if a != b && a != Ty::Unknown && b != Ty::Unknown {
+                        return Err(bad("compares an Int with a Float"));
+                    }
+                    Some(Ty::Bool)
+                }
+                OpCode::Add => {
+                    let text = a == Ty::Text || b == Ty::Text;
+                    let ok = |t: Ty| t.numeric_ok() || t == Ty::Text;
+                    if !ok(a)
+                        || !ok(b)
+                        || (text
+                            && (a.numeric_ok() && a != Ty::Unknown
+                                || b.numeric_ok() && b != Ty::Unknown))
+                    {
+                        return Err(bad("adds operands of unsuitable types"));
+                    }
+                    Some(a.join(b))
+                }
+                OpCode::Subtract | OpCode::Multiply | OpCode::Divide | OpCode::Modulo => {
+                    if !a.numeric_ok() || !b.numeric_ok() {
+                        return Err(bad("needs number operands"));
+                    }
+                    Some(a.join(b))
+                }
+                OpCode::Negate => {
+                    if !a.numeric_ok() {
+                        return Err(bad("needs a number operand"));
+                    }
+                    Some(a)
+                }
+                OpCode::Index => {
+                    if !a.indexable_ok() || !matches!(b, Ty::Unknown | Ty::Int) {
+                        return Err(bad("needs a collection and an Int index"));
+                    }
+                    Some(Ty::Unknown)
+                }
+                OpCode::SetIndex => {
+                    if !a.indexable_ok() || !matches!(args[1], Ty::Unknown | Ty::Int) {
+                        return Err(bad("needs a collection and an Int index"));
+                    }
+                    Some(a)
+                }
+                OpCode::Len => {
+                    if !a.indexable_ok() {
+                        return Err(bad("needs an array, text or buffer"));
+                    }
+                    Some(Ty::Int)
+                }
+                OpCode::Array => Some(Ty::Array),
+                OpCode::Struct => Some(Ty::Other),
+                OpCode::Field | OpCode::EnumPayload => {
+                    if !a.record_ok() {
+                        return Err(bad("needs a struct or enum value"));
+                    }
+                    Some(Ty::Unknown)
+                }
+                OpCode::EnumIs => {
+                    if !a.record_ok() {
+                        return Err(bad("needs an enum value"));
+                    }
+                    Some(Ty::Bool)
+                }
+                OpCode::SetField => {
+                    if !a.record_ok() {
+                        return Err(bad("needs a struct value"));
+                    }
+                    Some(Ty::Other)
+                }
+                OpCode::EnumNew => Some(Ty::Other),
+                OpCode::SetLocal
+                | OpCode::Pop
+                | OpCode::Jump
+                | OpCode::JumpIfFalse
+                | OpCode::Return
+                | OpCode::Halt => None,
+            };
+            if let Some(t) = push {
+                st.push(t);
+            }
+            if st.len() > MAX_VERIFIED_STACK {
                 return Err(format!(
                     "offset {i}: stack depth exceeds {MAX_VERIFIED_STACK}"
                 ));
@@ -382,9 +548,7 @@ fn verify_stack(chunk: &Chunk) -> Result<(), String> {
                     i = u16_at(0);
                     continue;
                 }
-                OpCode::JumpIfFalse => {
-                    work.push((u16_at(0), d));
-                }
+                OpCode::JumpIfFalse => work.push((u16_at(0), st.clone())),
                 _ => {}
             }
             i += 1 + width;
@@ -571,6 +735,29 @@ mod tests {
         }
         // A balanced branch is accepted: Nil; JumpIfFalse -> 6; Nil; Pop; (6) Halt.
         assert!(verify_chunk(&chunk_of(vec![n, jf, 0, 6, n, p, h], vec![])).is_ok());
+    }
+
+    #[test]
+    fn type_verifier_rejects_statically_wrong_operands() {
+        let (h, c) = (OpCode::Halt as u8, OpCode::Constant as u8);
+        let consts = vec![Value::Text("a".into()), Value::Int(1), Value::Bool(true)];
+        let bin = |op: OpCode, x: u8, y: u8| vec![c, 0, x, c, 0, y, op as u8, h];
+        for (code, want) in [
+            (bin(OpCode::Subtract, 0, 1), "number operands"),
+            (bin(OpCode::Add, 0, 1), "unsuitable"),
+            (bin(OpCode::Less, 2, 1), "not numbers"),
+            (bin(OpCode::Index, 1, 1), "collection"),
+            (vec![c, 0, 1, OpCode::Len as u8, h], "array, text or buffer"),
+            (vec![c, 0, 2, OpCode::Negate as u8, h], "number operand"),
+        ] {
+            let err = verify_chunk(&chunk_of(code, consts.clone())).unwrap_err();
+            assert!(err.contains(want), "{err} should contain {want}");
+        }
+        // Fine: text + text, int * int, and an unknown (local) operand is never rejected.
+        assert!(verify_chunk(&chunk_of(bin(OpCode::Add, 0, 0), consts.clone())).is_ok());
+        assert!(verify_chunk(&chunk_of(bin(OpCode::Multiply, 1, 1), consts.clone())).is_ok());
+        let local = vec![OpCode::GetLocal as u8, 0, 0, c, 0, 0, OpCode::Add as u8, h];
+        assert!(verify_chunk(&chunk_of(local, consts)).is_ok());
     }
 
     #[test]

@@ -15,7 +15,7 @@ Playground backed by the real compiler.
 3. *(Done, in a different shape than first planned: bytecode → IR → optimiser → bytecode, with a differential test that compares optimised and unoptimised runs. Not done: lowering straight from the AST, SSA/3-address form, register allocation, inlining, optimising floats or string builders.)*
 4. *(Done in a deliberately small form: `&T` / `&mut T` parameters with call-scoped borrow checking, so no lifetimes are needed. Still open: stored/returned references, borrowing fields and elements, real lifetime parameters.)*
 5. *(Done: `IPv6`, `NetworkBuffer` with typed bounds-checked access, `Packet` as a container. Still open: protocol parsing, `TCP`/`UDP`.)*
-6. *(Done: `.yomc` binary format v2, `build` and `exec`. Done: a verifier for jump targets, constants, instruction boundaries and operand-stack depth. Still open: format stability across versions, signing, operand-type verification.)*
+6. *(Done: `.yomc` binary format v2, `build` and `exec`. Done: a verifier for jump targets, constants, instruction boundaries and operand-stack depth. Operand types are verified only where statically known (constants, operator results). Still open: full typing of locals and call results, call-arity checks, format stability across versions, signing.)*
 7. *(Done for built-in modules only: `import std.math`, `import std.arrays`, expanded from YOMNOVA source before lexing. Done in the CLI: `import "file.yom" as name` (function renaming). Still open: visibility, namespaced types, a separate `yomnova-stdlib` crate, generic array functions, text/IO modules.)*
 
 ## Research (no commitment)

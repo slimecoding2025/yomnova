@@ -2,6 +2,14 @@
 
 ## Unreleased — 2026-11-03
 
+### Bytecode verifier: operand types (partial)
+* **Added** to the stack verifier: it now tracks what is statically known about each stack slot (constants and operator results)
+  and rejects operands that are certainly wrong: arithmetic on text/bool, comparing non-numbers or Int with Float, adding text to
+  a number, a non-Int index, `Len` of a number, field access on a scalar. Types are joined at merge points. All compiled examples
+  still pass. 1 new test (125 Rust tests total).
+* **Limits:** locals, call results and fields are "unknown", so a hostile file can still fail with a type error at run time (the VM
+  reports it safely); no call-arity or local-slot checks.
+
 ### File imports
 * **Added** `import "file.yom" as name` (CLI only: `run`, `check`, `build`, `disasm`). The file is inlined, its functions are renamed
   `name_fn`, callers write `name.fn(...)`. Nested imports (paths relative to the importing file), cycle and missing-file errors,
