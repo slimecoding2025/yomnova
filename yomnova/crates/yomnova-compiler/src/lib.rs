@@ -302,7 +302,16 @@ impl Compiler {
     /// The module may come from an untrusted file: the VM validates every operand as it runs and
     /// enforces its step, stack, memory and call-depth limits.
     pub fn run_module(module: &Module) -> Result<(Value, Vec<String>), Vec<Diagnostic>> {
+        Self::run_module_with(module, None)
+    }
+
+    /// Like [`run_module`](Self::run_module); `fs_root` enables the `file_*` natives inside that directory.
+    pub fn run_module_with(
+        module: &Module,
+        fs_root: Option<std::path::PathBuf>,
+    ) -> Result<(Value, Vec<String>), Vec<Diagnostic>> {
         let mut vm = Vm::new();
+        vm.fs_root = fs_root;
         for (name, chunk, arity) in &module.functions {
             let chunk_index = vm.chunks.len();
             vm.chunks.push(chunk.clone());
@@ -330,12 +339,21 @@ impl Compiler {
         source: &str,
         optimize: bool,
     ) -> Result<CompilerOutput, Vec<Diagnostic>> {
+        Self::compile_and_run_with(source, optimize, None)
+    }
+
+    /// Like [`compile_and_run_opt`](Self::compile_and_run_opt) with file access (`file_*`) limited to `fs_root`.
+    pub fn compile_and_run_with(
+        source: &str,
+        optimize: bool,
+        fs_root: Option<std::path::PathBuf>,
+    ) -> Result<CompilerOutput, Vec<Diagnostic>> {
         let unit = Self::compile_unit_opt(source, optimize)?;
         let module = Module {
             main: unit.main.clone(),
             functions: unit.functions.clone(),
         };
-        let (result, output_lines) = Self::run_module(&module)?;
+        let (result, output_lines) = Self::run_module_with(&module, fs_root)?;
         Ok(CompilerOutput {
             ast: unit.ast,
             chunk: unit.main,

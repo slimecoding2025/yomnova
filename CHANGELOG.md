@@ -2,6 +2,14 @@
 
 ## Unreleased — 2026-11-03
 
+### File access
+* **Added** `file_read(path)`, `file_write(path, text)`, `file_append(path, text)`, `file_exists(path)`. **Off by default**: they fail with a clear
+  error unless the command line passes `--allow-fs <DIR>` (`run` and `exec`); the playground on the website never does. Paths must be plain
+  relative paths: absolute paths, `..`, empty paths and anything that resolves outside DIR through a symlink are refused (tested, including
+  symlink read/write escapes). Files are UTF-8 text, at most 16 MiB. `examples/files.yom`, 1 test (130 Rust tests total).
+* **Limits:** text only (no bytes/NetworkBuffer files, no directory listing, delete or rename, no streaming); the check is made when each call
+  runs, so another process changing the directory concurrently is not defended against.
+
 ### Bytecode verifier: local variables
 * **Added** flow-sensitive typing of local slots to the verifier (argument slots start unknown, other slots start as `Unit`, types are joined at
   merge points), so `let x = "a"` followed by `x - 1` in a hostile `.yomc` is rejected before it runs. `.yomc` decoding passes each function's

@@ -172,6 +172,10 @@ pub fn net_builtins() -> Vec<(&'static str, Vec<Type>, Type)> {
         ("str_split", vec![Text, Text], Type::Array(Box::new(Text))),
         ("str_from_int", vec![Int], Text),
         ("str_parse_int", vec![Text], Int),
+        ("file_read", vec![Text], Text),
+        ("file_write", vec![Text, Text], Type::Unit),
+        ("file_append", vec![Text, Text], Type::Unit),
+        ("file_exists", vec![Text], Bool),
     ]
 }
 
@@ -196,4 +200,8 @@ pub const NET_READ_ONLY: &[&str] = &[
     "str_replace",
     "str_split",
     "str_parse_int",
+    "file_read",
+    "file_write",
+    "file_append",
+    "file_exists",
 ];

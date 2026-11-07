@@ -17,10 +17,13 @@ USAGE:
     yomnova <COMMAND> [OPTIONS] <FILE>
 
 COMMANDS:
-    run [-d] [--no-opt] <FILE>      Compile and run a program (--no-opt skips the IR optimiser)
+    run [-d] [--no-opt] [--allow-fs <DIR>] <FILE>
+                                    Compile and run a program (--no-opt skips the IR optimiser;
+                                    --allow-fs lets file_read/file_write/... use files inside DIR only)
     check <FILE>                    Lex, parse, type-check and ownership-check only
     build [-o <OUT>] <FILE>         Compile to a bytecode file (.yomc) that `exec` can run later
-    exec <FILE.yomc>                Run a bytecode file produced by `build`
+    exec [--allow-fs <DIR>] <FILE.yomc>
+                                    Run a bytecode file produced by `build`
     disasm <FILE>                   Print the bytecode listing of a source file or a .yomc file
     tokens <FILE>                   Print the token stream
     ast <FILE>                      Print the syntax tree
@@ -72,6 +75,7 @@ struct Opts {
     check: bool,
     output: Option<PathBuf>,
     no_opt: bool,
+    allow_fs: Option<PathBuf>,
 }
 
 fn parse_opts(command: &str, rest: &[String]) -> Result<Opts, CliError> {
@@ -82,6 +86,12 @@ fn parse_opts(command: &str, rest: &[String]) -> Result<Opts, CliError> {
             ("run", "-d" | "--disassemble") => opts.disassemble = true,
             ("fmt", "--check") => opts.check = true,
             ("run" | "build" | "disasm", "--no-opt") => opts.no_opt = true,
+            ("run" | "exec", "--allow-fs") => {
+                let value = it
+                    .next()
+                    .ok_or_else(|| CliError::Usage(format!("{arg} requires a directory")))?;
+                opts.allow_fs = Some(PathBuf::from(value));
+            }
             ("build", "-o" | "--output") => {
                 let value = it
                     .next()
@@ -162,7 +172,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
                 .ok_or_else(|| CliError::Usage("'exec' requires a .yomc file".to_string()))?;
             let module = load_module(&path)?;
             let file = path.to_string_lossy().to_string();
-            match Compiler::run_module(&module) {
+            match Compiler::run_module_with(&module, opts.allow_fs.clone()) {
                 Ok((res, _)) => {
                     if res != Value::Unit {
                         println!("=> {res}");
@@ -229,7 +239,12 @@ fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
 
             match command {
                 "run" => {
-                    let out = Compiler::compile_and_run_opt(&source, !opts.no_opt).map_err(diag)?;
+                    let out = Compiler::compile_and_run_with(
+                        &source,
+                        !opts.no_opt,
+                        opts.allow_fs.clone(),
+                    )
+                    .map_err(diag)?;
                     if opts.disassemble {
                         println!("{}", out.disassemble_all());
                     }

@@ -27,6 +27,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | `import std.math`, `import std.arrays` (built-in modules written in YOMNOVA) | Implemented (built-in only) | `std_modules_*`, `bad_imports_*`, `examples/stdlib.yom` |
 | Bytecode verifier: structure + operand-stack depth consistency | Implemented | `stack_verifier_*`, `every_compiled_example_passes_the_stack_verifier` |
 | Operand-type verification of bytecode | Partial (constants, operator results and locals; not call results, fields or elements) | `type_verifier_rejects_statically_wrong_operands` |
+| File access (`file_*`), CLI opt-in `--allow-fs DIR`, confined to DIR | Implemented | `file_access_is_off_by_default_*`, `examples/files.yom` |
 | Text library: `str_*` natives and `import std.text` | Implemented | `text_library_works_*`, `text_errors_are_reported_*`, `examples/text.yom` |
 | File imports `import "f.yom" as name` with `pub` visibility, namespaced functions/structs/enums (CLI) | Implemented (source renaming) | `imports_rename_and_nest`, `bad_imports_are_errors`, `examples/modules/` |
 | Separately compiled modules, glob/`use` imports, nested paths | Planned | — |
@@ -46,7 +47,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 129 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 130 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.

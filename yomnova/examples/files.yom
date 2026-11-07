@@ -1,0 +1,13 @@
+// File access. Disabled by default; enable it in the command line and name the only directory it may touch:
+//   yomnova run --allow-fs . examples/files.yom
+// Paths are relative to that directory; absolute paths and `..` are refused.
+fn main() -> Int {
+    let path = "yomnova-demo.txt"
+    file_write(path, "line one\n")
+    file_append(path, "line two\n")
+    emit(file_exists(path))
+    let content = file_read(path)
+    emit(len(str_split(content, "\n")) - 1)
+    emit(content)
+    return 0
+}

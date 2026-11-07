@@ -42,6 +42,8 @@ pub struct Vm {
     pub output: Vec<String>,
     pub max_steps: usize,
     pub step_count: usize,
+    /// Directory the `file_*` natives may touch. `None` (the default) disables file access entirely.
+    pub fs_root: Option<std::path::PathBuf>,
 }
 
 impl Vm {
@@ -62,6 +64,7 @@ impl Vm {
             output: Vec::new(),
             max_steps: Self::DEFAULT_MAX_STEPS,
             step_count: 0,
+            fs_root: None,
         };
 
         // Register builtin functions
@@ -107,6 +110,10 @@ impl Vm {
             "str_split",
             "str_from_int",
             "str_parse_int",
+            "file_read",
+            "file_write",
+            "file_append",
+            "file_exists",
         ] {
             vm.globals
                 .insert(name.to_string(), Value::NativeFunction(name.to_string()));
@@ -691,7 +698,8 @@ impl Vm {
                         1
                     }
                     "str_contains" | "str_starts_with" | "str_ends_with" | "str_find"
-                    | "str_repeat" | "str_split" => 2,
+                    | "str_repeat" | "str_split" | "file_write" | "file_append" => 2,
+                    "file_read" | "file_exists" => 1,
                     "str_slice" | "str_replace" => 3,
                     other => {
                         return Err(VmError::TypeError(format!(
@@ -804,6 +812,7 @@ impl Vm {
                             }
                         }
                     }
+                    other if other.starts_with("file_") => self.file_native(other, &args)?,
                     other if other.starts_with("str_") => Self::text_native(other, &args)?,
                     other => Self::net_native(other, args)?,
                 };
@@ -855,6 +864,97 @@ impl Vm {
     pub const MAX_BUFFER_BYTES: usize = 1 << 20;
 
     /// `NetworkBuffer` and `Packet` natives. Every access is bounds-checked; writes return a new buffer.
+    /// `file_*` natives. Disabled unless `fs_root` is set. Paths are relative to that directory;
+    /// absolute paths, `..` and anything that resolves (through symlinks) outside it are refused.
+    fn file_native(&self, name: &str, args: &[Value]) -> Result<Value, VmError> {
+        let fail = |m: String| VmError::ProtocolError(m);
+        let Some(root) = &self.fs_root else {
+            return Err(fail(format!(
+                "{name}: file access is disabled (the command line enables it with --allow-fs <directory>)"
+            )));
+        };
+        let root = root
+            .canonicalize()
+            .map_err(|e| fail(format!("{name}: cannot open the allowed directory: {e}")))?;
+        let Some(Value::Text(rel)) = args.first() else {
+            return Err(VmError::TypeError(format!("{name} expects a Text path")));
+        };
+        let rel_path = std::path::Path::new(rel);
+        if rel.is_empty()
+            || rel_path.is_absolute()
+            || rel_path
+                .components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            return Err(fail(format!(
+                "{name}: '{rel}' must be a plain relative path inside the allowed directory"
+            )));
+        }
+        let target = root.join(rel_path);
+        // Resolve symlinks: the target (if it exists) or its parent must stay inside the root.
+        let anchor = if target.exists() {
+            target.canonicalize()
+        } else {
+            target
+                .parent()
+                .unwrap_or(&root)
+                .canonicalize()
+                .map(|p| p.join(target.file_name().unwrap_or_default()))
+        }
+        .map_err(|e| fail(format!("{name}: '{rel}': {e}")))?;
+        if !anchor.starts_with(&root) {
+            return Err(fail(format!(
+                "{name}: '{rel}' resolves outside the allowed directory"
+            )));
+        }
+        let limit = Self::MAX_TEXT_BYTES;
+        match name {
+            "file_exists" => Ok(Value::Bool(anchor.exists())),
+            "file_read" => {
+                let meta = std::fs::metadata(&anchor)
+                    .map_err(|e| fail(format!("{name}: '{rel}': {e}")))?;
+                if meta.len() as usize > limit {
+                    return Err(VmError::ResourceLimit(format!(
+                        "file '{rel}' is larger than {limit} bytes"
+                    )));
+                }
+                let text = std::fs::read_to_string(&anchor)
+                    .map_err(|e| fail(format!("{name}: '{rel}': {e}")))?;
+                Ok(Value::Text(text))
+            }
+            "file_write" | "file_append" => {
+                let Some(Value::Text(data)) = args.get(1) else {
+                    return Err(VmError::TypeError(format!("{name} expects Text data")));
+                };
+                use std::io::Write;
+                let mut opts = std::fs::OpenOptions::new();
+                opts.create(true);
+                if name == "file_append" {
+                    opts.append(true);
+                } else {
+                    opts.write(true).truncate(true);
+                }
+                if name == "file_append" {
+                    let size = std::fs::metadata(&anchor)
+                        .map(|m| m.len() as usize)
+                        .unwrap_or(0);
+                    if size.saturating_add(data.len()) > limit {
+                        return Err(VmError::ResourceLimit(format!(
+                            "file '{rel}' would exceed {limit} bytes"
+                        )));
+                    }
+                }
+                opts.open(&anchor)
+                    .and_then(|mut f| f.write_all(data.as_bytes()))
+                    .map_err(|e| fail(format!("{name}: '{rel}': {e}")))?;
+                Ok(Value::Unit)
+            }
+            other => Err(VmError::TypeError(format!(
+                "Unknown native function '{other}'"
+            ))),
+        }
+    }
+
     /// Pure Text natives (`str_*`). Positions are in characters, like `len`; results are bounded by `MAX_TEXT_BYTES`.
     fn text_native(name: &str, args: &[Value]) -> Result<Value, VmError> {
         fn text<'a>(v: &'a Value, name: &str) -> Result<&'a str, VmError> {

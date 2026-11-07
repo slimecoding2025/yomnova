@@ -1399,3 +1399,55 @@ fn text_errors_are_reported_not_panics() {
     )
     .is_err());
 }
+
+#[test]
+fn file_access_is_off_by_default_and_confined_to_the_allowed_directory() {
+    let dir = std::env::temp_dir().join(format!("yomnova-fs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    std::fs::write(dir.join("../yomnova-outside.txt"), "secret").unwrap();
+    let run = |body: &str, root: Option<&std::path::Path>| {
+        let src = format!("fn main() -> Int {{\n    {body}\n    return 0\n}}\n");
+        Compiler::compile_and_run_with(&src, true, root.map(|p| p.to_path_buf()))
+    };
+    // disabled without a directory
+    assert!(run("emit(file_exists(\"a.txt\"))", None).is_err());
+    // read, write, append, exists inside the directory
+    let ok = run(
+        "file_write(\"a.txt\", \"x\")\n    file_append(\"a.txt\", \"y\")\n    file_write(\"sub/b.txt\", \"z\")\n    emit(file_read(\"a.txt\"))\n    emit(file_exists(\"sub/b.txt\"))\n    emit(file_exists(\"nope.txt\"))",
+        Some(&dir),
+    )
+    .expect("runs");
+    assert_eq!(ok.output_lines, vec!["xy", "true", "false"]);
+    assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "xy");
+    // escapes are refused
+    for body in [
+        "emit(file_read(\"../yomnova-outside.txt\"))",
+        "emit(file_read(\"/etc/hostname\"))",
+        "file_write(\"../x.txt\", \"no\")",
+        "emit(file_read(\"\"))",
+        "emit(file_read(\"sub/../a.txt\"))",
+        "emit(file_read(\"missing.txt\"))",
+    ] {
+        assert!(run(body, Some(&dir)).is_err(), "{body}");
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(dir.join("../yomnova-outside.txt"), dir.join("link.txt"))
+            .unwrap();
+        assert!(
+            run("emit(file_read(\"link.txt\"))", Some(&dir)).is_err(),
+            "symlink escape"
+        );
+        assert!(
+            run("file_write(\"link.txt\", \"no\")", Some(&dir)).is_err(),
+            "symlink write escape"
+        );
+    }
+    assert_eq!(
+        std::fs::read_to_string(dir.join("../yomnova-outside.txt")).unwrap(),
+        "secret"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_file(std::env::temp_dir().join("yomnova-outside.txt"));
+}

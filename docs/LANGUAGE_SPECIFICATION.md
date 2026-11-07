@@ -127,6 +127,9 @@ Ownership is checked statically after type checking; violations stop the program
   qualified: `math.abs math.sign math.min math.max math.clamp math.pow`, `arrays.sum arrays.contains arrays.index_of
   arrays.max_of arrays.min_of` (arrays are `Array<Int>`, passed as `&xs`). Implemented as source expansion before lexing;
   there are no user-defined modules, no file imports and no bare names. An unknown module or function is a compile error.
+* **File access (opt-in).** `file_read(path) -> Text`, `file_write(path, text)`, `file_append(path, text)`, `file_exists(path) -> Bool`.
+  Disabled unless the CLI is run with `--allow-fs <DIR>`; then paths are relative to DIR and cannot leave it (no absolute paths, no `..`,
+  symlinks that point outside are refused). UTF-8 text, max 16 MiB. The web playground never enables it.
 * **Text library.** `import std.text`: `text.upper text.lower text.trim text.contains text.starts_with text.ends_with text.find text.slice
   text.repeat text.replace text.split text.from_int text.parse_int` (first argument `&s`). The natives can be called directly as
   `str_upper(s)` etc. Positions are characters; `find` gives -1 if absent; `slice(s, from, to)` needs `0 <= from <= to <= len`; an empty
