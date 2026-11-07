@@ -123,6 +123,11 @@ Ownership is checked statically after type checking; violations stop the program
   Implementation: `&mut` is **copy-in, copy-out**: the callee returns its final value and the caller writes it back,
   which is equivalent to a real reference only because `&mut` is exclusive and cannot be stored. Cost: O(size) per call
   like any by-value argument. Pipeline stages and `flow` cannot take reference parameters.
+* **Not implemented:** stored or returned references, borrowing fields or elements (`&p.x`), reborrow rules beyond the call,
+  lifetime parameters, resource types, typestate.
+
+## 7b. Modules, imports and the standard library — Partial
+
 * **Imports and standard library.** `import std.math` and `import std.arrays` at the start of a line; functions are always
   qualified: `math.abs math.sign math.min math.max math.clamp math.pow`, `arrays.sum arrays.contains arrays.index_of
   arrays.max_of arrays.min_of` (arrays are `Array<Int>`, passed as `&xs`). Implemented as source expansion before lexing;
@@ -138,8 +143,6 @@ Ownership is checked statically after type checking; violations stop the program
   `pub` (`pub fn`, `pub struct`, `pub enum`) are visible; a private or missing item is an error. Functions, structs and enums are
   renamed with the alias, so names cannot collide. Paths are relative to the importing file; cycles, missing files and a library
   `main` are errors; imports are not re-exported. Every library is also checked on its own, and its errors are reported in its own file. It is source renaming (types print as `Lib_Rect`), not separate compilation.
-* **Not implemented:** stored or returned references, borrowing fields or elements (`&p.x`), reborrow rules beyond the call,
-  lifetime parameters, resource types, typestate.
 
 ## 8. Runtime and limits
 
