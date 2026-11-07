@@ -6,16 +6,37 @@
 //! `alias.name(...)`. Imports nest (paths are relative to the importing file), cycles and
 //! missing files are errors, and a library may not define `main`.
 //!
-//! Honest limits: this is renaming, not a real module system. Only **functions** are
-//! namespaced; structs and enums stay global, so two libraries declaring the same struct
-//! collide. There is no visibility (`pub`), no re-export, and a function name that is also a
-//! struct field name inside the same library would be renamed with it.
+//! Visibility: in a library only items marked `pub` (`pub fn`, `pub struct`, `pub enum`) can be
+//! used from outside; everything else is private and using it is an error. Functions, structs
+//! and enums are all namespaced (`alias.Point`, `alias.area(...)`), so two libraries can declare
+//! the same name. An import is not re-exported: a library's own imports are private to it.
+//!
+//! Honest limits: this is source renaming, not a separate compilation unit. Renamed types
+//! show up with their prefixed name (`geo_Point`) in output and error messages; an item whose
+//! name is also used as a struct *field* name inside the same library would be renamed there
+//! too; there is no `use`/glob import, no nested paths (`a.b.c`) and no `pub` on struct fields.
 
 use std::path::{Path, PathBuf};
 use yomnova_diagnostics::{Diagnostic, Span};
 
 const MAX_DEPTH: usize = 16;
 const MAX_FILE_BYTES: u64 = 1 << 20;
+
+/// `geo` + `area` -> `geo_area`; `geo` + `Rect` -> `Geo_Rect` (type names must start upper-case).
+fn mangle(alias: &str, name: &str) -> String {
+    if name.starts_with(|c: char| c.is_uppercase()) {
+        let mut a = alias.chars();
+        let first: String = a
+            .next()
+            .map(|c| c.to_uppercase().collect())
+            .unwrap_or_default();
+        format!("{first}{}_{name}", a.as_str())
+    } else {
+        format!("{alias}_{name}")
+    }
+}
+
+type Item = (String, bool);
 
 fn is_ident(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
@@ -78,18 +99,19 @@ fn rewrite(src: &str, f: Rewrite) -> Result<String, String> {
     Ok(out)
 }
 
-/// Names of the functions declared by `fn name` in `src`.
-fn declared_fns(src: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut prev_fn = false;
+/// `(name, is_pub)` for every `fn` / `struct` / `enum` declared in `src`.
+fn declared_items(src: &str) -> Vec<(String, bool)> {
+    let mut items = Vec::new();
+    let (mut p2, mut p1) = (String::new(), String::new());
     let _ = rewrite(src, &mut |w, _| {
-        if prev_fn {
-            names.push(w.to_string());
+        if matches!(p1.as_str(), "fn" | "struct" | "enum") {
+            items.push((w.to_string(), p2 == "pub"));
         }
-        prev_fn = w == "fn";
+        p2 = std::mem::take(&mut p1);
+        p1 = w.to_string();
         Ok(None)
     });
-    names
+    items
 }
 
 /// Inline every `import "file" as alias` of `source`; paths are relative to `base`.
@@ -111,7 +133,7 @@ fn resolve_in(source: &str, base: &Path, stack: &mut Vec<PathBuf>) -> Result<Str
         ));
     }
     let mut body = String::new();
-    let mut libs: Vec<(String, Vec<String>, String)> = Vec::new(); // alias, fns, source
+    let mut libs: Vec<(String, Vec<Item>, String)> = Vec::new(); // alias, items, source
     for (n, line) in source.lines().enumerate() {
         let t = line.trim();
         let Some(rest) = t.strip_prefix("import \"") else {
@@ -151,16 +173,20 @@ fn resolve_in(source: &str, base: &Path, stack: &mut Vec<PathBuf>) -> Result<Str
         let dir = canon.parent().unwrap_or(Path::new("."));
         let text = resolve_in(&text, dir, stack)?;
         stack.pop();
-        let fns = declared_fns(&text);
-        if fns.iter().any(|f| f == "main") {
+        let items = declared_items(&text);
+        if items.iter().any(|f| f.0 == "main") {
             return Err(format!("'{path}' defines `main`; a library cannot"));
         }
         let renamed = rewrite(&text, &mut |w, _| {
-            Ok(fns
-                .contains(&w.to_string())
-                .then(|| (format!("{alias}_{w}"), 0)))
+            if w == "pub" {
+                return Ok(Some((String::new(), 0)));
+            }
+            Ok(items
+                .iter()
+                .any(|i| i.0 == w)
+                .then(|| (mangle(alias, w), 0)))
         })?;
-        libs.push((alias.to_string(), fns, renamed));
+        libs.push((alias.to_string(), items, renamed));
         body.push('\n'); // keep line numbers of the importing file
     }
     let mut out = rewrite(&body, &mut |w, rest| {
@@ -171,10 +197,12 @@ fn resolve_in(source: &str, base: &Path, stack: &mut Vec<PathBuf>) -> Result<Str
             return Ok(None);
         }
         let name: String = rest[1..].iter().take_while(|c| is_ident(**c)).collect();
-        if lib.1.contains(&name) {
-            Ok(Some((format!("{w}_{name}"), 1 + name.chars().count())))
-        } else {
-            Err(format!("library `{w}` has no function `{name}`"))
+        match lib.1.iter().find(|i| i.0 == name) {
+            Some((_, true)) => Ok(Some((mangle(w, &name), 1 + name.chars().count()))),
+            Some((_, false)) => Err(format!(
+                "`{w}.{name}` is private; mark it `pub` in the library"
+            )),
+            None => Err(format!("library `{w}` has no item `{name}`")),
         }
     })?;
     for (_, _, text) in libs {
@@ -199,10 +227,14 @@ mod tests {
     #[test]
     fn imports_rename_and_nest() {
         let d = dir("nest");
-        std::fs::write(d.join("a.yom"), "fn dbl(x: Int) -> Int { return x * 2 }\n").unwrap();
+        std::fs::write(
+            d.join("a.yom"),
+            "pub fn dbl(x: Int) -> Int { return x * 2 }\n",
+        )
+        .unwrap();
         std::fs::write(
             d.join("b.yom"),
-            "import \"a.yom\" as a\nfn quad(x: Int) -> Int { return a.dbl(a.dbl(x)) }\n",
+            "import \"a.yom\" as a\npub fn quad(x: Int) -> Int { return a.dbl(a.dbl(x)) }\n",
         )
         .unwrap();
         let s = resolve(
@@ -211,6 +243,8 @@ mod tests {
         )
         .unwrap();
         assert!(s.contains("b_quad(3)") && s.contains("fn b_quad") && s.contains("fn b_a_dbl"));
+        let t = resolve("import \"t.yom\" as t\nlet p = t.Pt { x: 1 }\n", &d);
+        assert!(t.is_err(), "missing file");
         assert!(
             s.starts_with('\n'),
             "import line is blanked to keep line numbers"
@@ -223,15 +257,34 @@ mod tests {
         std::fs::write(d.join("m.yom"), "fn main() -> Int { return 0 }\n").unwrap();
         std::fs::write(d.join("c1.yom"), "import \"c2.yom\" as x\n").unwrap();
         std::fs::write(d.join("c2.yom"), "import \"c1.yom\" as y\n").unwrap();
-        std::fs::write(d.join("ok.yom"), "fn f() -> Int { return 1 }\n").unwrap();
+        std::fs::write(
+            d.join("ok.yom"),
+            "pub fn f() -> Int { return 1 }\nfn hidden() -> Int { return 2 }\n",
+        )
+        .unwrap();
         for src in [
             "import \"nope.yom\" as n\n",
             "import \"m.yom\" as m\n",
             "import \"c1.yom\" as c\n",
             "import \"ok.yom\"\n",
             "import \"ok.yom\" as o\nlet x = o.zzz()\n",
+            "import \"ok.yom\" as o\nlet x = o.hidden()\n",
         ] {
             assert!(resolve(src, &d).is_err(), "{src}");
         }
+    }
+
+    #[test]
+    fn types_and_private_items_work_end_to_end() {
+        let d = dir("e2e");
+        std::fs::write(
+            d.join("lib.yom"),
+            "pub struct Pt {\n    x: Int,\n    y: Int,\n}\nfn secret() -> Int {\n    return 7\n}\npub fn sum(p: Pt) -> Int {\n    return p.x + p.y + secret()\n}\n",
+        )
+        .unwrap();
+        // the importer may define its own `secret` and `Pt`: names do not collide
+        let src = "import \"lib.yom\" as l\nstruct Pt {\n    z: Int,\n}\nfn secret() -> Int {\n    return 1\n}\nfn main() -> Int {\n    let p = l.Pt { x: 1, y: 2 }\n    let q = Pt { z: 5 }\n    emit(l.sum(p))\n    emit(secret() + q.z)\n    return 0\n}\n";
+        let out = crate::Compiler::compile_and_run(&resolve(src, &d).unwrap()).expect("runs");
+        assert_eq!(out.output_lines, vec!["10", "6"]);
     }
 }

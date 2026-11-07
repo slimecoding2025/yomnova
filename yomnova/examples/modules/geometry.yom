@@ -1,8 +1,22 @@
 // A library: functions only, no `main`.
-fn area(w: Int, h: Int) -> Int {
+pub fn area(w: Int, h: Int) -> Int {
     return w * h
 }
 
-fn perimeter(w: Int, h: Int) -> Int {
+pub fn perimeter(w: Int, h: Int) -> Int {
     return 2 * (w + h)
+}
+
+// Types are namespaced too: from outside, `geo.Rect`.
+pub struct Rect {
+    w: Int,
+    h: Int,
+}
+
+fn secret() -> Int {
+    return 42
+}
+
+pub fn unit() -> Int {
+    return secret() - 41
 }

@@ -251,7 +251,7 @@ export const ROADMAP: Record<Status, RoadmapItem[]> = {
   ],
   planned: [
     { title: "Nested patterns and match as an expression" },
-    { title: "Real modules (visibility, namespaced types), a larger standard library" },
+    { title: "Separately compiled modules, a larger standard library" },
     { title: "A richer IR (SSA) and inlining" },
     { title: "Stored references and lifetimes" },
     { title: "TCP, UDP" },

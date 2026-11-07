@@ -2,6 +2,14 @@
 
 ## Unreleased — 2026-11-03
 
+### Modules with visibility
+* **Changed** file imports: in a library only `pub fn` / `pub struct` / `pub enum` are visible from outside; using a private or
+  missing item is a compile error. Functions, structs and enums are all namespaced (`geo.area(...)`, `geo.Rect { ... }`), so the
+  importer may declare the same names without collision. Imports are not re-exported. A library with no `pub` exposes nothing.
+  1 new end-to-end test (126 Rust tests total).
+* **Limits:** still source renaming (types print as `Geo_Rect`), no glob/`use` imports, no nested paths, no `pub` on fields,
+  CLI only.
+
 ### Bytecode verifier: operand types (partial)
 * **Added** to the stack verifier: it now tracks what is statically known about each stack slot (constants and operator results)
   and rejects operands that are certainly wrong: arithmetic on text/bool, comparing non-numbers or Int with Float, adding text to

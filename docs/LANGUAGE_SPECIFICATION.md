@@ -127,8 +127,10 @@ Ownership is checked statically after type checking; violations stop the program
   qualified: `math.abs math.sign math.min math.max math.clamp math.pow`, `arrays.sum arrays.contains arrays.index_of
   arrays.max_of arrays.min_of` (arrays are `Array<Int>`, passed as `&xs`). Implemented as source expansion before lexing;
   there are no user-defined modules, no file imports and no bare names. An unknown module or function is a compile error.
-* **File imports (CLI only).** `import "lib.yom" as lib` inlines the file and renames its functions to `lib_name`; use `lib.name(...)`.
-  Paths are relative to the importing file; cycles, missing files and a library `main` are errors. Only functions are namespaced.
+* **File imports (CLI only).** `import "lib.yom" as lib` inlines the file; use `lib.area(...)`, `lib.Rect { ... }`. Only items marked
+  `pub` (`pub fn`, `pub struct`, `pub enum`) are visible; a private or missing item is an error. Functions, structs and enums are
+  renamed with the alias, so names cannot collide. Paths are relative to the importing file; cycles, missing files and a library
+  `main` are errors; imports are not re-exported. It is source renaming (types print as `Lib_Rect`), not separate compilation.
 * **Not implemented:** stored or returned references, borrowing fields or elements (`&p.x`), reborrow rules beyond the call,
   lifetime parameters, resource types, typestate.
 
