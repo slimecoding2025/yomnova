@@ -1,0 +1,25 @@
+// Text library: `import std.text` (text.upper(&s), ...) or the natives directly (str_upper(s), ...).
+// Positions are in characters, like len(). The first argument of the std.text functions is a borrowed
+// variable (`&s`); the natives (str_*) take values.
+import std.text
+
+fn main() -> Int {
+    let s = "  Hello, YOMNOVA  "
+    let t = text.trim(&s)
+    emit(t)
+    emit(text.upper(&t))
+    emit(text.lower(&t))
+    emit(text.contains(&t, "YOM"))
+    emit(text.find(&t, "YOM"))
+    emit(text.slice(&t, 0, 5))
+    emit(text.replace(&t, "Hello", "Bye"))
+    let parts = text.split(&t, ", ")
+    emit(len(parts))
+    emit(parts[1])
+    let n = "41"
+    emit(text.parse_int(&n) + 1)
+    emit(text.from_int(7) + "!")
+    let ab = "ab"
+    emit(text.repeat(&ab, 3))
+    return 0
+}

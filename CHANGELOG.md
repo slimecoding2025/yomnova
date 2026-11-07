@@ -2,6 +2,14 @@
 
 ## Unreleased — 2026-11-03
 
+### Text library
+* **Added** 13 pure natives: `str_upper str_lower str_trim str_contains str_starts_with str_ends_with str_find str_slice str_repeat
+  str_replace str_split str_from_int str_parse_int`, and `import std.text` (`text.upper(&s)` ...). Positions are in characters (like `len`),
+  `str_find` returns -1 when absent, `str_slice` is bounds-checked, empty patterns/separators and invalid `str_parse_int` input are errors,
+  results are bounded by the 16 MiB text limit and the array limit. `examples/text.yom`, 2 tests (128 Rust tests total).
+* **Limits:** no regex, no format strings, no Unicode normalisation or locale rules (`upper`/`lower` are Rust's), no byte-level access
+  (use `bytes_of`). In `std.text` the first argument must be a borrowed variable (`&s`), because only variables can be borrowed.
+
 ### Modules with visibility
 * **Changed** file imports: in a library only `pub fn` / `pub struct` / `pub enum` are visible from outside; using a private or
   missing item is a compile error. Functions, structs and enums are all namespaced (`geo.area(...)`, `geo.Rect { ... }`), so the

@@ -223,6 +223,7 @@ export const NET_TYPES: NetType[] = [
   { name: "Endpoint", status: "implemented", note: "Endpoint(ip, port) pairs an IPv4 with a port." },
   { name: "IPv6", status: "implemented", note: "IPv6(\"::1\") parses and validates an address; it displays in canonical form and compares with ==." },
   { name: "IPAddress", status: "planned", note: "An IPv4-or-IPv6 sum type; enums and IPv6 exist now, the combined type does not." },
+  { name: "Text library", status: "implemented", note: "std.text and str_* natives: upper, lower, trim, contains, find, slice, replace, split, parse_int. Characters, not bytes; no regex." },
   { name: "NetworkBuffer", status: "implemented", note: "NetworkBuffer(n), bytes_of(text), buf_get/get16/get32, buf_set/set16/set32, buf_slice, buf_concat; every access is bounds-checked and writes return a new buffer (max 1 MiB)." },
   { name: "Packet", status: "implemented", note: "Packet(header, payload) with packet_header and packet_payload; a plain container, no protocol parsing." },
   { name: "TCP · UDP", status: "planned", note: "Reserved type names with no behaviour." },
@@ -251,7 +252,7 @@ export const ROADMAP: Record<Status, RoadmapItem[]> = {
   ],
   planned: [
     { title: "Nested patterns and match as an expression" },
-    { title: "Separately compiled modules, a larger standard library" },
+    { title: "Separately compiled modules, more standard-library modules" },
     { title: "A richer IR (SSA) and inlining" },
     { title: "Stored references and lifetimes" },
     { title: "TCP, UDP" },

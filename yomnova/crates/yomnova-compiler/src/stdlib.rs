@@ -20,6 +20,19 @@ const FUNCTIONS: &[(&str, &str, &str)] = &[
     ("math", "max", "fn math_max(a: Int, b: Int) -> Int {\n    if a > b {\n        return a\n    }\n    return b\n}"),
     ("math", "clamp", "fn math_clamp(x: Int, lo: Int, hi: Int) -> Int {\n    if x < lo {\n        return lo\n    }\n    if x > hi {\n        return hi\n    }\n    return x\n}"),
     ("math", "pow", "fn math_pow(base: Int, exp: Int) -> Int {\n    mut r = 1\n    mut i = 0\n    while i < exp {\n        r = r * base\n        i = i + 1\n    }\n    return r\n}"),
+    ("text", "upper", "fn text_upper(s: &Text) -> Text {\n    return str_upper(s)\n}"),
+    ("text", "lower", "fn text_lower(s: &Text) -> Text {\n    return str_lower(s)\n}"),
+    ("text", "trim", "fn text_trim(s: &Text) -> Text {\n    return str_trim(s)\n}"),
+    ("text", "contains", "fn text_contains(s: &Text, part: Text) -> Bool {\n    return str_contains(s, part)\n}"),
+    ("text", "starts_with", "fn text_starts_with(s: &Text, prefix: Text) -> Bool {\n    return str_starts_with(s, prefix)\n}"),
+    ("text", "ends_with", "fn text_ends_with(s: &Text, suffix: Text) -> Bool {\n    return str_ends_with(s, suffix)\n}"),
+    ("text", "find", "fn text_find(s: &Text, part: Text) -> Int {\n    return str_find(s, part)\n}"),
+    ("text", "slice", "fn text_slice(s: &Text, from: Int, to: Int) -> Text {\n    return str_slice(s, from, to)\n}"),
+    ("text", "repeat", "fn text_repeat(s: &Text, n: Int) -> Text {\n    return str_repeat(s, n)\n}"),
+    ("text", "replace", "fn text_replace(s: &Text, from: Text, to: Text) -> Text {\n    return str_replace(s, from, to)\n}"),
+    ("text", "split", "fn text_split(s: &Text, sep: Text) -> Array<Text> {\n    return str_split(s, sep)\n}"),
+    ("text", "from_int", "fn text_from_int(n: Int) -> Text {\n    return str_from_int(n)\n}"),
+    ("text", "parse_int", "fn text_parse_int(s: &Text) -> Int {\n    return str_parse_int(s)\n}"),
     ("arrays", "sum", "fn arrays_sum(xs: &Array<Int>) -> Int {\n    mut s = 0\n    for x in xs {\n        s = s + x\n    }\n    return s\n}"),
     ("arrays", "contains", "fn arrays_contains(xs: &Array<Int>, v: Int) -> Bool {\n    for x in xs {\n        if x == v {\n            return true\n        }\n    }\n    return false\n}"),
     ("arrays", "index_of", "fn arrays_index_of(xs: &Array<Int>, v: Int) -> Int {\n    mut i = 0\n    while i < len(xs) {\n        if xs[i] == v {\n            return i\n        }\n        i = i + 1\n    }\n    return 0 - 1\n}"),
@@ -62,7 +75,7 @@ pub fn expand(source: &str) -> Result<String, Vec<Diagnostic>> {
                 return Err(vec![err(
                     i + 1,
                     format!(
-                        "cannot import `{name}`: only the built-in modules `std.math` and `std.arrays` exist"
+                        "cannot import `{name}`: only the built-in modules `std.math`, `std.arrays` and `std.text` exist"
                     ),
                 )]);
             }

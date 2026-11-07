@@ -94,6 +94,19 @@ impl Vm {
             "Packet",
             "packet_header",
             "packet_payload",
+            "str_upper",
+            "str_lower",
+            "str_trim",
+            "str_contains",
+            "str_starts_with",
+            "str_ends_with",
+            "str_find",
+            "str_slice",
+            "str_repeat",
+            "str_replace",
+            "str_split",
+            "str_from_int",
+            "str_parse_int",
         ] {
             vm.globals
                 .insert(name.to_string(), Value::NativeFunction(name.to_string()));
@@ -673,7 +686,13 @@ impl Vm {
                     "Endpoint" | "push" | "buf_get" | "buf_get16" | "buf_get32" | "buf_concat"
                     | "Packet" => 2,
                     "buf_set" | "buf_set16" | "buf_set32" | "buf_slice" => 3,
-                    "NetworkBuffer" | "bytes_of" | "packet_header" | "packet_payload" => 1,
+                    "NetworkBuffer" | "bytes_of" | "packet_header" | "packet_payload"
+                    | "str_upper" | "str_lower" | "str_trim" | "str_from_int" | "str_parse_int" => {
+                        1
+                    }
+                    "str_contains" | "str_starts_with" | "str_ends_with" | "str_find"
+                    | "str_repeat" | "str_split" => 2,
+                    "str_slice" | "str_replace" => 3,
                     other => {
                         return Err(VmError::TypeError(format!(
                             "Unknown native function '{other}'"
@@ -785,6 +804,7 @@ impl Vm {
                             }
                         }
                     }
+                    other if other.starts_with("str_") => Self::text_native(other, &args)?,
                     other => Self::net_native(other, args)?,
                 };
 
@@ -835,6 +855,127 @@ impl Vm {
     pub const MAX_BUFFER_BYTES: usize = 1 << 20;
 
     /// `NetworkBuffer` and `Packet` natives. Every access is bounds-checked; writes return a new buffer.
+    /// Pure Text natives (`str_*`). Positions are in characters, like `len`; results are bounded by `MAX_TEXT_BYTES`.
+    fn text_native(name: &str, args: &[Value]) -> Result<Value, VmError> {
+        fn text<'a>(v: &'a Value, name: &str) -> Result<&'a str, VmError> {
+            match v {
+                Value::Text(t) => Ok(t),
+                other => Err(VmError::TypeError(format!(
+                    "{name} expects Text, got {other:?}"
+                ))),
+            }
+        }
+        fn int(v: &Value, name: &str) -> Result<i64, VmError> {
+            match v {
+                Value::Int(n) => Ok(*n),
+                other => Err(VmError::TypeError(format!(
+                    "{name} expects an Int, got {other:?}"
+                ))),
+            }
+        }
+        let limit = |n: usize| -> Result<(), VmError> {
+            if n > Self::MAX_TEXT_BYTES {
+                Err(VmError::ResourceLimit(format!(
+                    "text longer than {} bytes",
+                    Self::MAX_TEXT_BYTES
+                )))
+            } else {
+                Ok(())
+            }
+        };
+        Ok(match name {
+            "str_upper" => Value::Text(text(&args[0], name)?.to_uppercase()),
+            "str_lower" => Value::Text(text(&args[0], name)?.to_lowercase()),
+            "str_trim" => Value::Text(text(&args[0], name)?.trim().to_string()),
+            "str_contains" => Value::Bool(text(&args[0], name)?.contains(text(&args[1], name)?)),
+            "str_starts_with" => {
+                Value::Bool(text(&args[0], name)?.starts_with(text(&args[1], name)?))
+            }
+            "str_ends_with" => Value::Bool(text(&args[0], name)?.ends_with(text(&args[1], name)?)),
+            "str_find" => {
+                let (s, n) = (text(&args[0], name)?, text(&args[1], name)?);
+                Value::Int(match s.find(n) {
+                    Some(byte) => s[..byte].chars().count() as i64,
+                    None => -1,
+                })
+            }
+            "str_slice" => {
+                let s = text(&args[0], name)?;
+                let (from, to) = (int(&args[1], name)?, int(&args[2], name)?);
+                let len = s.chars().count() as i64;
+                if from < 0 || to < from || to > len {
+                    return Err(VmError::TypeError(format!(
+                        "Slice out of bounds: {from}..{to} in text of length {len}"
+                    )));
+                }
+                Value::Text(
+                    s.chars()
+                        .skip(from as usize)
+                        .take((to - from) as usize)
+                        .collect(),
+                )
+            }
+            "str_repeat" => {
+                let s = text(&args[0], name)?;
+                let n = int(&args[1], name)?;
+                if n < 0 {
+                    return Err(VmError::TypeError(format!(
+                        "str_repeat count must not be negative, got {n}"
+                    )));
+                }
+                limit(s.len().saturating_mul(n as usize))?;
+                Value::Text(s.repeat(n as usize))
+            }
+            "str_replace" => {
+                let (s, from, to) = (
+                    text(&args[0], name)?,
+                    text(&args[1], name)?,
+                    text(&args[2], name)?,
+                );
+                if from.is_empty() {
+                    return Err(VmError::TypeError(
+                        "str_replace: the text to replace must not be empty".to_string(),
+                    ));
+                }
+                let hits = s.matches(from).count();
+                limit((s.len() + hits.saturating_mul(to.len())).saturating_sub(hits * from.len()))?;
+                Value::Text(s.replace(from, to))
+            }
+            "str_split" => {
+                let (s, sep) = (text(&args[0], name)?, text(&args[1], name)?);
+                if sep.is_empty() {
+                    return Err(VmError::TypeError(
+                        "str_split: the separator must not be empty".to_string(),
+                    ));
+                }
+                let parts: Vec<Value> = s
+                    .split(sep)
+                    .take(Self::MAX_ARRAY_LEN + 1)
+                    .map(|p| Value::Text(p.to_string()))
+                    .collect();
+                if parts.len() > Self::MAX_ARRAY_LEN {
+                    return Err(VmError::ResourceLimit(format!(
+                        "array length exceeds {}",
+                        Self::MAX_ARRAY_LEN
+                    )));
+                }
+                Value::Array(parts)
+            }
+            "str_from_int" => Value::Text(int(&args[0], name)?.to_string()),
+            "str_parse_int" => {
+                let s = text(&args[0], name)?;
+                Value::Int(s.parse::<i64>().map_err(|_| {
+                    VmError::TypeError(format!("str_parse_int: '{s}' is not a valid Int"))
+                })?)
+            }
+            other => {
+                return Err(VmError::TypeError(format!(
+                    "Unknown native function '{other}'"
+                )))
+            }
+        })
+    }
+
     fn net_native(name: &str, args: Vec<Value>) -> Result<Value, VmError> {
         fn int(v: &Value, what: &str) -> Result<i64, VmError> {
             match v {

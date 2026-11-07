@@ -144,7 +144,7 @@ impl fmt::Display for Type {
 /// Native functions for `NetworkBuffer` and `Packet`: (name, parameter types, return type).
 /// Shared by the type checker and the ownership checker.
 pub fn net_builtins() -> Vec<(&'static str, Vec<Type>, Type)> {
-    use Type::{Int, NetworkBuffer as Buf, Packet, Text};
+    use Type::{Bool, Int, NetworkBuffer as Buf, Packet, Text};
     vec![
         ("NetworkBuffer", vec![Int], Buf),
         ("bytes_of", vec![Text], Buf),
@@ -159,6 +159,19 @@ pub fn net_builtins() -> Vec<(&'static str, Vec<Type>, Type)> {
         ("Packet", vec![Buf, Buf], Packet),
         ("packet_header", vec![Packet], Buf),
         ("packet_payload", vec![Packet], Buf),
+        ("str_upper", vec![Text], Text),
+        ("str_lower", vec![Text], Text),
+        ("str_trim", vec![Text], Text),
+        ("str_contains", vec![Text, Text], Bool),
+        ("str_starts_with", vec![Text, Text], Bool),
+        ("str_ends_with", vec![Text, Text], Bool),
+        ("str_find", vec![Text, Text], Int),
+        ("str_slice", vec![Text, Int, Int], Text),
+        ("str_repeat", vec![Text, Int], Text),
+        ("str_replace", vec![Text, Text, Text], Text),
+        ("str_split", vec![Text, Text], Type::Array(Box::new(Text))),
+        ("str_from_int", vec![Int], Text),
+        ("str_parse_int", vec![Text], Int),
     ]
 }
 
@@ -171,4 +184,16 @@ pub const NET_READ_ONLY: &[&str] = &[
     "buf_concat",
     "packet_header",
     "packet_payload",
+    "str_upper",
+    "str_lower",
+    "str_trim",
+    "str_contains",
+    "str_starts_with",
+    "str_ends_with",
+    "str_find",
+    "str_slice",
+    "str_repeat",
+    "str_replace",
+    "str_split",
+    "str_parse_int",
 ];

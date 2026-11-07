@@ -1353,3 +1353,49 @@ fn every_compiled_example_passes_the_stack_verifier() {
         "expected to verify the example programs, got {checked}"
     );
 }
+
+#[test]
+fn text_library_works_through_std_text_and_natives() {
+    let out = Compiler::compile_and_run(
+        "import std.text\nfn main() -> Int {\n    let s = \"  Hello, YOMNOVA  \"\n    let t = text.trim(&s)\n    emit(text.upper(&t))\n    emit(text.find(&t, \"YOM\"))\n    emit(text.slice(&t, 0, 5))\n    emit(text.replace(&t, \"Hello\", \"Bye\"))\n    let parts = text.split(&t, \", \")\n    emit(len(parts))\n    emit(parts[1])\n    let n = \"41\"\n    emit(text.parse_int(&n) + 1)\n    emit(str_from_int(7) + \"!\")\n    emit(str_repeat(\"ab\", 3))\n    emit(str_starts_with(t, \"Hel\"))\n    emit(len(t))\n    emit(str_find(\"héllo wörld\", \"w\"))\n    return 0\n}\n",
+    )
+    .expect("runs");
+    assert_eq!(
+        out.output_lines,
+        vec![
+            "HELLO, YOMNOVA",
+            "7",
+            "Hello",
+            "Bye, YOMNOVA",
+            "2",
+            "YOMNOVA",
+            "42",
+            "7!",
+            "ababab",
+            "true",
+            "14",
+            "6"
+        ]
+    );
+}
+
+#[test]
+fn text_errors_are_reported_not_panics() {
+    for body in [
+        "emit(str_slice(\"abc\", 2, 9))",
+        "emit(str_slice(\"abc\", 0 - 1, 2))",
+        "emit(str_replace(\"abc\", \"\", \"x\"))",
+        "emit(str_split(\"abc\", \"\"))",
+        "emit(str_parse_int(\"12x\"))",
+        "emit(str_repeat(\"ab\", 0 - 1))",
+        "emit(str_repeat(\"abcdefgh\", 9223372036854775807))",
+    ] {
+        let src = format!("fn main() -> Int {{\n    {body}\n    return 0\n}}\n");
+        assert!(Compiler::compile_and_run(&src).is_err(), "{body}");
+    }
+    // wrong argument types are caught by the type checker
+    assert!(Compiler::compile_and_run(
+        "fn main() -> Int {\n    emit(str_upper(5))\n    return 0\n}\n"
+    )
+    .is_err());
+}
