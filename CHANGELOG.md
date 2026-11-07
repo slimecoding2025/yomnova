@@ -2,6 +2,12 @@
 
 ## Unreleased — 2026-11-03
 
+### Per-library checking
+* **Added**: the CLI checks every imported library on its own (nested ones too, once each) before checking the combined program, so an error in
+  `lib.yom` is reported as `lib.yom:6:18` with that file's source, not as a line past the end of the importing file. 1 new test (131 Rust tests total).
+* **Not done:** this is separate *checking*, not separate *compilation*: there are still no per-library `.yomc` files, no caching and no
+  signature files; the final program is compiled from the combined source.
+
 ### File access
 * **Added** `file_read(path)`, `file_write(path, text)`, `file_append(path, text)`, `file_exists(path)`. **Off by default**: they fail with a clear
   error unless the command line passes `--allow-fs <DIR>` (`run` and `exec`); the playground on the website never does. Paths must be plain

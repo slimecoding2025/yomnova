@@ -16,7 +16,7 @@ Playground backed by the real compiler.
 4. *(Done in a deliberately small form: `&T` / `&mut T` parameters with call-scoped borrow checking, so no lifetimes are needed. Still open: stored/returned references, borrowing fields and elements, real lifetime parameters.)*
 5. *(Done: `IPv6`, `NetworkBuffer` with typed bounds-checked access, `Packet` as a container. Still open: protocol parsing, `TCP`/`UDP`.)*
 6. *(Done: `.yomc` binary format v2, `build` and `exec`. Done: a verifier for jump targets, constants, instruction boundaries and operand-stack depth. Operand types are verified where statically known (constants, operator results, local slots). Still open: typing of call results, fields and elements, call-arity checks, format stability across versions, signing.)*
-7. *(Done for built-in modules only: `import std.math`, `import std.arrays`, expanded from YOMNOVA source before lexing. Done in the CLI: `import "file.yom" as name` with `pub` visibility and namespaced functions/structs/enums (source renaming). Still open: separate compilation, glob imports, a separate `yomnova-stdlib` crate, generic array functions, text/IO modules.)*
+7. *(Done for built-in modules only: `import std.math`, `import std.arrays`, expanded from YOMNOVA source before lexing. Done in the CLI: `import "file.yom" as name` with `pub` visibility and namespaced functions/structs/enums (source renaming). Each library is also checked on its own. Still open: separate compilation (per-library bytecode, caching), glob imports, a separate `yomnova-stdlib` crate, generic array functions, text/IO modules.)*
 
 ## Research (no commitment)
 Typestate for protocol state machines · effect system (effects are parsed in `![…]` but ignored) · tasks, channels

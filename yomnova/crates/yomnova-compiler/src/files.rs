@@ -114,13 +114,50 @@ fn declared_items(src: &str) -> Vec<(String, bool)> {
     items
 }
 
-/// Inline every `import "file" as alias` of `source`; paths are relative to `base`.
-pub fn resolve(source: &str, base: &Path) -> Result<String, Vec<Diagnostic>> {
-    let mut stack = Vec::new();
-    resolve_in(source, base, &mut stack).map_err(err)
+/// An imported library, for checking it on its own.
+pub struct LibSource {
+    pub path: PathBuf,
+    /// The file as written.
+    pub original: String,
+    /// The file with its own imports inlined (what the importer sees), still with `pub`.
+    pub own: String,
 }
 
-fn resolve_in(source: &str, base: &Path, stack: &mut Vec<PathBuf>) -> Result<String, String> {
+impl LibSource {
+    /// Source that can be checked by itself: `pub` removed and a stub `main` appended
+    /// (after the last line, so line numbers are those of the file).
+    pub fn standalone(&self) -> String {
+        let stripped = rewrite(&self.own, &mut |w, _| {
+            Ok((w == "pub").then(|| (String::new(), 0)))
+        })
+        .unwrap_or_else(|_| self.own.clone());
+        format!("{stripped}\nfn main() -> Int {{\n    return 0\n}}\n")
+    }
+}
+
+/// Inline every `import "file" as alias` of `source`; paths are relative to `base`.
+pub fn resolve(source: &str, base: &Path) -> Result<String, Vec<Diagnostic>> {
+    resolve_with_libs(source, base).map(|r| r.0)
+}
+
+/// Like [`resolve`], also returning every imported library (nested ones too, once each) so that
+/// each can be checked separately and its errors reported against its own file and lines.
+pub fn resolve_with_libs(
+    source: &str,
+    base: &Path,
+) -> Result<(String, Vec<LibSource>), Vec<Diagnostic>> {
+    let mut stack = Vec::new();
+    let mut libs = Vec::new();
+    let out = resolve_in(source, base, &mut stack, &mut libs).map_err(err)?;
+    Ok((out, libs))
+}
+
+fn resolve_in(
+    source: &str,
+    base: &Path,
+    stack: &mut Vec<PathBuf>,
+    libs_out: &mut Vec<LibSource>,
+) -> Result<String, String> {
     if !source
         .lines()
         .any(|l| l.trim_start().starts_with("import \""))
@@ -171,8 +208,16 @@ fn resolve_in(source: &str, base: &Path, stack: &mut Vec<PathBuf>) -> Result<Str
             .map_err(|e| format!("line {}: cannot import '{path}': {e}", n + 1))?;
         stack.push(canon.clone());
         let dir = canon.parent().unwrap_or(Path::new("."));
-        let text = resolve_in(&text, dir, stack)?;
+        let original = text.clone();
+        let text = resolve_in(&text, dir, stack, libs_out)?;
         stack.pop();
+        if !libs_out.iter().any(|l| l.path == canon) {
+            libs_out.push(LibSource {
+                path: canon.clone(),
+                original,
+                own: text.clone(),
+            });
+        }
         let items = declared_items(&text);
         if items.iter().any(|f| f.0 == "main") {
             return Err(format!("'{path}' defines `main`; a library cannot"));
@@ -286,5 +331,30 @@ mod tests {
         let src = "import \"lib.yom\" as l\nstruct Pt {\n    z: Int,\n}\nfn secret() -> Int {\n    return 1\n}\nfn main() -> Int {\n    let p = l.Pt { x: 1, y: 2 }\n    let q = Pt { z: 5 }\n    emit(l.sum(p))\n    emit(secret() + q.z)\n    return 0\n}\n";
         let out = crate::Compiler::compile_and_run(&resolve(src, &d).unwrap()).expect("runs");
         assert_eq!(out.output_lines, vec!["10", "6"]);
+    }
+
+    #[test]
+    fn libraries_are_checked_on_their_own_with_their_own_line_numbers() {
+        let d = dir("libcheck");
+        std::fs::write(
+            d.join("bad.yom"),
+            "pub fn ok() -> Int {\n    return 1\n}\n\npub fn broken() -> Int {\n    let x: Int = \"text\"\n    return x\n}\n",
+        )
+        .unwrap();
+        std::fs::write(d.join("good.yom"), "pub fn f() -> Int {\n    return 1\n}\n").unwrap();
+        let (_, libs) =
+            resolve_with_libs("import \"good.yom\" as g\nimport \"bad.yom\" as b\n", &d).unwrap();
+        assert_eq!(libs.len(), 2);
+        let report = |name: &str| {
+            let lib = libs.iter().find(|l| l.path.ends_with(name)).unwrap();
+            crate::Compiler::check(&lib.standalone())
+        };
+        assert!(report("good.yom").is_ok());
+        let diags = report("bad.yom").unwrap_err();
+        assert_eq!(
+            diags[0].span.as_ref().map(|s| s.line),
+            Some(6),
+            "line inside bad.yom"
+        );
     }
 }

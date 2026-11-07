@@ -30,7 +30,8 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | File access (`file_*`), CLI opt-in `--allow-fs DIR`, confined to DIR | Implemented | `file_access_is_off_by_default_*`, `examples/files.yom` |
 | Text library: `str_*` natives and `import std.text` | Implemented | `text_library_works_*`, `text_errors_are_reported_*`, `examples/text.yom` |
 | File imports `import "f.yom" as name` with `pub` visibility, namespaced functions/structs/enums (CLI) | Implemented (source renaming) | `imports_rename_and_nest`, `bad_imports_are_errors`, `examples/modules/` |
-| Separately compiled modules, glob/`use` imports, nested paths | Planned | — |
+| Each imported library type-checked and ownership-checked on its own, errors reported in its own file | Implemented (CLI) | `libraries_are_checked_on_their_own_*` |
+| Separately compiled modules (per-library `.yomc`, caching), glob/`use` imports, nested paths | Planned | — |
 | Stored references, lifetimes, concurrency, `TCP`/`UDP` | Planned | — |
 | IR optimiser (`yomnova-ir`, `--no-opt`) | Implemented | `optimiser_never_changes_behaviour`, `optimiser_shrinks_constant_code_*`, 6 unit tests |
 | `NetworkBuffer`, `Packet` | Implemented | `buffers_*`, `buffer_*`, `packets_*` regression tests, `examples/packet.yom` |
@@ -47,7 +48,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 130 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 131 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.

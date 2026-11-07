@@ -214,13 +214,32 @@ fn dispatch(args: &[String]) -> Result<ExitCode, CliError> {
             let (mut source, file) = read_source(&path)?;
             if matches!(command, "run" | "check" | "build" | "disasm") {
                 let base = path.parent().unwrap_or(Path::new("."));
-                source = yomnova_compiler::files::resolve(&source, base).map_err(|diags| {
-                    CliError::Diagnostics {
+                let (resolved, libs) = yomnova_compiler::files::resolve_with_libs(&source, base)
+                    .map_err(|diags| CliError::Diagnostics {
                         diags,
                         source: source.clone(),
                         file: file.clone(),
+                    })?;
+                // Each imported library is checked on its own first, so its errors point into
+                // its own file. Errors past the end of the file belong to its nested imports,
+                // which are checked as libraries themselves.
+                for lib in &libs {
+                    if let Err(diags) = Compiler::check(&lib.standalone()) {
+                        let own_lines = lib.original.lines().count();
+                        let diags: Vec<Diagnostic> = diags
+                            .into_iter()
+                            .filter(|d| d.span.as_ref().is_none_or(|sp| sp.line <= own_lines))
+                            .collect();
+                        if !diags.is_empty() {
+                            return Err(CliError::Diagnostics {
+                                diags,
+                                source: lib.original.clone(),
+                                file: lib.path.to_string_lossy().to_string(),
+                            });
+                        }
                     }
-                })?;
+                }
+                source = resolved;
             }
             let diag = |diags: Vec<Diagnostic>| CliError::Diagnostics {
                 diags,
