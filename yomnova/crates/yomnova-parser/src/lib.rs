@@ -418,28 +418,57 @@ impl Parser {
 
     /// `_`, `Enum.Variant`, `Enum.Variant(name)` or `Enum.Variant(_)`.
     fn parse_pattern(&mut self) -> Result<Pattern, ParserError> {
+        match self.peek_kind() {
+            Some(TokenKind::Integer(n)) => {
+                let n = *n;
+                self.advance();
+                return Ok(Pattern::Int(n));
+            }
+            Some(TokenKind::Minus) => {
+                self.advance();
+                if let Some(TokenKind::Integer(n)) = self.peek_kind() {
+                    let n = *n;
+                    self.advance();
+                    return Ok(Pattern::Int(n.wrapping_neg()));
+                }
+                let span = self.current_span();
+                let token = self
+                    .peek_kind()
+                    .map(|k| format!("{k}"))
+                    .unwrap_or_else(|| "<EOF>".to_string());
+                return Err(ParserError::UnexpectedToken {
+                    token,
+                    expected: "an integer after '-' in a pattern".to_string(),
+                    span,
+                });
+            }
+            Some(TokenKind::Bool(b)) => {
+                let b = *b;
+                self.advance();
+                return Ok(Pattern::Bool(b));
+            }
+            _ => {}
+        }
         let first = self.consume_identifier("pattern")?;
         if first == "_" {
             return Ok(Pattern::Wildcard);
         }
+        let lower = first.starts_with(|c: char| c.is_lowercase() || c == '_');
+        if lower && !self.check(&TokenKind::Dot) {
+            return Ok(Pattern::Binding(first));
+        }
         self.consume(&TokenKind::Dot, "'.' (patterns look like Enum.Variant)")?;
         let variant = self.consume_identifier("variant name")?;
-        let mut parens = false;
-        let mut binding = None;
+        let mut payload = None;
         if self.check(&TokenKind::OpenParen) {
             self.advance();
-            parens = true;
-            let name = self.consume_identifier("binding name or '_'")?;
-            if name != "_" {
-                binding = Some(name);
-            }
+            payload = Some(Box::new(self.parse_pattern()?));
             self.consume(&TokenKind::CloseParen, "')'")?;
         }
         Ok(Pattern::Variant {
             enum_name: first,
             variant,
-            parens,
-            binding,
+            payload,
         })
     }
 
@@ -951,6 +980,36 @@ impl Parser {
                     Ok(Expr {
                         kind: ExprKind::Bool(val),
                         span,
+                    })
+                }
+                TokenKind::Match => {
+                    self.advance();
+                    let scrutinee = self.parse_expr()?;
+                    self.consume(&TokenKind::OpenBrace, "'{'")?;
+                    let mut arms = Vec::new();
+                    while !self.check(&TokenKind::CloseBrace) && !self.is_at_end() {
+                        let a_start = self.current_span();
+                        let pattern = self.parse_pattern()?;
+                        self.consume(&TokenKind::FatArrow, "'=>'")?;
+                        let body = self.parse_expr()?;
+                        let aspan = a_start.merge(body.span);
+                        arms.push(MatchExprArm {
+                            pattern,
+                            body,
+                            span: aspan,
+                        });
+                        if self.check(&TokenKind::Comma) {
+                            self.advance();
+                        }
+                    }
+                    self.consume(&TokenKind::CloseBrace, "'}'")?;
+                    let full = span.merge(self.previous_span());
+                    Ok(Expr {
+                        kind: ExprKind::Match {
+                            scrutinee: Box::new(scrutinee),
+                            arms,
+                        },
+                        span: full,
                     })
                 }
                 TokenKind::Emit => {

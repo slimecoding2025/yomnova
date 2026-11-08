@@ -540,41 +540,19 @@ impl Compiler {
                     let mut to_end = Vec::new();
                     for arm in arms {
                         let aline = arm.span.line;
-                        match &arm.pattern {
-                            Pattern::Wildcard => {
-                                self.compile_scoped_block(&arm.body)?;
-                                to_end.push(self.emit_jump(OpCode::Jump, aline));
-                            }
-                            Pattern::Variant {
-                                enum_name,
-                                variant,
-                                binding,
-                                ..
-                            } => {
-                                let idx =
-                                    self.constant(Value::Text(format!("{enum_name}.{variant}")))?;
-                                self.chunk.write_op(OpCode::GetLocal, aline);
-                                self.chunk.write_u16(hidden, aline);
-                                self.chunk.write_op(OpCode::EnumIs, aline);
-                                self.chunk.write_u16(idx, aline);
-                                let next = self.emit_jump(OpCode::JumpIfFalse, aline);
-                                self.locals.push(HashMap::new());
-                                let arm_result = (|| -> Result<(), CompilerError> {
-                                    if let Some(name) = binding {
-                                        self.chunk.write_op(OpCode::GetLocal, aline);
-                                        self.chunk.write_u16(hidden, aline);
-                                        self.chunk.write_op(OpCode::EnumPayload, aline);
-                                        let slot = self.declare_local(name)?;
-                                        self.chunk.write_op(OpCode::SetLocal, aline);
-                                        self.chunk.write_u16(slot, aline);
-                                    }
-                                    self.compile_block_body(&arm.body)
-                                })();
-                                self.locals.pop();
-                                arm_result?;
-                                to_end.push(self.emit_jump(OpCode::Jump, aline));
-                                self.patch_jump(next)?;
-                            }
+                        let mut fails = Vec::new();
+                        let mut binds = Vec::new();
+                        self.pattern_tests(&arm.pattern, hidden, 0, aline, &mut fails, &mut binds)?;
+                        self.locals.push(HashMap::new());
+                        let arm_result = (|| -> Result<(), CompilerError> {
+                            self.pattern_bind(&binds, hidden, aline)?;
+                            self.compile_block_body(&arm.body)
+                        })();
+                        self.locals.pop();
+                        arm_result?;
+                        to_end.push(self.emit_jump(OpCode::Jump, aline));
+                        for f in fails {
+                            self.patch_jump(f)?;
                         }
                     }
                     for j in to_end {
@@ -705,9 +683,116 @@ impl Compiler {
         Ok(())
     }
 
+    /// Pushes the matched value, or the payload `depth` variants deep inside it.
+    fn emit_access(&mut self, hidden: u16, depth: usize, line: usize) {
+        self.chunk.write_op(OpCode::GetLocal, line);
+        self.chunk.write_u16(hidden, line);
+        for _ in 0..depth {
+            self.chunk.write_op(OpCode::EnumPayload, line);
+        }
+    }
+
+    /// Emits the tests of `pat` against the value at `depth`; each failing test jumps (the jump
+    /// is recorded in `fails`). Names to bind are collected in `binds` and bound after all tests pass.
+    fn pattern_tests(
+        &mut self,
+        pat: &Pattern,
+        hidden: u16,
+        depth: usize,
+        line: usize,
+        fails: &mut Vec<usize>,
+        binds: &mut Vec<(String, usize)>,
+    ) -> Result<(), CompilerError> {
+        match pat {
+            Pattern::Wildcard => {}
+            Pattern::Binding(name) => binds.push((name.clone(), depth)),
+            Pattern::Int(n) => {
+                self.emit_access(hidden, depth, line);
+                let idx = self.constant(Value::Int(*n))?;
+                self.chunk.write_op(OpCode::Constant, line);
+                self.chunk.write_u16(idx, line);
+                self.chunk.write_op(OpCode::Equal, line);
+                fails.push(self.emit_jump(OpCode::JumpIfFalse, line));
+            }
+            Pattern::Bool(b) => {
+                self.emit_access(hidden, depth, line);
+                if !*b {
+                    self.chunk.write_op(OpCode::Not, line);
+                }
+                fails.push(self.emit_jump(OpCode::JumpIfFalse, line));
+            }
+            Pattern::Variant {
+                enum_name,
+                variant,
+                payload,
+            } => {
+                let idx = self.constant(Value::Text(format!("{enum_name}.{variant}")))?;
+                self.emit_access(hidden, depth, line);
+                self.chunk.write_op(OpCode::EnumIs, line);
+                self.chunk.write_u16(idx, line);
+                fails.push(self.emit_jump(OpCode::JumpIfFalse, line));
+                if let Some(p) = payload {
+                    self.pattern_tests(p, hidden, depth + 1, line, fails, binds)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn pattern_bind(
+        &mut self,
+        binds: &[(String, usize)],
+        hidden: u16,
+        line: usize,
+    ) -> Result<(), CompilerError> {
+        for (name, depth) in binds {
+            self.emit_access(hidden, *depth, line);
+            let slot = self.declare_local(name)?;
+            self.chunk.write_op(OpCode::SetLocal, line);
+            self.chunk.write_u16(slot, line);
+        }
+        Ok(())
+    }
+
     fn compile_expression(&mut self, expr: &Expr) -> Result<(), CompilerError> {
         let line = expr.span.line;
         match &expr.kind {
+            ExprKind::Match { scrutinee, arms } => {
+                self.locals.push(HashMap::new());
+                let result = (|| -> Result<(), CompilerError> {
+                    self.compile_expression(scrutinee)?;
+                    let hidden = self.declare_local("$match")?;
+                    self.chunk.write_op(OpCode::SetLocal, line);
+                    self.chunk.write_u16(hidden, line);
+                    let mut to_end = Vec::new();
+                    for arm in arms {
+                        let aline = arm.span.line;
+                        let mut fails = Vec::new();
+                        let mut binds = Vec::new();
+                        self.pattern_tests(&arm.pattern, hidden, 0, aline, &mut fails, &mut binds)?;
+                        self.locals.push(HashMap::new());
+                        let arm_result = (|| -> Result<(), CompilerError> {
+                            self.pattern_bind(&binds, hidden, aline)?;
+                            self.compile_expression(&arm.body)
+                        })();
+                        self.locals.pop();
+                        arm_result?;
+                        to_end.push(self.emit_jump(OpCode::Jump, aline));
+                        for f in fails {
+                            self.patch_jump(f)?;
+                        }
+                    }
+                    // Not reachable: the checker requires the arms to cover every value. The
+                    // placeholder keeps the stack depth equal on every path.
+                    self.chunk.write_op(OpCode::Nil, line);
+                    for j in to_end {
+                        self.patch_jump(j)?;
+                    }
+                    Ok(())
+                })();
+                self.locals.pop();
+                result?;
+            }
             ExprKind::Integer(n) => {
                 let idx = self.constant(Value::Int(*n))?;
                 self.chunk.write_op(OpCode::Constant, line);

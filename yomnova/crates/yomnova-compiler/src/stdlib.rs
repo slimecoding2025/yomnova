@@ -40,6 +40,39 @@ const FUNCTIONS: &[(&str, &str, &str)] = &[
     ("arrays", "min_of", "fn arrays_min_of(xs: &Array<Int>) -> Int {\n    mut m = xs[0]\n    for x in xs {\n        if x < m {\n            m = x\n        }\n    }\n    return m\n}"),
 ];
 
+const NET_SOURCE: &str = include_str!("stdlib/net.yom");
+
+type Entry = (String, String, String);
+
+/// Every library function as `(module, function, source)`: the table above plus the functions
+/// of `stdlib/net.yom` (each `fn net_<name>` starts at column 0).
+fn table() -> Vec<Entry> {
+    let mut all: Vec<Entry> = FUNCTIONS
+        .iter()
+        .map(|f| (f.0.to_string(), f.1.to_string(), f.2.to_string()))
+        .collect();
+    let mut cur: Option<(String, String)> = None;
+    let flush = |cur: &mut Option<(String, String)>, all: &mut Vec<Entry>| {
+        if let Some((name, src)) = cur.take() {
+            let short = name.strip_prefix("net_").unwrap_or(&name).to_string();
+            all.push(("net".to_string(), short, src.trim_end().to_string()));
+        }
+    };
+    for line in NET_SOURCE.lines() {
+        if let Some(rest) = line.strip_prefix("fn ") {
+            flush(&mut cur, &mut all);
+            let name: String = rest.chars().take_while(|c| is_ident(*c)).collect();
+            cur = Some((name, String::new()));
+        }
+        if let Some((_, src)) = cur.as_mut() {
+            src.push_str(line);
+            src.push('\n');
+        }
+    }
+    flush(&mut cur, &mut all);
+    all
+}
+
 fn is_ident(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
@@ -64,6 +97,7 @@ pub fn expand(source: &str) -> Result<String, Vec<Diagnostic>> {
     {
         return Ok(source.to_string());
     }
+    let table = table();
     let mut modules: Vec<String> = Vec::new();
     let mut kept = String::new();
     for (i, line) in source.lines().enumerate() {
@@ -71,11 +105,11 @@ pub fn expand(source: &str) -> Result<String, Vec<Diagnostic>> {
         if let Some(rest) = t.strip_prefix("import ") {
             let name = rest.trim();
             let m = name.strip_prefix("std.").unwrap_or("");
-            if m.is_empty() || !FUNCTIONS.iter().any(|f| f.0 == m) {
+            if m.is_empty() || !table.iter().any(|f| f.0 == m) {
                 return Err(vec![err(
                     i + 1,
                     format!(
-                        "cannot import `{name}`: only the built-in modules `std.math`, `std.arrays` and `std.text` exist"
+                        "cannot import `{name}`: only the built-in modules `std.math`, `std.arrays`, `std.text` and `std.net` exist"
                     ),
                 )]);
             }
@@ -92,7 +126,7 @@ pub fn expand(source: &str) -> Result<String, Vec<Diagnostic>> {
     // Rewrite `module.func` -> `module_func` outside strings and `//` comments.
     let chars: Vec<char> = kept.chars().collect();
     let mut out = String::new();
-    let mut used: Vec<(&str, &str, &str)> = Vec::new();
+    let mut used: Vec<Entry> = Vec::new();
     let (mut i, mut line, mut in_str) = (0usize, 1usize, false);
     while i < chars.len() {
         let c = chars[i];
@@ -137,10 +171,10 @@ pub fn expand(source: &str) -> Result<String, Vec<Diagnostic>> {
                     k += 1;
                 }
                 let func: String = chars[j + 1..k].iter().collect();
-                match FUNCTIONS.iter().find(|f| f.0 == word && f.1 == func) {
+                match table.iter().find(|f| f.0 == word && f.1 == func) {
                     Some(f) => {
                         if !used.iter().any(|u| u.2 == f.2) {
-                            used.push(*f);
+                            used.push(f.clone());
                         }
                         out.push_str(&format!("{word}_{func}"));
                         i = k;
@@ -161,9 +195,26 @@ pub fn expand(source: &str) -> Result<String, Vec<Diagnostic>> {
         out.push(c);
         i += 1;
     }
+    // Library functions may call each other (`net_ipv4_compute_checksum`): include them too.
+    let mut k = 0;
+    while k < used.len() {
+        let src = used[k].2.clone();
+        for e in &table {
+            let full = format!("{}_{}", e.0, e.1);
+            let called = src.match_indices(&full).any(|(at, _)| {
+                let before = src[..at].chars().next_back();
+                let after = src[at + full.len()..].chars().next();
+                !before.is_some_and(is_ident) && after == Some('(')
+            });
+            if called && !used.iter().any(|u| u.2 == e.2) {
+                used.push(e.clone());
+            }
+        }
+        k += 1;
+    }
     for (_, _, src) in used {
         out.push('\n');
-        out.push_str(src);
+        out.push_str(&src);
         out.push('\n');
     }
     Ok(out)
@@ -197,7 +248,7 @@ mod tests {
 
     #[test]
     fn unknown_module_and_function_are_errors() {
-        assert!(expand("import std.net\n").is_err());
+        assert!(expand("import std.nope\n").is_err());
         assert!(expand("import foo\n").is_err());
         assert!(expand("import std.math\nlet a = math.nope(1)\n").is_err());
     }

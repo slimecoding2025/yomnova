@@ -248,6 +248,12 @@ impl OwnershipChecker {
                 ExprKind::Identifier(n) => self.fn_returns.get(n).cloned().unwrap_or(Type::Unknown),
                 _ => Type::Unknown,
             },
+            // Bindings of the arms are not in scope here, so use the first arm whose type is evident.
+            ExprKind::Match { arms, .. } => arms
+                .iter()
+                .map(|a| self.infer(&a.body))
+                .find(|t| *t != Type::Unknown)
+                .unwrap_or(Type::Unknown),
             ExprKind::StructLiteral { name, .. } => Type::Custom(name.clone()),
             ExprKind::FieldAccess { object, .. }
             | ExprKind::MethodCall {
@@ -341,30 +347,13 @@ impl OwnershipChecker {
             } => {
                 // Matching borrows the value; a bound payload is a fresh binding for that arm.
                 self.check_expr_use(scrutinee)?;
-                let enum_name = match self.infer(scrutinee) {
-                    Type::Custom(n) => Some(n),
-                    _ => None,
-                };
+                let sty = self.infer(scrutinee);
                 let before = self.scopes.clone();
                 let mut after_arms = Vec::new();
                 for arm in arms {
                     self.scopes = before.clone();
                     self.enter_scope();
-                    if let Pattern::Variant {
-                        variant,
-                        binding: Some(name),
-                        ..
-                    } = &arm.pattern
-                    {
-                        let ty = enum_name
-                            .as_ref()
-                            .and_then(|e| self.enums.get(e))
-                            .and_then(|vs| vs.get(variant))
-                            .cloned()
-                            .unwrap_or(Type::Unknown);
-                        let is_copy = Self::is_copy_type(&ty);
-                        self.declare(name.clone(), ty, is_copy);
-                    }
+                    self.declare_pattern(&arm.pattern, &sty);
                     let result = self.check_block(&arm.body);
                     self.leave_scope();
                     result?;
@@ -539,6 +528,24 @@ impl OwnershipChecker {
                 }
             }
             ExprKind::Borrow { operand, .. } => self.check_expr_use(operand)?,
+            ExprKind::Match { scrutinee, arms } => {
+                self.check_expr_use(scrutinee)?;
+                let sty = self.infer(scrutinee);
+                let before = self.scopes.clone();
+                let mut after_arms = Vec::new();
+                for arm in arms {
+                    self.scopes = before.clone();
+                    self.enter_scope();
+                    self.declare_pattern(&arm.pattern, &sty);
+                    // The arm's value flows out of the match, so a plain variable is moved.
+                    let result = self.check_expr_move(&arm.body);
+                    self.leave_scope();
+                    result?;
+                    after_arms.push(self.scopes.clone());
+                }
+                self.scopes = before;
+                self.merge_arm_moves(&after_arms);
+            }
             ExprKind::MethodCall { receiver, args, .. } => {
                 self.check_expr_use(receiver)?;
                 // `Enum.Variant(value)` takes ownership of its value.
@@ -629,6 +636,49 @@ impl OwnershipChecker {
         self.scopes.pop();
     }
 
+    /// A value moved in any arm is "maybe moved" after the match.
+    fn merge_arm_moves(&mut self, after_arms: &[Vec<HashMap<String, Binding>>]) {
+        for after in after_arms {
+            for (scope, arm_scope) in self.scopes.iter_mut().zip(after.iter()) {
+                for (name, binding) in scope.iter_mut() {
+                    if let Some(Binding {
+                        state: VariableState::Moved { at },
+                        ..
+                    }) = arm_scope.get(name)
+                    {
+                        if binding.state == VariableState::Owned {
+                            binding.state = VariableState::Moved { at: *at };
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Declares the names a pattern binds, with the type of the part of the value each one matches.
+    fn declare_pattern(&mut self, pat: &Pattern, ty: &Type) {
+        match pat {
+            Pattern::Binding(name) => {
+                let is_copy = Self::is_copy_type(ty);
+                self.declare(name.clone(), ty.clone(), is_copy);
+            }
+            Pattern::Variant {
+                enum_name,
+                variant,
+                payload: Some(p),
+            } => {
+                let inner = self
+                    .enums
+                    .get(enum_name)
+                    .and_then(|vs| vs.get(variant))
+                    .cloned()
+                    .unwrap_or(Type::Unknown);
+                self.declare_pattern(p, &inner);
+            }
+            _ => {}
+        }
+    }
+
     fn declare(&mut self, name: String, ty: Type, is_copy: bool) {
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(
@@ -660,6 +710,9 @@ fn mentions(e: &Expr, name: &str) -> bool {
         ExprKind::Binary { left, right, .. } => mentions(left, name) || mentions(right, name),
         ExprKind::Unary { operand, .. } | ExprKind::Borrow { operand, .. } => {
             mentions(operand, name)
+        }
+        ExprKind::Match { scrutinee, arms } => {
+            mentions(scrutinee, name) || arms.iter().any(|a| mentions(&a.body, name))
         }
         ExprKind::Call { callee, args } => {
             mentions(callee, name) || args.iter().any(|a| mentions(a, name))

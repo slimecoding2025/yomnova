@@ -638,9 +638,10 @@ fn match_arm_errors() {
         ),
         "pattern is for enum 'Other'",
     );
+    // a non-enum scrutinee is fine with literal patterns or `_`, but an enum pattern cannot match it
     err(
-        &with_shape("fn main() -> Int {\n match 5 { _ => { emit(1) } }\n return 0\n}"),
-        "expected an enum value",
+        &with_shape("fn main() -> Int {\n match 5 { Shape.Empty => { emit(1) }\n _ => { emit(2) } }\n return 0\n}"),
+        "expected a value matching Shape.Empty",
     );
 }
 
@@ -1307,7 +1308,7 @@ fn std_modules_can_be_imported_and_used() {
 #[test]
 fn bad_imports_are_reported() {
     for src in [
-        "import std.net\nfn main() -> Int { return 0 }\n",
+        "import std.nope\nfn main() -> Int { return 0 }\n",
         "import mylib\nfn main() -> Int { return 0 }\n",
         "import std.math\nfn main() -> Int { return math.nope(1) }\n",
     ] {
@@ -1450,4 +1451,136 @@ fn file_access_is_off_by_default_and_confined_to_the_allowed_directory() {
     );
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_file(std::env::temp_dir().join("yomnova-outside.txt"));
+}
+
+const MATCH_PRELUDE: &str = "enum Inner {\n Num(Int),\n None,\n}\nenum Shape {\n Circle(Int),\n Boxed(Inner),\n Empty,\n}\n";
+
+fn run_main(body: &str) -> Vec<String> {
+    let src = format!("{MATCH_PRELUDE}fn main() -> Int {{\n{body}\n return 0\n}}\n");
+    Compiler::compile_and_run(&src).expect(&src).output_lines
+}
+
+fn fails_with(body: &str, want: &str) {
+    let src = format!("{MATCH_PRELUDE}fn main() -> Int {{\n{body}\n return 0\n}}\n");
+    let Err(e) = Compiler::compile_and_run(&src) else {
+        panic!("should fail: {body}")
+    };
+    let all: String = e
+        .iter()
+        .map(|d| d.message.clone())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    assert!(all.contains(want), "{all} should contain {want}");
+}
+
+#[test]
+fn match_works_as_an_expression_with_nested_and_literal_patterns() {
+    let out = run_main(
+        " let s = Shape.Boxed(Inner.Num(7))\n let a = match s {\n Shape.Circle(r) => r * 3,\n Shape.Boxed(Inner.Num(n)) => n + 1,\n Shape.Boxed(Inner.None) => 0 - 1,\n Shape.Empty => 0\n }\n emit(a)\n emit(10 + match 2 { 1 => 100, 2 => 200, _ => 300 })\n emit(match true { true => \"t\", false => \"f\" })\n emit(match 5 { -5 => \"neg\", n => \"other\" })\n emit(match Shape.Boxed(Inner.None) { Shape.Boxed(x) => match x { Inner.Num(_) => 1, Inner.None => 2 }, _ => 3 })\n emit(match Shape.Circle(4) { Shape.Circle(0) => \"zero\", Shape.Circle(_) => \"some\", _ => \"other\" })",
+    );
+    assert_eq!(out, vec!["8", "210", "t", "other", "2", "some"]);
+}
+
+#[test]
+fn nested_pattern_checks() {
+    fails_with(
+        " emit(match Shape.Empty { Shape.Circle(r) => r })",
+        "not exhaustive: missing Shape.Boxed, Shape.Empty",
+    );
+    fails_with(" emit(match Shape.Empty { Shape.Boxed(Inner.Num(n)) => n, Shape.Circle(_) => 1, Shape.Empty => 2 })", "not exhaustive: some nested cases are not covered");
+    fails_with(" emit(match 3 { 1 => 1, 2 => 2 })", "not exhaustive");
+    fails_with(" emit(match true { true => 1 })", "both `true` and `false`");
+    fails_with(" emit(match 1 { 1 => 1, 1 => 2, _ => 3 })", "can never run");
+    fails_with(" emit(match Shape.Empty { Shape.Boxed(Inner.Num(n)) => n, Shape.Boxed(Inner.Num(m)) => m, _ => 0 })", "can never run");
+    fails_with(" emit(match 1 { _ => 1, 2 => 2 })", "can never run");
+    fails_with(
+        " emit(match 1 { true => 1, _ => 2 })",
+        "cannot match a value of type Int",
+    );
+    fails_with(
+        " emit(match Shape.Empty { Shape.Circle(Inner.None) => 1, _ => 2 })",
+        "expected a value matching Inner.None",
+    );
+    fails_with(" emit(match 1 { 1 => 1, _ => \"x\" })", "Type mismatch");
+    fails_with(
+        " emit(match Shape.Empty { Inner.None => 1, _ => 2 })",
+        "pattern is for enum",
+    );
+}
+
+#[test]
+fn match_expression_bindings_and_moves() {
+    // bindings are scoped to their arm; a moved non-copy value cannot be reused
+    let src = format!("{MATCH_PRELUDE}fn main() -> Int {{\n let xs = [1, 2]\n let n = match 1 {{ 1 => len(xs), _ => 0 }}\n emit(n)\n emit(len(xs))\n return 0\n}}\n");
+    assert_eq!(
+        Compiler::compile_and_run(&src).unwrap().output_lines,
+        vec!["2", "2"]
+    );
+    let bad = format!("{MATCH_PRELUDE}fn main() -> Int {{\n let r = match 1 {{ 1 => 5, _ => 0 }}\n emit(r)\n emit(x)\n return 0\n}}\n");
+    assert!(Compiler::compile_and_run(&bad).is_err());
+    let bad2 = format!("{MATCH_PRELUDE}fn main() -> Int {{\n let r = match Shape.Circle(2) {{ Shape.Circle(v) => v, _ => 0 }}\n emit(v)\n return 0\n}}\n");
+    assert!(
+        Compiler::compile_and_run(&bad2).is_err(),
+        "arm binding must not leak"
+    );
+}
+
+#[test]
+fn std_net_parses_a_known_ipv4_header_and_its_checksum() {
+    // The header from the Wikipedia IPv4 checksum example: checksum field 0xb861.
+    let out = Compiler::compile_and_run(
+        "import std.net\nfn main() -> Int {\n    let xs = [69, 0, 0, 115, 0, 0, 64, 0, 64, 17, 184, 97, 192, 168, 0, 1, 192, 168, 0, 199]\n    let b = net.from_bytes(&xs)\n    emit(net.ipv4_version(&b))\n    emit(net.ipv4_header_len(&b))\n    emit(net.ipv4_total_length(&b))\n    emit(net.ipv4_ttl(&b))\n    emit(net.ipv4_protocol(&b))\n    emit(net.ipv4_src(&b))\n    emit(net.ipv4_dst(&b))\n    emit(net.ipv4_compute_checksum(&b))\n    emit(net.ipv4_checksum_ok(&b))\n    let bad = [69, 0, 0, 115, 0, 0, 64, 0, 64, 17, 184, 98, 192, 168, 0, 1, 192, 168, 0, 199]\n    let c = net.from_bytes(&bad)\n    emit(net.ipv4_checksum_ok(&c))\n    emit(net.to_bytes(&b)[3])\n    emit(net.ipv4_valid(&b))\n    emit(net.ipv4_valid(&c))\n    let z = NetworkBuffer(20)\n    emit(net.ipv4_valid(&z))\n    return 0\n}\n",
+    )
+    .expect("runs");
+    assert_eq!(
+        out.output_lines,
+        vec![
+            "4",
+            "20",
+            "115",
+            "64",
+            "17",
+            "192.168.0.1",
+            "192.168.0.199",
+            "47201",
+            "true",
+            "false",
+            "115",
+            "false",
+            "false",
+            "false"
+        ]
+    );
+}
+
+#[test]
+fn std_net_builds_and_parses_udp_in_ipv4_and_reads_tcp_flags() {
+    let out = Compiler::compile_and_run(
+        "import std.net\nfn main() -> Int {\n    let udp = net.make_udp(5000, 53, bytes_of(\"hello\"))\n    let ip = net.make_ipv4(\"192.168.0.1\", \"10.0.0.7\", 17, 64, udp)\n    emit(net.ipv4_checksum_ok(&ip))\n    emit(net.ipv4_total_length(&ip))\n    emit(len(ip))\n    let inner = net.ipv4_payload(&ip)\n    emit(net.udp_src_port(&inner))\n    emit(net.udp_dst_port(&inner))\n    emit(net.udp_length(&inner))\n    emit(net.udp_payload(&inner))\n    let t = [0, 80, 48, 57, 0, 0, 0, 1, 0, 0, 0, 2, 80, 18, 0, 0, 0, 0, 0, 0, 104, 105]\n    let tcp = net.from_bytes(&t)\n    emit(net.tcp_src_port(&tcp))\n    emit(net.tcp_dst_port(&tcp))\n    emit(net.tcp_seq(&tcp))\n    emit(net.tcp_ack(&tcp))\n    emit(net.tcp_header_len(&tcp))\n    emit(net.tcp_syn(&tcp))\n    emit(net.tcp_ack_flag(&tcp))\n    emit(net.tcp_fin(&tcp))\n    emit(net.tcp_rst(&tcp))\n    emit(net.tcp_payload(&tcp))\n    emit(net.ipv4_valid(&ip))\n    return 0\n}\n",
+    )
+    .expect("runs");
+    let l = &out.output_lines;
+    assert_eq!(&l[0..6], ["true", "33", "33", "5000", "53", "13"]);
+    assert_eq!(
+        &l[7..16],
+        ["80", "12345", "1", "2", "20", "true", "true", "false", "false"]
+    );
+    assert_eq!(l[6], "NetworkBuffer[5 bytes: 68 65 6c 6c 6f]");
+    assert_eq!(l[16], "NetworkBuffer[2 bytes: 68 69]");
+    assert_eq!(l[17], "true", "a packet built by make_ipv4 is valid");
+}
+
+#[test]
+fn std_net_short_or_inconsistent_buffers_are_errors_not_garbage() {
+    for body in [
+        "let b = NetworkBuffer(10)\n    emit(net.ipv4_ttl(&b))\n    emit(net.ipv4_src(&b))",
+        "let b = NetworkBuffer(3)\n    emit(net.udp_src_port(&b) + net.udp_length(&b))",
+        "let b = NetworkBuffer(3)\n    emit(len(net.ipv4_payload(&b)))",
+        "let xs = [1, 2]\n    let b = net.from_bytes(&xs)\n    emit(net.tcp_seq(&b))",
+        "emit(len(net.make_ipv4(\"1.2.3\", \"1.2.3.4\", 17, 64, NetworkBuffer(0))))",
+        "emit(len(net.make_ipv4(\"1.2.3.999\", \"1.2.3.4\", 17, 64, NetworkBuffer(0))))",
+    ] {
+        let src = format!("import std.net\nfn main() -> Int {{\n    {body}\n    return 0\n}}\n");
+        assert!(Compiler::compile_and_run(&src).is_err(), "{body}");
+    }
 }

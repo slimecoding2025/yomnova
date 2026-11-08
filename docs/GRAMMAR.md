@@ -39,10 +39,12 @@ add_expr     = mul_expr { ( "+" | "-" ) mul_expr } ;
 mul_expr     = unary    { ( "*" | "/" | "%" ) unary } ;
 unary        = ( "-" | "!" ) unary | postfix ;
 postfix      = primary { "(" [ args ] ")" | "[" expr "]" | "." IDENT [ "(" [ args ]  ")" ] † } ;
-primary      = INT | FLOAT | STRING | "true" | "false" | "(" expr ")" | "[" [ args ] "]" | IDENT | struct_lit
+primary      = "match" expr "{" pattern "=>" expr { "," pattern "=>" expr } [ "," ] "}" | INT | FLOAT | STRING | "true" | "false" | "(" expr ")" | "[" [ args ] "]" | IDENT | struct_lit
              | "emit" | "IPv4" | "Port" | "Endpoint" ;
 args         = expr { "," expr } ;
-pattern      = "_" | IDENT "." IDENT [ "(" ( IDENT | "_" ) ")" ] ;   (* Enum.Variant, Enum.Variant(x) *)
+pattern      = "_" | IDENT                       (* lower-case name: matches anything, binds it *)
+             | [ "-" ] INT | "true" | "false"   (* literal patterns *)
+             | IDENT "." IDENT [ "(" pattern ")" ] ;   (* Enum.Variant, Enum.Variant(pattern): nesting allowed *)
 struct_lit   = UPPER_IDENT "{" IDENT ":" expr { "," IDENT ":" expr } [ "," ] "}" ;   (* only when an uppercase name is followed by `{ ident :` *)
 
 type         = "Int" | "Float" | "Bool" | "Text" | "Unit"

@@ -1,0 +1,22 @@
+// std.net: build and parse IPv4 / UDP packets. Everything here is written in YOMNOVA on NetworkBuffer.
+import std.net
+
+fn main() -> Int {
+    let payload = bytes_of("hello")
+    let udp = net.make_udp(5000, 53, payload)
+    let ip = net.make_ipv4("192.168.0.1", "10.0.0.7", 17, 64, udp)
+
+    emit(net.ipv4_version(&ip))
+    emit(net.ipv4_src(&ip))
+    emit(net.ipv4_dst(&ip))
+    emit(net.ipv4_ttl(&ip))
+    emit(net.ipv4_protocol(&ip))
+    emit(net.ipv4_checksum_ok(&ip))
+
+    let inner = net.ipv4_payload(&ip)
+    emit(net.udp_src_port(&inner))
+    emit(net.udp_dst_port(&inner))
+    emit(net.udp_length(&inner))
+    emit(len(net.udp_payload(&inner)))
+    return 0
+}

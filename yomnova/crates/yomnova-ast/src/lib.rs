@@ -155,6 +155,11 @@ pub struct Expr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprKind {
+    /// `match value { Pattern => expr, … }` as an expression; every arm yields a value of the same type.
+    Match {
+        scrutinee: Box<Expr>,
+        arms: Vec<MatchExprArm>,
+    },
     Integer(i64),
     Float(f64),
     Text(String),
@@ -280,13 +285,43 @@ pub struct MatchArm {
 pub enum Pattern {
     /// `_`: matches anything.
     Wildcard,
-    /// `Enum.Variant` or `Enum.Variant(name)` / `Enum.Variant(_)`.
+    /// A lower-case name: matches anything and binds it.
+    Binding(String),
+    /// An integer literal (`3`, `-1`).
+    Int(i64),
+    /// `true` or `false`.
+    Bool(bool),
+    /// `Enum.Variant`, or `Enum.Variant(pattern)` with any pattern for the carried value (nesting allowed).
     Variant {
         enum_name: String,
         variant: String,
-        /// The pattern had parentheses (the variant carries a value).
-        parens: bool,
-        /// The name bound to the carried value (`None` for `_` or no parentheses).
-        binding: Option<String>,
+        /// `None`: no parentheses (the variant carries no value).
+        payload: Option<Box<Pattern>>,
     },
+}
+
+impl Pattern {
+    /// Matches every value (so no later arm can be reached).
+    pub fn is_irrefutable(&self) -> bool {
+        matches!(self, Pattern::Wildcard | Pattern::Binding(_))
+    }
+
+    /// The names this pattern binds, in order.
+    pub fn bindings(&self, out: &mut Vec<String>) {
+        match self {
+            Pattern::Binding(n) => out.push(n.clone()),
+            Pattern::Variant {
+                payload: Some(p), ..
+            } => p.bindings(out),
+            _ => {}
+        }
+    }
+}
+
+/// One arm of a `match` used as an expression: `pattern => expression`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchExprArm {
+    pub pattern: Pattern,
+    pub body: Expr,
+    pub span: Span,
 }

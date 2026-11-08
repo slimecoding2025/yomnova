@@ -698,104 +698,17 @@ impl SemanticAnalyzer {
                 span,
             } => {
                 let sty = self.analyze_expression(scrutinee)?;
-                let ename = match &sty {
-                    Type::Custom(n) if self.enums.contains_key(n) => n.clone(),
-                    other => {
-                        return Err(SemaError::TypeMismatch {
-                            expected: "an enum value".to_string(),
-                            found: other.to_string(),
-                            span: scrutinee.span,
-                        })
-                    }
-                };
-                let variants = self.enums[&ename].clone();
-                let mut covered: HashSet<String> = HashSet::new();
-                let mut wildcard = false;
+                let mut seen: Vec<&Pattern> = Vec::new();
                 for arm in arms {
-                    if wildcard {
-                        return Err(SemaError::Invalid {
-                            message: "this arm can never run: `_` above already matches everything"
-                                .to_string(),
-                            span: arm.span,
-                        });
-                    }
-                    match &arm.pattern {
-                        Pattern::Wildcard => {
-                            wildcard = true;
-                            self.analyze_block(&arm.body)?;
-                        }
-                        Pattern::Variant {
-                            enum_name,
-                            variant,
-                            parens,
-                            binding,
-                        } => {
-                            if *enum_name != ename {
-                                return Err(SemaError::Invalid {
-                                    message: format!(
-                                        "pattern is for enum '{enum_name}' but the matched value is '{ename}'"
-                                    ),
-                                    span: arm.span,
-                                });
-                            }
-                            let Some((_, payload)) = variants.iter().find(|(n, _)| n == variant)
-                            else {
-                                return Err(SemaError::Invalid {
-                                    message: format!("enum '{ename}' has no variant '{variant}'"),
-                                    span: arm.span,
-                                });
-                            };
-                            if !covered.insert(variant.clone()) {
-                                return Err(SemaError::Invalid {
-                                    message: format!(
-                                        "variant '{ename}.{variant}' is matched more than once"
-                                    ),
-                                    span: arm.span,
-                                });
-                            }
-                            if payload.is_some() != *parens {
-                                return Err(SemaError::Invalid {
-                                    message: if payload.is_some() {
-                                        format!("variant '{ename}.{variant}' carries a value; write {ename}.{variant}(name) or {ename}.{variant}(_)")
-                                    } else {
-                                        format!("variant '{ename}.{variant}' carries no value; remove the parentheses")
-                                    },
-                                    span: arm.span,
-                                });
-                            }
-                            self.enter_scope();
-                            let declared = match (binding, payload) {
-                                (Some(b), Some(t)) => self.declare_symbol(
-                                    b.clone(),
-                                    t.clone(),
-                                    false,
-                                    false,
-                                    arm.span,
-                                ),
-                                _ => Ok(()),
-                            };
-                            let result = declared.and_then(|_| self.analyze_block(&arm.body));
-                            self.leave_scope();
-                            result?;
-                        }
-                    }
+                    let binds = self.check_arm_pattern(&seen, &arm.pattern, &sty, arm.span)?;
+                    seen.push(&arm.pattern);
+                    self.enter_scope();
+                    let declared = self.declare_pattern_bindings(binds, arm.span);
+                    let result = declared.and_then(|_| self.analyze_block(&arm.body));
+                    self.leave_scope();
+                    result?;
                 }
-                if !wildcard {
-                    let missing: Vec<String> = variants
-                        .iter()
-                        .filter(|(n, _)| !covered.contains(n))
-                        .map(|(n, _)| format!("{ename}.{n}"))
-                        .collect();
-                    if !missing.is_empty() {
-                        return Err(SemaError::Invalid {
-                            message: format!(
-                                "match is not exhaustive: missing {} (add the arms or a `_` arm)",
-                                missing.join(", ")
-                            ),
-                            span: *span,
-                        });
-                    }
-                }
+                self.check_exhaustive(&seen, &sty, *span)?;
             }
             Stmt::For {
                 var,
@@ -856,6 +769,43 @@ impl SemanticAnalyzer {
 
     pub fn analyze_expression(&mut self, expr: &Expr) -> Result<Type, SemaError> {
         let ty = match &expr.kind {
+            ExprKind::Match { scrutinee, arms } => {
+                let sty = self.analyze_expression(scrutinee)?;
+                if arms.is_empty() {
+                    return Err(SemaError::Invalid {
+                        message: "a match expression needs at least one arm".to_string(),
+                        span: expr.span,
+                    });
+                }
+                let mut seen: Vec<&Pattern> = Vec::new();
+                let mut result_ty: Option<Type> = None;
+                for arm in arms {
+                    let binds = self.check_arm_pattern(&seen, &arm.pattern, &sty, arm.span)?;
+                    seen.push(&arm.pattern);
+                    self.enter_scope();
+                    let declared = self.declare_pattern_bindings(binds, arm.span);
+                    let body = declared.and_then(|_| self.analyze_expression(&arm.body));
+                    self.leave_scope();
+                    let body = body?;
+                    match &result_ty {
+                        None => result_ty = Some(body),
+                        Some(first) => {
+                            if !body.is_assignable_to(first) {
+                                return Err(SemaError::TypeMismatch {
+                                    expected: first.to_string(),
+                                    found: body.to_string(),
+                                    span: arm.body.span,
+                                });
+                            }
+                            if *first == Type::Unknown {
+                                result_ty = Some(body);
+                            }
+                        }
+                    }
+                }
+                self.check_exhaustive(&seen, &sty, expr.span)?;
+                result_ty.unwrap_or(Type::Unknown)
+            }
             ExprKind::Integer(_) => Type::Int,
             ExprKind::Float(_) => Type::Float,
             ExprKind::Text(_) => Type::Text,
@@ -1313,6 +1263,256 @@ impl SemanticAnalyzer {
             });
         }
         Ok(Type::Ref(Box::new(sym.ty), mutable))
+    }
+
+    /// Checks one arm's pattern against the matched type; returns the names it binds and their types.
+    /// Rejects an arm that earlier arms already cover completely.
+    fn check_arm_pattern(
+        &self,
+        prev: &[&Pattern],
+        pat: &Pattern,
+        ty: &Type,
+        span: Span,
+    ) -> Result<Vec<(String, Type)>, SemaError> {
+        if prev.iter().any(|p| p.is_irrefutable()) {
+            return Err(SemaError::Invalid {
+                message: "this arm can never run: `_` above already matches everything".to_string(),
+                span,
+            });
+        }
+        let mut binds = Vec::new();
+        self.check_pattern(pat, ty, span, &mut binds)?;
+        if self.covers_pattern(prev, pat, ty) {
+            return Err(SemaError::Invalid {
+                message: "this arm can never run: earlier arms already cover every case it matches (a case is matched more than once)".to_string(),
+                span,
+            });
+        }
+        Ok(binds)
+    }
+
+    fn check_pattern(
+        &self,
+        pat: &Pattern,
+        ty: &Type,
+        span: Span,
+        binds: &mut Vec<(String, Type)>,
+    ) -> Result<(), SemaError> {
+        let bad = |what: &str| SemaError::Invalid {
+            message: format!("pattern {what} cannot match a value of type {ty}"),
+            span,
+        };
+        match pat {
+            Pattern::Wildcard => Ok(()),
+            Pattern::Binding(n) => {
+                binds.push((n.clone(), ty.clone()));
+                Ok(())
+            }
+            Pattern::Int(n) => {
+                if matches!(ty, Type::Int | Type::Unknown) {
+                    Ok(())
+                } else {
+                    Err(bad(&n.to_string()))
+                }
+            }
+            Pattern::Bool(b) => {
+                if matches!(ty, Type::Bool | Type::Unknown) {
+                    Ok(())
+                } else {
+                    Err(bad(&b.to_string()))
+                }
+            }
+            Pattern::Variant {
+                enum_name,
+                variant,
+                payload,
+            } => {
+                let ename = match ty {
+                    Type::Custom(n) if self.enums.contains_key(n) => n.clone(),
+                    Type::Unknown => enum_name.clone(),
+                    other => {
+                        return Err(SemaError::TypeMismatch {
+                            expected: format!("a value matching {enum_name}.{variant}"),
+                            found: other.to_string(),
+                            span,
+                        })
+                    }
+                };
+                if *enum_name != ename {
+                    return Err(SemaError::Invalid {
+                        message: format!(
+                            "pattern is for enum '{enum_name}' but the matched value is '{ename}'"
+                        ),
+                        span,
+                    });
+                }
+                let Some(variants) = self.enums.get(&ename) else {
+                    return Err(SemaError::Invalid {
+                        message: format!("unknown enum '{ename}'"),
+                        span,
+                    });
+                };
+                let Some((_, carried)) = variants.iter().find(|(n, _)| n == variant) else {
+                    return Err(SemaError::Invalid {
+                        message: format!("enum '{ename}' has no variant '{variant}'"),
+                        span,
+                    });
+                };
+                match (carried, payload) {
+                    (Some(t), Some(p)) => self.check_pattern(p, t, span, binds),
+                    (Some(_), None) => Err(SemaError::Invalid {
+                        message: format!("variant '{ename}.{variant}' carries a value; write {ename}.{variant}(name) or {ename}.{variant}(_)"),
+                        span,
+                    }),
+                    (None, Some(_)) => Err(SemaError::Invalid {
+                        message: format!("variant '{ename}.{variant}' carries no value; remove the parentheses"),
+                        span,
+                    }),
+                    (None, None) => Ok(()),
+                }
+            }
+        }
+    }
+
+    fn declare_pattern_bindings(
+        &mut self,
+        binds: Vec<(String, Type)>,
+        span: Span,
+    ) -> Result<(), SemaError> {
+        for (name, ty) in binds {
+            self.declare_symbol(name, ty, false, false, span)?;
+        }
+        Ok(())
+    }
+
+    /// Do the patterns together match every value of type `ty`?
+    fn covers(&self, pats: &[&Pattern], ty: &Type) -> bool {
+        if pats.iter().any(|p| p.is_irrefutable()) {
+            return true;
+        }
+        match ty {
+            Type::Custom(e) => {
+                let Some(variants) = self.enums.get(e) else {
+                    return false;
+                };
+                variants.iter().all(|(v, carried)| {
+                    let rows: Vec<&Pattern> = pats
+                        .iter()
+                        .copied()
+                        .filter(|p| matches!(p, Pattern::Variant { variant, .. } if variant == v))
+                        .collect();
+                    if rows.is_empty() {
+                        return false;
+                    }
+                    match carried {
+                        Some(t) => {
+                            let subs: Vec<&Pattern> = rows
+                                .iter()
+                                .filter_map(|p| match p {
+                                    Pattern::Variant {
+                                        payload: Some(b), ..
+                                    } => Some(&**b),
+                                    _ => None,
+                                })
+                                .collect();
+                            self.covers(&subs, t)
+                        }
+                        None => true,
+                    }
+                })
+            }
+            Type::Bool => {
+                pats.iter().any(|p| matches!(p, Pattern::Bool(true)))
+                    && pats.iter().any(|p| matches!(p, Pattern::Bool(false)))
+            }
+            _ => false,
+        }
+    }
+
+    /// Do the earlier patterns already match every value that `pat` matches?
+    fn covers_pattern(&self, prev: &[&Pattern], pat: &Pattern, ty: &Type) -> bool {
+        match pat {
+            Pattern::Wildcard | Pattern::Binding(_) => self.covers(prev, ty),
+            Pattern::Int(n) => prev
+                .iter()
+                .any(|p| p.is_irrefutable() || matches!(p, Pattern::Int(m) if m == n)),
+            Pattern::Bool(b) => prev
+                .iter()
+                .any(|p| p.is_irrefutable() || matches!(p, Pattern::Bool(c) if c == b)),
+            Pattern::Variant {
+                enum_name: _,
+                variant,
+                payload,
+            } => {
+                let wild = Pattern::Wildcard;
+                let mut subs: Vec<&Pattern> = Vec::new();
+                let mut any_row = false;
+                for p in prev {
+                    match p {
+                        Pattern::Variant {
+                            variant: v2,
+                            payload: p2,
+                            ..
+                        } if v2 == variant => {
+                            any_row = true;
+                            subs.push(p2.as_deref().unwrap_or(&wild));
+                        }
+                        p if p.is_irrefutable() => {
+                            any_row = true;
+                            subs.push(&wild);
+                        }
+                        _ => {}
+                    }
+                }
+                if !any_row {
+                    return false;
+                }
+                match (payload, ty) {
+                    (Some(sub), Type::Custom(e)) => {
+                        let carried = self
+                            .enums
+                            .get(e)
+                            .and_then(|vs| vs.iter().find(|(n, _)| n == variant))
+                            .and_then(|(_, t)| t.clone());
+                        match carried {
+                            Some(t) => self.covers_pattern(&subs, sub, &t),
+                            None => true,
+                        }
+                    }
+                    _ => true,
+                }
+            }
+        }
+    }
+
+    fn check_exhaustive(&self, pats: &[&Pattern], ty: &Type, span: Span) -> Result<(), SemaError> {
+        if self.covers(pats, ty) {
+            return Ok(());
+        }
+        let hint = match ty {
+            Type::Custom(e) if self.enums.contains_key(e) => {
+                let missing: Vec<String> = self.enums[e]
+                    .iter()
+                    .filter(|(v, _)| {
+                        !pats
+                            .iter()
+                            .any(|p| matches!(p, Pattern::Variant { variant, .. } if variant == v))
+                    })
+                    .map(|(v, _)| format!("{e}.{v}"))
+                    .collect();
+                if missing.is_empty() {
+                    "some nested cases are not covered".to_string()
+                } else {
+                    format!("missing {}", missing.join(", "))
+                }
+            }
+            Type::Bool => "both `true` and `false` must be covered".to_string(),
+            _ => "literal patterns never cover every value".to_string(),
+        };
+        Err(SemaError::Invalid {
+            message: format!("match is not exhaustive: {hint} (add the arms or a `_` arm)"),
+            span,
+        })
     }
 
     fn enter_scope(&mut self) {

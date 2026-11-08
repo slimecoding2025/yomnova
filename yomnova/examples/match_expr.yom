@@ -1,0 +1,49 @@
+// `match` as an expression, nested patterns, and literal patterns.
+enum Inner {
+    Num(Int),
+    None,
+}
+
+enum Shape {
+    Circle(Int),
+    Boxed(Inner),
+    Empty,
+}
+
+fn area(s: Shape) -> Int {
+    return match s {
+        Shape.Circle(r) => r * r * 3,
+        Shape.Boxed(Inner.Num(n)) => n,
+        Shape.Boxed(Inner.None) => 0 - 1,
+        Shape.Empty => 0
+    }
+}
+
+fn kind(n: Int) -> Text {
+    return match n {
+        0 => "zero",
+        1 => "one",
+        _ => "many"
+    }
+}
+
+fn main() -> Int {
+    emit(area(Shape.Circle(2)))
+    emit(area(Shape.Boxed(Inner.Num(7))))
+    emit(area(Shape.Boxed(Inner.None)))
+    emit(area(Shape.Empty))
+    emit(kind(0))
+    emit(kind(1))
+    emit(kind(5))
+    let flag = match 1 < 2 {
+        true => "yes",
+        false => "no"
+    }
+    emit(flag)
+    let total = 10 + match Shape.Circle(1) {
+        Shape.Circle(r) => r,
+        _ => 0
+    }
+    emit(total)
+    return 0
+}

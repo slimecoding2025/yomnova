@@ -188,11 +188,9 @@ impl Lint {
                 self.expr(scrutinee);
                 for arm in arms {
                     self.scopes.push(Vec::new());
-                    if let Pattern::Variant {
-                        binding: Some(name),
-                        ..
-                    } = &arm.pattern
-                    {
+                    let mut names = Vec::new();
+                    arm.pattern.bindings(&mut names);
+                    for name in &names {
                         self.declare(name, arm.span);
                     }
                     self.block(&arm.body);
@@ -231,6 +229,19 @@ impl Lint {
             }
             ExprKind::Unary { operand, .. } => self.expr(operand),
             ExprKind::Borrow { operand, .. } => self.expr(operand),
+            ExprKind::Match { scrutinee, arms } => {
+                self.expr(scrutinee);
+                for arm in arms {
+                    self.scopes.push(Vec::new());
+                    let mut names = Vec::new();
+                    arm.pattern.bindings(&mut names);
+                    for name in &names {
+                        self.declare(name, arm.span);
+                    }
+                    self.expr(&arm.body);
+                    self.pop();
+                }
+            }
             ExprKind::Call { callee, args } => {
                 self.expr(callee);
                 args.iter().for_each(|a| self.expr(a));

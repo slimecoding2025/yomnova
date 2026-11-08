@@ -2,6 +2,25 @@
 
 ## Unreleased — 2026-11-03
 
+### `match` as an expression, nested and literal patterns
+* **Added** `match` as an expression (`let a = match s { Shape.Circle(r) => r * 3, … }`, arms are expressions of one common type), patterns
+  `_`, bindings, integer literals (`-1`), `true`/`false`, and enum patterns whose payload is any pattern (nested to any depth). Exhaustiveness
+  covers nested cases (`some nested cases are not covered`), booleans need both values, integer literals need a `_`/binding arm, and
+  unreachable arms are errors. Moves inside arms follow the existing rules; arm bindings do not leak. `examples/match_expr.yom`.
+* **Changed:** matching a non-enum value with only `_`/literal arms is now valid (it was "expected an enum value"); an enum pattern against
+  a non-enum value is a type error.
+* **Not done:** guards, or-patterns, struct patterns, range patterns.
+
+### Network protocol library (`import std.net`)
+* **Added** `std.net`, written in YOMNOVA on `NetworkBuffer` (`stdlib/net.yom`): IPv4 readers (`ipv4_version header_len total_length ttl protocol src dst`
+  with `src`/`dst` as `IPv4` values), `ipv4_compute_checksum`, `ipv4_checksum_ok`, `ipv4_valid` (version, lengths, checksum), `ipv4_payload`; UDP
+  readers (`udp_src_port dst_port length payload`); TCP readers (`tcp_src_port dst_port seq ack header_len syn ack_flag fin rst psh payload`);
+  builders `make_udp` and `make_ipv4` (correct checksum); `from_bytes`/`to_bytes`. Tested against the Wikipedia IPv4 checksum vector (0xb861),
+  a built UDP-in-IPv4 packet and a TCP SYN+ACK header; short buffers and bad addresses are errors. `examples/net.yom`.
+  Library functions that call each other are pulled in together. 6 new tests (137 Rust tests total, with the match tests).
+* **Limits:** no Ethernet, IPv6, options, fragmentation or reassembly; TCP/UDP checksums are not verified or computed; the readers only check
+  bounds (use `ipv4_valid` on untrusted bytes); no sockets: this parses and builds bytes, it does not send them.
+
 ### Per-library checking
 * **Added**: the CLI checks every imported library on its own (nested ones too, once each) before checking the combined program, so an error in
   `lib.yom` is reported as `lib.yom:6:18` with that file's source, not as a line past the end of the importing file. 1 new test (131 Rust tests total).

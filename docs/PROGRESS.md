@@ -19,7 +19,8 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | Ownership: moves, branches, loops, aliasing | Partial (moves only) | `ownership_rules` |
 | `struct` (declaration, literal, field read, nesting) | Implemented | `struct_*` and `field_access_errors` regression tests |
 | Warnings: unused binding, unreachable code | Implemented | `*_warning*`, `unused_*`, `code_after_return_*` regression tests |
-| `enum` and `match` (statement, exhaustive, one-level patterns) | Implemented | `enum_*` and `match_*` regression tests |
+| `enum` and `match` (statement and expression, nested/literal/binding patterns, exhaustiveness incl. nested cases) | Implemented | `enum_*`, `match_*`, `nested_pattern_checks`, `examples/match_expr.yom` |
+| Match guards, or-patterns, struct patterns | Planned | — |
 | `for … in` over arrays, `len`, `push` | Implemented | `for_*`, `len_*`, `push_*` regression tests |
 | methods, lambdas | Parsed-only, rejected clearly | `unsupported_syntax_is_reported_not_miscompiled`, `static_checks` |
 | `import`, `type` | Planned (reserved words only) | — |
@@ -28,6 +29,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | Bytecode verifier: structure + operand-stack depth consistency | Implemented | `stack_verifier_*`, `every_compiled_example_passes_the_stack_verifier` |
 | Operand-type verification of bytecode | Partial (constants, operator results and locals; not call results, fields or elements) | `type_verifier_rejects_statically_wrong_operands` |
 | File access (`file_*`), CLI opt-in `--allow-fs DIR`, confined to DIR | Implemented | `file_access_is_off_by_default_*`, `examples/files.yom` |
+| Protocol library `std.net`: IPv4/UDP/TCP readers, IPv4 checksum and validation, UDP/IPv4 builders | Implemented (parsing/building only) | `std_net_*`, `examples/net.yom` |
 | Text library: `str_*` natives and `import std.text` | Implemented | `text_library_works_*`, `text_errors_are_reported_*`, `examples/text.yom` |
 | File imports `import "f.yom" as name` with `pub` visibility, namespaced functions/structs/enums (CLI) | Implemented (source renaming) | `imports_rename_and_nest`, `bad_imports_are_errors`, `examples/modules/` |
 | Each imported library type-checked and ownership-checked on its own, errors reported in its own file | Implemented (CLI) | `libraries_are_checked_on_their_own_*` |
@@ -48,7 +50,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 131 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 137 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.

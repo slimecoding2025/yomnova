@@ -1,0 +1,196 @@
+// std.net: parse and build IPv4, UDP and TCP headers on a NetworkBuffer.
+// Written in YOMNOVA. Offsets follow the RFCs; all multi-byte fields are big-endian.
+// Every reader takes a borrowed buffer (`&b`) that starts at that protocol's header.
+// Out-of-range reads are bounds errors from buf_get*, never silent zeros.
+
+fn net_from_bytes(xs: &Array<Int>) -> NetworkBuffer {
+    mut b: NetworkBuffer = NetworkBuffer(len(xs))
+    mut i = 0
+    while i < len(xs) {
+        b = buf_set(b, i, xs[i])
+        i = i + 1
+    }
+    return b
+}
+
+fn net_to_bytes(b: &NetworkBuffer) -> Array<Int> {
+    mut out: Array<Int> = []
+    mut i = 0
+    while i < len(b) {
+        out = push(out, buf_get(b, i))
+        i = i + 1
+    }
+    return out
+}
+
+fn net_ipv4_version(b: &NetworkBuffer) -> Int {
+    return buf_get(b, 0) / 16
+}
+
+fn net_ipv4_header_len(b: &NetworkBuffer) -> Int {
+    return (buf_get(b, 0) % 16) * 4
+}
+
+fn net_ipv4_total_length(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 2)
+}
+
+fn net_ipv4_ttl(b: &NetworkBuffer) -> Int {
+    return buf_get(b, 8)
+}
+
+fn net_ipv4_protocol(b: &NetworkBuffer) -> Int {
+    return buf_get(b, 9)
+}
+
+fn net_ipv4_src(b: &NetworkBuffer) -> IPv4 {
+    return IPv4(str_from_int(buf_get(b, 12)) + "." + str_from_int(buf_get(b, 13)) + "." + str_from_int(buf_get(b, 14)) + "." + str_from_int(buf_get(b, 15)))
+}
+
+fn net_ipv4_dst(b: &NetworkBuffer) -> IPv4 {
+    return IPv4(str_from_int(buf_get(b, 16)) + "." + str_from_int(buf_get(b, 17)) + "." + str_from_int(buf_get(b, 18)) + "." + str_from_int(buf_get(b, 19)))
+}
+
+// Ones-complement checksum of the header with the checksum field (bytes 10..12) taken as zero.
+fn net_ipv4_compute_checksum(b: &NetworkBuffer) -> Int {
+    let n = (buf_get(b, 0) % 16) * 4
+    mut sum = 0
+    mut i = 0
+    while i < n {
+        if i != 10 {
+            sum = sum + buf_get16(b, i)
+        }
+        i = i + 2
+    }
+    while sum > 65535 {
+        sum = (sum % 65536) + (sum / 65536)
+    }
+    return 65535 - sum
+}
+
+fn net_ipv4_checksum_ok(b: &NetworkBuffer) -> Bool {
+    return buf_get16(b, 10) == net_ipv4_compute_checksum(&b)
+}
+
+// True when this really is a well-formed IPv4 header: version 4, at least 20 header bytes, a total length that
+// covers the header and fits in the buffer, and a correct checksum. The readers above only check bounds;
+// call this first on bytes you did not build yourself.
+fn net_ipv4_valid(b: &NetworkBuffer) -> Bool {
+    if len(b) < 20 {
+        return false
+    }
+    let hl = net_ipv4_header_len(&b)
+    let total = buf_get16(b, 2)
+    if buf_get(b, 0) / 16 != 4 {
+        return false
+    }
+    if hl < 20 {
+        return false
+    }
+    if total < hl {
+        return false
+    }
+    if total > len(b) {
+        return false
+    }
+    return net_ipv4_checksum_ok(&b)
+}
+
+// Bytes after the header, up to the total length field (buf_slice takes offset and length).
+fn net_ipv4_payload(b: &NetworkBuffer) -> NetworkBuffer {
+    let hl = net_ipv4_header_len(&b)
+    return buf_slice(b, hl, buf_get16(b, 2) - hl)
+}
+
+fn net_udp_src_port(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 0)
+}
+
+fn net_udp_dst_port(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 2)
+}
+
+fn net_udp_length(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 4)
+}
+
+fn net_udp_payload(b: &NetworkBuffer) -> NetworkBuffer {
+    return buf_slice(b, 8, buf_get16(b, 4) - 8)
+}
+
+fn net_tcp_src_port(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 0)
+}
+
+fn net_tcp_dst_port(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 2)
+}
+
+fn net_tcp_seq(b: &NetworkBuffer) -> Int {
+    return buf_get32(b, 4)
+}
+
+fn net_tcp_ack(b: &NetworkBuffer) -> Int {
+    return buf_get32(b, 8)
+}
+
+fn net_tcp_header_len(b: &NetworkBuffer) -> Int {
+    return (buf_get(b, 12) / 16) * 4
+}
+
+fn net_tcp_fin(b: &NetworkBuffer) -> Bool {
+    return buf_get(b, 13) % 2 == 1
+}
+
+fn net_tcp_syn(b: &NetworkBuffer) -> Bool {
+    return (buf_get(b, 13) / 2) % 2 == 1
+}
+
+fn net_tcp_rst(b: &NetworkBuffer) -> Bool {
+    return (buf_get(b, 13) / 4) % 2 == 1
+}
+
+fn net_tcp_psh(b: &NetworkBuffer) -> Bool {
+    return (buf_get(b, 13) / 8) % 2 == 1
+}
+
+fn net_tcp_ack_flag(b: &NetworkBuffer) -> Bool {
+    return (buf_get(b, 13) / 16) % 2 == 1
+}
+
+fn net_tcp_payload(b: &NetworkBuffer) -> NetworkBuffer {
+    let hl = net_tcp_header_len(&b)
+    return buf_slice(b, hl, len(b) - hl)
+}
+
+// An 8-byte UDP header followed by the payload (checksum 0 = "not computed", legal over IPv4).
+fn net_make_udp(src_port: Int, dst_port: Int, payload: NetworkBuffer) -> NetworkBuffer {
+    mut h: NetworkBuffer = NetworkBuffer(8)
+    h = buf_set16(h, 0, src_port)
+    h = buf_set16(h, 2, dst_port)
+    h = buf_set16(h, 4, 8 + len(payload))
+    return buf_concat(h, payload)
+}
+
+// A 20-byte IPv4 header (no options, DF clear, ID 0) with a correct checksum, then the payload.
+// Addresses are dotted text such as "192.168.0.1".
+fn net_make_ipv4(src: Text, dst: Text, protocol: Int, ttl: Int, payload: NetworkBuffer) -> NetworkBuffer {
+    let s = str_split(src, ".")
+    let d = str_split(dst, ".")
+    mut h: NetworkBuffer = NetworkBuffer(20)
+    h = buf_set(h, 0, 69)
+    h = buf_set16(h, 2, 20 + len(payload))
+    h = buf_set(h, 8, ttl)
+    h = buf_set(h, 9, protocol)
+    h = buf_set(h, 12, str_parse_int(s[0]))
+    h = buf_set(h, 13, str_parse_int(s[1]))
+    h = buf_set(h, 14, str_parse_int(s[2]))
+    h = buf_set(h, 15, str_parse_int(s[3]))
+    h = buf_set(h, 16, str_parse_int(d[0]))
+    h = buf_set(h, 17, str_parse_int(d[1]))
+    h = buf_set(h, 18, str_parse_int(d[2]))
+    h = buf_set(h, 19, str_parse_int(d[3]))
+    let ck = net_ipv4_compute_checksum(&h)
+    h = buf_set16(h, 10, ck)
+    return buf_concat(h, payload)
+}

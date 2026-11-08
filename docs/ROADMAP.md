@@ -11,10 +11,10 @@ Playground backed by the real compiler.
 
 ## Next (planned, in rough order)
 1. *(Done: several errors per run and two warnings — unused binding, unreachable code. Still open: more warnings, and lexical errors are reported one at a time.)*
-2. *(Done: `struct`, `enum` with exhaustive `match`, `for … in` over arrays, `len` and `push`. Field and element assignment are done. Still missing: nested patterns, `match` as an expression.)*
+2. *(Done: `struct`, `enum` with exhaustive `match`, `for … in` over arrays, `len` and `push`. Field and element assignment are done. `match` is an expression too, with nested, literal and binding patterns. Still missing: guards, or-patterns, struct patterns.)*
 3. *(Done, in a different shape than first planned: bytecode → IR → optimiser → bytecode, with a differential test that compares optimised and unoptimised runs. Not done: lowering straight from the AST, SSA/3-address form, register allocation, inlining, optimising floats or string builders.)*
 4. *(Done in a deliberately small form: `&T` / `&mut T` parameters with call-scoped borrow checking, so no lifetimes are needed. Still open: stored/returned references, borrowing fields and elements, real lifetime parameters.)*
-5. *(Done: `IPv6`, `NetworkBuffer` with typed bounds-checked access, `Packet` as a container. Still open: protocol parsing, `TCP`/`UDP`.)*
+5. *(Done: `IPv6`, `NetworkBuffer` with typed bounds-checked access, `Packet` as a container. `std.net` parses and builds IPv4/UDP/TCP headers. Still open: Ethernet/IPv6/options, TCP/UDP checksums, real sockets (`TCP`/`UDP` types).)*
 6. *(Done: `.yomc` binary format v2, `build` and `exec`. Done: a verifier for jump targets, constants, instruction boundaries and operand-stack depth. Operand types are verified where statically known (constants, operator results, local slots). Still open: typing of call results, fields and elements, call-arity checks, format stability across versions, signing.)*
 7. *(Done for built-in modules only: `import std.math`, `import std.arrays`, expanded from YOMNOVA source before lexing. Done in the CLI: `import "file.yom" as name` with `pub` visibility and namespaced functions/structs/enums (source renaming). Each library is also checked on its own. Still open: separate compilation (per-library bytecode, caching), glob imports, a separate `yomnova-stdlib` crate, generic array functions, text/IO modules.)*
 

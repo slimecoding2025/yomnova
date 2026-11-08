@@ -71,7 +71,7 @@ A function with a non-`Unit` return type must return on every path (`MissingRetu
 | `return [expr]` | Implemented |
 | `flow name = source |> stage …` | Implemented (see §6) |
 | expression statement | Implemented |
-| `match value { Enum.Variant(x) => { … } … }` | Implemented, as a statement (not an expression). Patterns are `Enum.Variant`, `Enum.Variant(name)`, `Enum.Variant(_)` and `_`. The match must be exhaustive (every variant, or a `_` arm), may not repeat a variant, and arms after `_` are rejected. A function whose arms all `return` needs no `return` after the `match`. No nested patterns, guards or literal patterns. |
+| `match value { Enum.Variant(x) => { … } … }` | Implemented, as a statement with block arms and as an expression (`let x = match v { P => expr, … }`) where every arm yields the same type. Patterns: `_`, a lower-case binding name, an integer literal (`3`, `-1`), `true`/`false`, and `Enum.Variant` / `Enum.Variant(pattern)` with the payload pattern nested to any depth. The checker requires exhaustiveness (every variant covered, nested cases included, `bool` needs both values, and integer literals need a `_` or binding arm), and rejects arms that can never run (a repeated pattern, or anything after `_`/a binding). A function whose statement arms all `return` needs no `return` after the `match`. No guards (`if` in an arm), or-patterns, struct patterns or range patterns. |
 | `import`, `type` | Planned — the words are reserved, but there is no syntax for them |
 
 Blocks introduce lexical scopes. A name can be shadowed in an inner block but not redeclared in the same scope.
@@ -135,6 +135,11 @@ Ownership is checked statically after type checking; violations stop the program
 * **File access (opt-in).** `file_read(path) -> Text`, `file_write(path, text)`, `file_append(path, text)`, `file_exists(path) -> Bool`.
   Disabled unless the CLI is run with `--allow-fs <DIR>`; then paths are relative to DIR and cannot leave it (no absolute paths, no `..`,
   symlinks that point outside are refused). UTF-8 text, max 16 MiB. The web playground never enables it.
+* **Network protocols (`import std.net`).** On a `NetworkBuffer` starting at the header: `net.ipv4_version header_len total_length ttl protocol src dst
+  compute_checksum checksum_ok valid payload`, `net.udp_src_port dst_port length payload`, `net.tcp_src_port dst_port seq ack header_len syn ack_flag fin
+  rst psh payload`, builders `net.make_udp(src, dst, payload)` and `net.make_ipv4("a.b.c.d", "e.f.g.h", protocol, ttl, payload)`, and
+  `net.from_bytes(&Array<Int>)` / `net.to_bytes(&buf)`. Readers only check bounds; `net.ipv4_valid` checks version, lengths and checksum. No
+  Ethernet, IPv6, options, fragmentation, or TCP/UDP checksums, and no sockets.
 * **Text library.** `import std.text`: `text.upper text.lower text.trim text.contains text.starts_with text.ends_with text.find text.slice
   text.repeat text.replace text.split text.from_int text.parse_int` (first argument `&s`). The natives can be called directly as
   `str_upper(s)` etc. Positions are characters; `find` gives -1 if absent; `slice(s, from, to)` needs `0 <= from <= to <= len`; an empty
