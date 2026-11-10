@@ -310,7 +310,15 @@ impl<'a> Lexer<'a> {
             ',' => Ok(Token::new(TokenKind::Comma, span1)),
             ':' => Ok(Token::new(TokenKind::Colon, span1)),
             ';' => Ok(Token::new(TokenKind::Semicolon, span1)),
-            '.' => Ok(Token::new(TokenKind::Dot, span1)),
+            '.' => {
+                if self.peek().1 == '.' && self.peek_second().map(|(_, c)| c) == Some('=') {
+                    self.advance();
+                    let (end_idx, _) = self.advance();
+                    Ok(Token::new(TokenKind::DotDotEq, make_span(end_idx + 1, 0)))
+                } else {
+                    Ok(Token::new(TokenKind::Dot, span1))
+                }
+            }
             '=' => {
                 if !self.is_at_end() && self.peek().1 == '=' {
                     let (end_idx, _) = self.advance();

@@ -291,6 +291,8 @@ pub enum Pattern {
     Binding(String),
     /// An integer literal (`3`, `-1`).
     Int(i64),
+    /// `low..=high`: an integer in the inclusive range.
+    Range(i64, i64),
     /// `true` or `false`.
     Bool(bool),
     /// `Enum.Variant`, or `Enum.Variant(pattern)` with any pattern for the carried value (nesting allowed).

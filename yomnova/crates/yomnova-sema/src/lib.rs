@@ -1348,6 +1348,13 @@ impl SemanticAnalyzer {
                     Err(bad(&n.to_string()))
                 }
             }
+            Pattern::Range(lo, hi) => {
+                if matches!(ty, Type::Int | Type::Unknown) {
+                    Ok(())
+                } else {
+                    Err(bad(&format!("{lo}..={hi}")))
+                }
+            }
             Pattern::Bool(b) => {
                 if matches!(ty, Type::Bool | Type::Unknown) {
                     Ok(())
@@ -1466,9 +1473,14 @@ impl SemanticAnalyzer {
     fn covers_pattern(&self, prev: &[&Pattern], pat: &Pattern, ty: &Type) -> bool {
         match pat {
             Pattern::Wildcard | Pattern::Binding(_) => self.covers(prev, ty),
-            Pattern::Int(n) => prev
-                .iter()
-                .any(|p| p.is_irrefutable() || matches!(p, Pattern::Int(m) if m == n)),
+            Pattern::Int(n) => prev.iter().any(|p| {
+                p.is_irrefutable()
+                    || matches!(p, Pattern::Int(m) if m == n)
+                    || matches!(p, Pattern::Range(a, b) if a <= n && n <= b)
+            }),
+            Pattern::Range(lo, hi) => prev.iter().any(|p| {
+                p.is_irrefutable() || matches!(p, Pattern::Range(a, b) if a <= lo && hi <= b)
+            }),
             Pattern::Bool(b) => prev
                 .iter()
                 .any(|p| p.is_irrefutable() || matches!(p, Pattern::Bool(c) if c == b)),

@@ -44,7 +44,7 @@ primary      = "match" expr "{" arm_expr { "," arm_expr } [ "," ] "}" | INT | FL
 args         = expr { "," expr } ;
 arm_expr     = pattern { "|" pattern } [ "if" expr ] "=>" expr ;   (* guard: the arm runs only if it is true *)
 pattern      = "_" | IDENT                       (* lower-case name: matches anything, binds it *)
-             | [ "-" ] INT | "true" | "false"   (* literal patterns *)
+             | [ "-" ] INT [ "..=" [ "-" ] INT ] | "true" | "false"   (* literal patterns *)
              | IDENT "." IDENT [ "(" pattern ")" ] ;   (* Enum.Variant, Enum.Variant(pattern): nesting allowed *)
 struct_lit   = UPPER_IDENT "{" IDENT ":" expr { "," IDENT ":" expr } [ "," ] "}" ;   (* only when an uppercase name is followed by `{ ident :` *)
 

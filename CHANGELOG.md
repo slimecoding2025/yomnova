@@ -2,6 +2,13 @@
 
 ## Unreleased — 2026-11-03
 
+### Range patterns
+* **Added** `low..=high` integer range patterns (inclusive, negative bounds allowed, `-5..=-1`), usable in both `match` forms and inside or-patterns.
+  An empty range (`5..=1`) is an error; a range against a non-Int value is a type error; an arm fully covered by earlier arms (a range inside an earlier
+  range, a literal inside a range) is "can never run"; ranges never satisfy exhaustiveness on their own, so Int matches still need `_` or a binding arm.
+  New token `..=`. `examples/match_range.yom`, 2 tests (148 Rust tests total).
+* **Limit:** no open-ended ranges (`5..`), no exclusive `..`, no char/Text ranges. Still not done: struct patterns.
+
 ### Or-patterns
 * **Added** `A | B [if guard] => body` in both `match` forms (`Shape.Circle(_) | Shape.Empty => …`, `1 | 2 | 3 => …`). The parser expands it into
   one arm per alternative sharing the guard and body, so exhaustiveness, unreachable-arm and type checks apply to each alternative; all alternatives

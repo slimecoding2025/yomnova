@@ -718,6 +718,16 @@ impl Compiler {
                 self.chunk.write_op(OpCode::Equal, line);
                 fails.push(self.emit_jump(OpCode::JumpIfFalse, line));
             }
+            Pattern::Range(lo, hi) => {
+                for (bound, op) in [(lo, OpCode::GreaterEqual), (hi, OpCode::LessEqual)] {
+                    self.emit_access(hidden, depth, line);
+                    let idx = self.constant(Value::Int(*bound))?;
+                    self.chunk.write_op(OpCode::Constant, line);
+                    self.chunk.write_u16(idx, line);
+                    self.chunk.write_op(op, line);
+                    fails.push(self.emit_jump(OpCode::JumpIfFalse, line));
+                }
+            }
             Pattern::Bool(b) => {
                 self.emit_access(hidden, depth, line);
                 if !*b {

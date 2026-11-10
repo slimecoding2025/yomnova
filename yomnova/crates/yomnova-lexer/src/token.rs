@@ -73,6 +73,7 @@ pub enum TokenKind {
     Arrow,        // ->
     FatArrow,     // =>
     Dot,          // .
+    DotDotEq,     // ..=
 
     // Punctuation
     OpenParen,    // (
@@ -144,6 +145,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Arrow => write!(f, "'->'"),
             TokenKind::FatArrow => write!(f, "'=>'"),
             TokenKind::Dot => write!(f, "'.'"),
+            TokenKind::DotDotEq => write!(f, "'..='"),
             TokenKind::OpenParen => write!(f, "'('"),
             TokenKind::CloseParen => write!(f, "')'"),
             TokenKind::OpenBrace => write!(f, "'{{'"),

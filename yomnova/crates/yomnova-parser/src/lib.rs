@@ -419,20 +419,52 @@ impl Parser {
         Ok(Block { statements, span })
     }
 
+    /// After an integer literal: either that literal or `low..=high`.
+    fn finish_int_pattern(&mut self, low: i64) -> Result<Pattern, ParserError> {
+        if !self.check(&TokenKind::DotDotEq) {
+            return Ok(Pattern::Int(low));
+        }
+        let span = self.current_span();
+        self.advance();
+        let neg = self.check(&TokenKind::Minus);
+        if neg {
+            self.advance();
+        }
+        if let Some(TokenKind::Integer(n)) = self.peek_kind() {
+            let n = if neg { n.wrapping_neg() } else { *n };
+            self.advance();
+            if low > n {
+                return Err(ParserError::Invalid {
+                    message: format!("the range {low}..={n} is empty"),
+                    span,
+                });
+            }
+            return Ok(Pattern::Range(low, n));
+        }
+        Err(ParserError::UnexpectedToken {
+            token: self
+                .peek_kind()
+                .map(|k| format!("{k}"))
+                .unwrap_or_else(|| "<EOF>".to_string()),
+            expected: "an integer after '..=' in a pattern".to_string(),
+            span: self.current_span(),
+        })
+    }
+
     /// `_`, `Enum.Variant`, `Enum.Variant(name)` or `Enum.Variant(_)`.
     fn parse_pattern(&mut self) -> Result<Pattern, ParserError> {
         match self.peek_kind() {
             Some(TokenKind::Integer(n)) => {
                 let n = *n;
                 self.advance();
-                return Ok(Pattern::Int(n));
+                return self.finish_int_pattern(n);
             }
             Some(TokenKind::Minus) => {
                 self.advance();
                 if let Some(TokenKind::Integer(n)) = self.peek_kind() {
                     let n = *n;
                     self.advance();
-                    return Ok(Pattern::Int(n.wrapping_neg()));
+                    return self.finish_int_pattern(n.wrapping_neg());
                 }
                 let span = self.current_span();
                 let token = self

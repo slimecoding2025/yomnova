@@ -1776,3 +1776,30 @@ fn or_pattern_warnings_are_reported_once() {
         "{warnings:?}"
     );
 }
+
+#[test]
+fn range_patterns_match_inclusive_bounds() {
+    let out = run_main(
+        " let f = 0\n emit(match 5 { 1..=5 => \"in\", _ => \"out\" })\n emit(match 6 { 1..=5 => \"in\", _ => \"out\" })\n emit(match 1 { 1..=5 => \"in\", _ => \"out\" })\n emit(match -3 { -5..=-1 => \"neg\", _ => \"out\" })\n emit(match 4 { 1..=3 | 4..=6 => \"two\", _ => \"out\" })\n emit(match 9 { 0..=5 => 1, 6..=100 if false => 2, _ => 3 })",
+    );
+    assert_eq!(out, vec!["in", "out", "in", "neg", "two", "3"]);
+}
+
+#[test]
+fn range_pattern_rules_are_checked() {
+    fails_with(" emit(match 3 { 1..=5 => 1 })", "not exhaustive");
+    fails_with(
+        " emit(match 3 { 1..=5 => 1, 2..=4 => 2, _ => 0 })",
+        "can never run",
+    );
+    fails_with(
+        " emit(match 3 { 1..=5 => 1, 3 => 2, _ => 0 })",
+        "can never run",
+    );
+    fails_with(" emit(match 3 { 5..=1 => 1, _ => 0 })", "is empty");
+    fails_with(
+        " emit(match true { 1..=2 => 1, _ => 0 })",
+        "cannot match a value of type Bool",
+    );
+    fails_with(" emit(match 3 { 1..= => 1, _ => 0 })", "..=");
+}
