@@ -90,6 +90,7 @@ function weight(id: string): number {
   if (id.startsWith("docs/LANGUAGE_SPECIFICATION.md")) return 1.3;
   if (id.startsWith("docs/GRAMMAR.md")) return 1.15;
   if (id.startsWith("README.md") || id.startsWith("docs/ROADMAP.md")) return 0.8;
+  if (id.startsWith("yomnova/examples/")) return 0.85; // the specification explains; examples only illustrate
   return 1;
 }
 

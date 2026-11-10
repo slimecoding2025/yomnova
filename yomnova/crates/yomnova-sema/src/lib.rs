@@ -782,7 +782,7 @@ impl SemanticAnalyzer {
         if arms.is_empty() {
             return Err(SemaError::Invalid {
                 message: "a match expression needs at least one arm".to_string(),
-                span: span,
+                span,
             });
         }
         let mut seen: Vec<&Pattern> = Vec::new();
