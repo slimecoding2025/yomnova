@@ -374,7 +374,7 @@ impl<'a> Lexer<'a> {
                         make_span(end_idx + 1, 0),
                     ))
                 } else {
-                    Err(LexerError::UnexpectedChar { ch, span: span1 })
+                    Ok(Token::new(TokenKind::Bar, span1))
                 }
             }
             _ => Err(LexerError::UnexpectedChar { ch, span: span1 }),

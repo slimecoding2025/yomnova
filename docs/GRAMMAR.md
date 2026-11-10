@@ -23,7 +23,7 @@ statement    = "let" IDENT [ ":" type ] "=" expr
              | "if" expr block [ "else" ( block | if_stmt ) ]
              | "while" expr block
              | "for" IDENT "in" expr block
-             | "match" expr "{" { pattern [ "if" expr ] "=>" block [ "," ] } "}"
+             | "match" expr "{" { pattern { "|" pattern } [ "if" expr ] "=>" block [ "," ] } "}"
              | "return" [ expr ]
              | "flow" IDENT "=" pipeline
              | expr ;
@@ -42,7 +42,7 @@ postfix      = primary { "(" [ args ] ")" | "[" expr "]" | "." IDENT [ "(" [ arg
 primary      = "match" expr "{" arm_expr { "," arm_expr } [ "," ] "}" | INT | FLOAT | STRING | "true" | "false" | "(" expr ")" | "[" [ args ] "]" | IDENT | struct_lit
              | "emit" | "IPv4" | "Port" | "Endpoint" ;
 args         = expr { "," expr } ;
-arm_expr     = pattern [ "if" expr ] "=>" expr ;   (* guard: the arm runs only if it is true *)
+arm_expr     = pattern { "|" pattern } [ "if" expr ] "=>" expr ;   (* guard: the arm runs only if it is true *)
 pattern      = "_" | IDENT                       (* lower-case name: matches anything, binds it *)
              | [ "-" ] INT | "true" | "false"   (* literal patterns *)
              | IDENT "." IDENT [ "(" pattern ")" ] ;   (* Enum.Variant, Enum.Variant(pattern): nesting allowed *)

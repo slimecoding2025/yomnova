@@ -69,6 +69,7 @@ pub enum TokenKind {
     OrOr,         // ||
     Bang,         // !
     PipeGreater,  // |>
+    Bar,          // | (alternatives in a match arm)
     Arrow,        // ->
     FatArrow,     // =>
     Dot,          // .
@@ -139,6 +140,7 @@ impl fmt::Display for TokenKind {
             TokenKind::OrOr => write!(f, "'||'"),
             TokenKind::Bang => write!(f, "'!'"),
             TokenKind::PipeGreater => write!(f, "'|>'"),
+            TokenKind::Bar => write!(f, "'|'"),
             TokenKind::Arrow => write!(f, "'->'"),
             TokenKind::FatArrow => write!(f, "'=>'"),
             TokenKind::Dot => write!(f, "'.'"),

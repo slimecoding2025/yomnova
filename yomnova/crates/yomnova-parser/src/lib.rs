@@ -18,6 +18,8 @@ pub enum ParserError {
     InvalidBorrow { span: Span },
     #[error("Nesting too deep at {span} (limit is {limit})")]
     NestingTooDeep { limit: usize, span: Span },
+    #[error("{message} at {span}")]
+    Invalid { message: String, span: Span },
 }
 
 impl ParserError {
@@ -33,6 +35,7 @@ impl ParserError {
                 Diagnostic::error(self.to_string(), Some(*span))
                     .with_hint("Split the expression or block into smaller parts")
             }
+            ParserError::Invalid { span, .. } => Diagnostic::error(self.to_string(), Some(*span)),
             ParserError::InvalidBorrow { span } => Diagnostic::error(self.to_string(), Some(*span))
                 .with_hint("Write `&name` or `&mut name`; fields and elements cannot be borrowed"),
             ParserError::InvalidAssignmentTarget { span } => {
@@ -574,17 +577,20 @@ impl Parser {
             let mut arms = Vec::new();
             while !self.check(&TokenKind::CloseBrace) && !self.is_at_end() {
                 let a_start = self.current_span();
-                let pattern = self.parse_pattern()?;
+                let patterns = self.parse_alternatives()?;
                 let guard = self.parse_guard()?;
                 self.consume(&TokenKind::FatArrow, "'=>'")?;
                 let body = self.parse_block()?;
                 let span = a_start.merge(body.span);
-                arms.push(MatchArm {
-                    pattern,
-                    guard,
-                    body,
-                    span,
-                });
+                // `A | B => body` is `A => body` and `B => body`.
+                for pattern in patterns {
+                    arms.push(MatchArm {
+                        pattern,
+                        guard: guard.clone(),
+                        body: body.clone(),
+                        span,
+                    });
+                }
                 if self.check(&TokenKind::Comma) {
                     self.advance();
                 }
@@ -719,17 +725,19 @@ impl Parser {
         let mut arms = Vec::new();
         while !self.check(&TokenKind::CloseBrace) && !self.is_at_end() {
             let a_start = self.current_span();
-            let pattern = self.parse_pattern()?;
+            let patterns = self.parse_alternatives()?;
             let guard = self.parse_guard()?;
             self.consume(&TokenKind::FatArrow, "'=>'")?;
             let body = self.parse_expr()?;
             let aspan = a_start.merge(body.span);
-            arms.push(MatchExprArm {
-                pattern,
-                guard,
-                body,
-                span: aspan,
-            });
+            for pattern in patterns {
+                arms.push(MatchExprArm {
+                    pattern,
+                    guard: guard.clone(),
+                    body: body.clone(),
+                    span: aspan,
+                });
+            }
             if self.check(&TokenKind::Comma) {
                 self.advance();
             }
@@ -743,6 +751,33 @@ impl Parser {
             },
             span: full,
         })
+    }
+
+    /// `pattern | pattern | …` at the start of a match arm (alternatives share the arm's guard and body).
+    fn parse_alternatives(&mut self) -> Result<Vec<Pattern>, ParserError> {
+        let start = self.current_span();
+        let mut patterns = vec![self.parse_pattern()?];
+        while self.check(&TokenKind::Bar) {
+            self.advance();
+            patterns.push(self.parse_pattern()?);
+        }
+        if patterns.len() > 1 {
+            let names = |p: &Pattern| {
+                let mut v = Vec::new();
+                p.bindings(&mut v);
+                v.sort();
+                v
+            };
+            let first = names(&patterns[0]);
+            if patterns.iter().any(|p| names(p) != first) {
+                return Err(ParserError::Invalid {
+                    message: "the alternatives of an or-pattern must bind the same names"
+                        .to_string(),
+                    span: start,
+                });
+            }
+        }
+        Ok(patterns)
     }
 
     /// `if condition` between a match pattern and `=>`.

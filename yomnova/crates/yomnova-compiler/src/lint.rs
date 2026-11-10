@@ -45,6 +45,10 @@ pub fn lint(program: &Program) -> Vec<Diagnostic> {
     l.pop();
     l.out
         .sort_by_key(|d| d.span.map_or((0, 0), |s| (s.line, s.col)));
+    // `A | B => body` is checked once per alternative; report each warning only once.
+    l.out.dedup_by(|a, b| {
+        a.message == b.message && a.span.map(|s| (s.line, s.col)) == b.span.map(|s| (s.line, s.col))
+    });
     l.out
 }
 

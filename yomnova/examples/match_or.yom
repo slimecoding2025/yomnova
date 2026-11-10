@@ -1,0 +1,34 @@
+// Or-patterns: `A | B => …` runs the arm when any alternative matches. It is sugar for one arm per
+// alternative with the same guard and body, so every alternative that binds a name must bind the same
+// names with the same types. Or-patterns are allowed at the start of an arm only (not nested in a payload).
+enum Shape {
+    Circle(Int),
+    Rect(Int),
+    Empty,
+    Unknown,
+}
+
+fn size(s: Shape) -> Int {
+    return match s {
+        Shape.Circle(r) | Shape.Rect(r) => r * 2,
+        Shape.Empty | Shape.Unknown => 0,
+    }
+}
+
+fn kind(n: Int) -> Text {
+    return match n {
+        1 | 2 | 3 => "small",
+        4 | 5 if n == 5 => "five",
+        _ => "other",
+    }
+}
+
+fn main() -> Int {
+    emit(size(Shape.Circle(3)))
+    emit(size(Shape.Rect(4)))
+    emit(size(Shape.Unknown))
+    emit(kind(2))
+    emit(kind(5))
+    emit(kind(4))
+    return 0
+}

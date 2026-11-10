@@ -2,6 +2,14 @@
 
 ## Unreleased — 2026-11-03
 
+### Or-patterns
+* **Added** `A | B [if guard] => body` in both `match` forms (`Shape.Circle(_) | Shape.Empty => …`, `1 | 2 | 3 => …`). The parser expands it into
+  one arm per alternative sharing the guard and body, so exhaustiveness, unreachable-arm and type checks apply to each alternative; all alternatives
+  must bind the same names (`the alternatives of an or-pattern must bind the same names`), and a name bound with different types is a type error where the
+  body uses it. Duplicate lint warnings from the copied body are reported once. New token `|`. `examples/match_or.yom`, 3 tests (146 Rust tests total).
+* **Limit:** or-patterns only at the start of an arm, not nested inside a payload (`Shape.Boxed(A | B)` is not supported). Still not done: struct and range patterns.
+
+
 ### `match` as an expression, nested and literal patterns
 * **Added** `match` as an expression (`let a = match s { Shape.Circle(r) => r * 3, … }`, arms are expressions of one common type), patterns
   `_`, bindings, integer literals (`-1`), `true`/`false`, and enum patterns whose payload is any pattern (nested to any depth). Exhaustiveness

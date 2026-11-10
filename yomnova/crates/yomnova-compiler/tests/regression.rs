@@ -1720,3 +1720,59 @@ fn std_net_rejects_malformed_addresses_with_a_clear_failure() {
         );
     }
 }
+
+#[test]
+fn or_patterns_share_one_arm_body() {
+    let out = run_main(
+        " let s = Shape.Boxed(Inner.Num(2))\n emit(match s { Shape.Circle(_) | Shape.Empty => \"a\", Shape.Boxed(_) => \"b\" })\n emit(match 3 { 1 | 2 | 3 => \"small\", _ => \"big\" })\n emit(match 9 { 1 | 2 | 3 => \"small\", _ => \"big\" })\n emit(match 5 { 4 | 5 if false => \"never\", 5 => \"five\", _ => \"other\" })\n emit(match Shape.Circle(7) { Shape.Circle(r) | Shape.Boxed(Inner.Num(r)) => r + 1, _ => 0 })\n emit(match true { true | false => 1 })\n match 2 {\n 1 | 2 => { emit(\"one-or-two\") }\n _ => { emit(\"other\") }\n }",
+    );
+    assert_eq!(
+        out,
+        vec!["b", "small", "big", "five", "8", "1", "one-or-two"]
+    );
+}
+
+#[test]
+fn or_pattern_rules_are_checked() {
+    // alternatives must cover for exhaustiveness
+    fails_with(
+        " emit(match Shape.Empty { Shape.Circle(_) | Shape.Empty => 1 })",
+        "not exhaustive",
+    );
+    // a repeated alternative can never run
+    fails_with(" emit(match 1 { 1 | 1 => 1, _ => 2 })", "can never run");
+    // an alternative covered by an earlier arm
+    fails_with(
+        " emit(match 1 { 1 => 1, 2 | 1 => 2, _ => 3 })",
+        "can never run",
+    );
+    // alternatives with different bindings: the body sees an undefined name in one of them
+    fails_with(
+        " emit(match Shape.Empty { Shape.Circle(r) | Shape.Empty => r, _ => 0 })",
+        "must bind the same names",
+    );
+    // alternatives must bind the same names, even when the body does not use them
+    fails_with(
+        " emit(match Shape.Empty { Shape.Circle(a) | Shape.Rect(b) => 1, _ => 0 })",
+        "must bind the same names",
+    );
+    // a name bound with different types is an error where the body uses it
+    fails_with(
+        " emit(match Shape.Empty { Shape.Boxed(x) | Shape.Circle(x) => x + 1, _ => 0 })",
+        "Cannot apply binary operator",
+    );
+}
+
+#[test]
+fn or_pattern_warnings_are_reported_once() {
+    let src = format!("{MATCH_PRELUDE}fn main() -> Int {{\n match Shape.Empty {{\n Shape.Empty | Shape.Circle(_) => {{ let note = 1 }}\n _ => {{ emit(1) }}\n }}\n return 0\n}}\n");
+    let (_, warnings) = Compiler::check_with_warnings(&src).expect("valid");
+    assert_eq!(
+        warnings
+            .iter()
+            .filter(|w| w.message.contains("'note'"))
+            .count(),
+        1,
+        "{warnings:?}"
+    );
+}
