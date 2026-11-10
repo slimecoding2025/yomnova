@@ -82,6 +82,8 @@ pub struct OwnershipChecker {
     collected: Option<Vec<OwnershipError>>,
     /// Enum name -> variant name -> carried value type (`Unit` when the variant carries none).
     enums: HashMap<String, HashMap<String, Type>>,
+    /// Struct name -> field name -> declared type.
+    structs: HashMap<String, HashMap<String, Type>>,
 }
 
 impl OwnershipChecker {
@@ -101,6 +103,7 @@ impl OwnershipChecker {
             fn_returns,
             collected: None,
             enums: HashMap::new(),
+            structs: HashMap::new(),
         }
     }
 }
@@ -155,6 +158,14 @@ impl OwnershipChecker {
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), OwnershipError> {
         for item in &program.items {
+            if let TopLevelItem::Struct(d) = item {
+                let fields = d
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.clone(), Type::from_annotation(&f.ty)))
+                    .collect();
+                self.structs.insert(d.name.clone(), fields);
+            }
             if let TopLevelItem::Enum(d) = item {
                 let variants = d
                     .variants
@@ -703,6 +714,17 @@ impl OwnershipChecker {
                     .cloned()
                     .unwrap_or(Type::Unknown);
                 self.declare_pattern(p, &inner);
+            }
+            Pattern::Struct { name, fields } => {
+                for (f, sub) in fields {
+                    let fty = self
+                        .structs
+                        .get(name)
+                        .and_then(|fs| fs.get(f))
+                        .cloned()
+                        .unwrap_or(Type::Unknown);
+                    self.declare_pattern(sub, &fty);
+                }
             }
             _ => {}
         }

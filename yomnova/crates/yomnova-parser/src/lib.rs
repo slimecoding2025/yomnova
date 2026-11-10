@@ -50,6 +50,8 @@ pub struct Parser {
     tokens: Vec<Token>,
     cursor: usize,
     depth: usize,
+    /// True while a match guard is parsed: there `name =>` ends the guard, it is not a lambda.
+    in_guard: bool,
     /// When set, statement-level errors are recorded and parsing resumes at the next
     /// statement or declaration instead of stopping at the first error.
     recovering: bool,
@@ -66,6 +68,7 @@ impl Parser {
             tokens,
             cursor: 0,
             depth: 0,
+            in_guard: false,
             recovering: false,
             errors: Vec::new(),
         }
@@ -419,6 +422,47 @@ impl Parser {
         Ok(Block { statements, span })
     }
 
+    /// `Name { field, field: pattern, .. }` (the name is already consumed).
+    fn parse_struct_pattern(&mut self, name: String) -> Result<Pattern, ParserError> {
+        self.consume(&TokenKind::OpenBrace, "'{'")?;
+        let mut fields: Vec<(String, Pattern)> = Vec::new();
+        loop {
+            if self.check(&TokenKind::CloseBrace) {
+                break;
+            }
+            if self.check(&TokenKind::Dot) {
+                self.advance();
+                self.consume(&TokenKind::Dot, "'..'")?;
+                break;
+            }
+            let span = self.current_span();
+            let field = self.consume_identifier("field name")?;
+            if fields.iter().any(|(f, _)| *f == field) {
+                return Err(ParserError::Invalid {
+                    message: format!("field '{field}' is listed twice in the pattern"),
+                    span,
+                });
+            }
+            let pat = if self.check(&TokenKind::Colon) {
+                self.advance();
+                self.enter()?;
+                let p = self.parse_pattern();
+                self.leave();
+                p?
+            } else {
+                Pattern::Binding(field.clone())
+            };
+            fields.push((field, pat));
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        self.consume(&TokenKind::CloseBrace, "'}'")?;
+        Ok(Pattern::Struct { name, fields })
+    }
+
     /// After an integer literal: either that literal or `low..=high`.
     fn finish_int_pattern(&mut self, low: i64) -> Result<Pattern, ParserError> {
         if !self.check(&TokenKind::DotDotEq) {
@@ -491,6 +535,9 @@ impl Parser {
         let lower = first.starts_with(|c: char| c.is_lowercase() || c == '_');
         if lower && !self.check(&TokenKind::Dot) {
             return Ok(Pattern::Binding(first));
+        }
+        if !lower && self.check(&TokenKind::OpenBrace) {
+            return self.parse_struct_pattern(first);
         }
         self.consume(&TokenKind::Dot, "'.' (patterns look like Enum.Variant)")?;
         let variant = self.consume_identifier("variant name")?;
@@ -816,7 +863,10 @@ impl Parser {
     fn parse_guard(&mut self) -> Result<Option<Expr>, ParserError> {
         if self.check(&TokenKind::If) {
             self.advance();
-            Ok(Some(self.parse_expr()?))
+            let outer = std::mem::replace(&mut self.in_guard, true);
+            let guard = self.parse_expr();
+            self.in_guard = outer;
+            Ok(Some(guard?))
         } else {
             Ok(None)
         }
@@ -1158,7 +1208,7 @@ impl Parser {
                     self.advance();
 
                     // Check for lambda: x => expr
-                    if self.check(&TokenKind::FatArrow) {
+                    if self.check(&TokenKind::FatArrow) && !self.in_guard {
                         self.advance();
                         let body = self.parse_expr()?;
                         let full_span = span.merge(body.span);
@@ -1239,7 +1289,9 @@ impl Parser {
                     let mut is_lambda = false;
                     let mut lambda_params = Vec::new();
 
-                    if let Some(TokenKind::Identifier(first_id)) = self.peek_kind() {
+                    if let (false, Some(TokenKind::Identifier(first_id))) =
+                        (self.in_guard, self.peek_kind())
+                    {
                         lambda_params.push(first_id.clone());
                         let mut temp_cur = self.cursor + 1;
                         while temp_cur < self.tokens.len() {

@@ -1362,6 +1362,26 @@ impl SemanticAnalyzer {
                     Err(bad(&b.to_string()))
                 }
             }
+            Pattern::Struct { name, fields } => {
+                let declared = match ty {
+                    Type::Custom(n) if n == name => self.structs.get(name),
+                    Type::Unknown => self.structs.get(name),
+                    _ => None,
+                };
+                let Some(declared) = declared else {
+                    return Err(bad(&format!("{name} {{ … }}")));
+                };
+                for (f, sub) in fields {
+                    let Some((_, fty)) = declared.iter().find(|(n, _)| n == f) else {
+                        return Err(SemaError::Invalid {
+                            message: format!("struct '{name}' has no field '{f}'"),
+                            span,
+                        });
+                    };
+                    self.check_pattern(sub, fty, span, binds)?;
+                }
+                Ok(())
+            }
             Pattern::Variant {
                 enum_name,
                 variant,
@@ -1484,6 +1504,7 @@ impl SemanticAnalyzer {
             Pattern::Bool(b) => prev
                 .iter()
                 .any(|p| p.is_irrefutable() || matches!(p, Pattern::Bool(c) if c == b)),
+            Pattern::Struct { .. } => prev.iter().any(|p| p.is_irrefutable()),
             Pattern::Variant {
                 enum_name: _,
                 variant,

@@ -253,7 +253,7 @@ export const ROADMAP: Record<Status, RoadmapItem[]> = {
     { title: "Formatter", note: "re-indents only" },
   ],
   planned: [
-    { title: "Struct patterns in match" },
+    { title: "Nested or-patterns, per-field coverage analysis in match" },
     { title: "Per-library bytecode and caching, more standard-library modules" },
     { title: "A richer IR (SSA) and inlining" },
     { title: "Stored references and lifetimes" },

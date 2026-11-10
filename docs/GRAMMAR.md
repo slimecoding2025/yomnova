@@ -45,6 +45,7 @@ args         = expr { "," expr } ;
 arm_expr     = pattern { "|" pattern } [ "if" expr ] "=>" expr ;   (* guard: the arm runs only if it is true *)
 pattern      = "_" | IDENT                       (* lower-case name: matches anything, binds it *)
              | [ "-" ] INT [ "..=" [ "-" ] INT ] | "true" | "false"   (* literal patterns *)
+             | IDENT "{" [ field_pat { "," field_pat } [ "," ] ] [ ".." ] "}"   (* struct pattern; field_pat = IDENT [ ":" pattern ] *)
              | IDENT "." IDENT [ "(" pattern ")" ] ;   (* Enum.Variant, Enum.Variant(pattern): nesting allowed *)
 struct_lit   = UPPER_IDENT "{" IDENT ":" expr { "," IDENT ":" expr } [ "," ] "}" ;   (* only when an uppercase name is followed by `{ ident :` *)
 

@@ -42,6 +42,13 @@ pub struct CompiledUnit {
     pub functions: Vec<(String, Chunk, usize)>,
 }
 
+/// One step from the matched value toward the part a pattern looks at.
+#[derive(Debug, Clone, PartialEq)]
+enum Step {
+    Payload,
+    Field(String),
+}
+
 impl CompiledUnit {
     /// Human-readable disassembly of the entry chunk and every function.
     pub fn disassemble_all(&self) -> String {
@@ -542,7 +549,14 @@ impl Compiler {
                         let aline = arm.span.line;
                         let mut fails = Vec::new();
                         let mut binds = Vec::new();
-                        self.pattern_tests(&arm.pattern, hidden, 0, aline, &mut fails, &mut binds)?;
+                        self.pattern_tests(
+                            &arm.pattern,
+                            hidden,
+                            &[],
+                            aline,
+                            &mut fails,
+                            &mut binds,
+                        )?;
                         self.locals.push(HashMap::new());
                         let arm_result = (|| -> Result<(), CompilerError> {
                             self.pattern_bind(&binds, hidden, aline)?;
@@ -688,12 +702,25 @@ impl Compiler {
     }
 
     /// Pushes the matched value, or the payload `depth` variants deep inside it.
-    fn emit_access(&mut self, hidden: u16, depth: usize, line: usize) {
+    fn emit_access(
+        &mut self,
+        hidden: u16,
+        path: &[Step],
+        line: usize,
+    ) -> Result<(), CompilerError> {
         self.chunk.write_op(OpCode::GetLocal, line);
         self.chunk.write_u16(hidden, line);
-        for _ in 0..depth {
-            self.chunk.write_op(OpCode::EnumPayload, line);
+        for step in path {
+            match step {
+                Step::Payload => self.chunk.write_op(OpCode::EnumPayload, line),
+                Step::Field(name) => {
+                    let idx = self.constant(Value::Text(name.clone()))?;
+                    self.chunk.write_op(OpCode::Field, line);
+                    self.chunk.write_u16(idx, line);
+                }
+            }
         }
+        Ok(())
     }
 
     /// Emits the tests of `pat` against the value at `depth`; each failing test jumps (the jump
@@ -702,16 +729,16 @@ impl Compiler {
         &mut self,
         pat: &Pattern,
         hidden: u16,
-        depth: usize,
+        path: &[Step],
         line: usize,
         fails: &mut Vec<usize>,
-        binds: &mut Vec<(String, usize)>,
+        binds: &mut Vec<(String, Vec<Step>)>,
     ) -> Result<(), CompilerError> {
         match pat {
             Pattern::Wildcard => {}
-            Pattern::Binding(name) => binds.push((name.clone(), depth)),
+            Pattern::Binding(name) => binds.push((name.clone(), path.to_vec())),
             Pattern::Int(n) => {
-                self.emit_access(hidden, depth, line);
+                self.emit_access(hidden, path, line)?;
                 let idx = self.constant(Value::Int(*n))?;
                 self.chunk.write_op(OpCode::Constant, line);
                 self.chunk.write_u16(idx, line);
@@ -720,7 +747,7 @@ impl Compiler {
             }
             Pattern::Range(lo, hi) => {
                 for (bound, op) in [(lo, OpCode::GreaterEqual), (hi, OpCode::LessEqual)] {
-                    self.emit_access(hidden, depth, line);
+                    self.emit_access(hidden, path, line)?;
                     let idx = self.constant(Value::Int(*bound))?;
                     self.chunk.write_op(OpCode::Constant, line);
                     self.chunk.write_u16(idx, line);
@@ -729,7 +756,7 @@ impl Compiler {
                 }
             }
             Pattern::Bool(b) => {
-                self.emit_access(hidden, depth, line);
+                self.emit_access(hidden, path, line)?;
                 if !*b {
                     self.chunk.write_op(OpCode::Not, line);
                 }
@@ -741,12 +768,21 @@ impl Compiler {
                 payload,
             } => {
                 let idx = self.constant(Value::Text(format!("{enum_name}.{variant}")))?;
-                self.emit_access(hidden, depth, line);
+                self.emit_access(hidden, path, line)?;
                 self.chunk.write_op(OpCode::EnumIs, line);
                 self.chunk.write_u16(idx, line);
                 fails.push(self.emit_jump(OpCode::JumpIfFalse, line));
                 if let Some(p) = payload {
-                    self.pattern_tests(p, hidden, depth + 1, line, fails, binds)?;
+                    let mut inner = path.to_vec();
+                    inner.push(Step::Payload);
+                    self.pattern_tests(p, hidden, &inner, line, fails, binds)?;
+                }
+            }
+            Pattern::Struct { fields, .. } => {
+                for (field, sub) in fields {
+                    let mut inner = path.to_vec();
+                    inner.push(Step::Field(field.clone()));
+                    self.pattern_tests(sub, hidden, &inner, line, fails, binds)?;
                 }
             }
         }
@@ -755,12 +791,12 @@ impl Compiler {
 
     fn pattern_bind(
         &mut self,
-        binds: &[(String, usize)],
+        binds: &[(String, Vec<Step>)],
         hidden: u16,
         line: usize,
     ) -> Result<(), CompilerError> {
-        for (name, depth) in binds {
-            self.emit_access(hidden, *depth, line);
+        for (name, path) in binds {
+            self.emit_access(hidden, path, line)?;
             let slot = self.declare_local(name)?;
             self.chunk.write_op(OpCode::SetLocal, line);
             self.chunk.write_u16(slot, line);
@@ -783,7 +819,14 @@ impl Compiler {
                         let aline = arm.span.line;
                         let mut fails = Vec::new();
                         let mut binds = Vec::new();
-                        self.pattern_tests(&arm.pattern, hidden, 0, aline, &mut fails, &mut binds)?;
+                        self.pattern_tests(
+                            &arm.pattern,
+                            hidden,
+                            &[],
+                            aline,
+                            &mut fails,
+                            &mut binds,
+                        )?;
                         self.locals.push(HashMap::new());
                         let arm_result = (|| -> Result<(), CompilerError> {
                             self.pattern_bind(&binds, hidden, aline)?;

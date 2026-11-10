@@ -2,6 +2,14 @@
 
 ## Unreleased — 2026-11-03
 
+### Struct patterns; guard fix
+* **Added** struct patterns: `Point { x: 0, y }`, `Point { y, .. }` (a bare field name binds it, `field: pattern` tests it, `..` ignores the rest). They nest
+  in enum payloads and other struct patterns, work in both `match` forms and or-patterns, and are type-checked (unknown field, wrong struct, wrong field type).
+  A struct pattern whose fields are all irrefutable counts as irrefutable; finer coverage between struct arms is not analysed, so such matches need a final
+  catch-all arm and repeated overlapping struct arms are not reported as unreachable. `examples/match_struct.yom`.
+* **Fixed:** a guard ending in a bare name (`n if n == k => …`) was parsed as the lambda `k => …`; lambdas are no longer recognised inside a guard
+  expression. 3 new tests (151 Rust tests total).
+
 ### Range patterns
 * **Added** `low..=high` integer range patterns (inclusive, negative bounds allowed, `-5..=-1`), usable in both `match` forms and inside or-patterns.
   An empty range (`5..=1`) is an error; a range against a non-Int value is a type error; an arm fully covered by earlier arms (a range inside an earlier

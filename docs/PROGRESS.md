@@ -23,7 +23,8 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | Match guards (`pattern if cond => …`) | Implemented | `match_guards_*`, `match_guard_rules_*`, `examples/match_guards.yom` |
 | Or-patterns (`A | B`, top level of an arm) | Implemented | `or_pattern*`, `examples/match_or.yom` |
 | Integer range patterns (`1..=5`) | Implemented | `range_pattern*`, `examples/match_range.yom` |
-| Struct patterns, nested or-patterns | Planned | — |
+| Struct patterns (`Point { x, y: 0, .. }`) | Implemented (no per-field coverage analysis) | `struct_pattern*`, `examples/match_struct.yom` |
+| Nested or-patterns | Planned | — |
 | `for … in` over arrays, `len`, `push` | Implemented | `for_*`, `len_*`, `push_*` regression tests |
 | methods, lambdas | Parsed-only, rejected clearly | `unsupported_syntax_is_reported_not_miscompiled`, `static_checks` |
 | `import`, `type` | Planned (reserved words only) | — |
@@ -54,7 +55,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 148 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 151 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.

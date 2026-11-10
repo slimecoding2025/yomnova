@@ -1803,3 +1803,60 @@ fn range_pattern_rules_are_checked() {
     );
     fails_with(" emit(match 3 { 1..= => 1, _ => 0 })", "..=");
 }
+
+const STRUCT_PRELUDE: &str =
+    "struct Pt {\n x: Int,\n y: Int,\n}\nenum Wrap {\n Hold(Pt),\n Nothing,\n}\n";
+
+fn struct_main(body: &str) -> Result<Vec<String>, String> {
+    let src = format!("{STRUCT_PRELUDE}fn main() -> Int {{\n{body}\n return 0\n}}\n");
+    Compiler::compile_and_run(&src)
+        .map(|r| r.output_lines)
+        .map_err(|e| {
+            e.iter()
+                .map(|d| d.message.clone())
+                .collect::<Vec<_>>()
+                .join(" | ")
+        })
+}
+
+#[test]
+fn struct_patterns_match_and_bind_fields() {
+    let out = struct_main(
+        " let p = Pt { x: 3, y: 0 }\n emit(match p { Pt { x: 0, .. } => 100, Pt { y: 0, x } => x, _ => 99 })\n emit(match p { Pt { x, y } if x == y => 0 - 1, Pt { x, y } => x + y })\n let w = Wrap.Hold(Pt { x: 1, y: 8 })\n emit(match w { Wrap.Hold(Pt { y, .. }) => y, Wrap.Nothing => 0 })\n emit(match w { Wrap.Hold(Pt { x: 2, .. }) => 1, _ => 2 })",
+    )
+    .unwrap();
+    assert_eq!(out, vec!["3", "3", "8", "2"]);
+}
+
+#[test]
+fn struct_pattern_rules_are_checked() {
+    let err = |b: &str| struct_main(b).unwrap_err();
+    assert!(
+        err(" let p = Pt { x: 1, y: 2 }\n emit(match p { Pt { z, .. } => z, _ => 0 })")
+            .contains("has no field 'z'")
+    );
+    assert!(err(" emit(match 3 { Pt { x, .. } => x, _ => 0 })")
+        .contains("cannot match a value of type Int"));
+    assert!(
+        err(" let p = Pt { x: 1, y: 2 }\n emit(match p { Pt { x: 0, .. } => 1 })")
+            .contains("not exhaustive")
+    );
+    assert!(err(
+        " let p = Pt { x: 1, y: 2 }\n emit(match p { Pt { x, y } => x + y, Pt { x: 0, .. } => 1 })"
+    )
+    .contains("can never run"));
+    assert!(
+        err(" let p = Pt { x: 1, y: 2 }\n emit(match p { Pt { x: true, .. } => 1, _ => 0 })")
+            .contains("cannot match a value of type Int")
+    );
+    assert!(
+        err(" let p = Pt { x: 1, y: 2 }\n emit(match p { Pt { x, x } => 1, _ => 0 })")
+            .contains("listed twice")
+    );
+}
+
+#[test]
+fn a_guard_may_end_in_a_name() {
+    let out = run_main(" let k = 4\n emit(match 4 { n if n == k => \"same\", _ => \"diff\" })\n emit(match 5 { n if n == k => \"same\", _ => \"diff\" })");
+    assert_eq!(out, vec!["same", "diff"]);
+}

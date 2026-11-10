@@ -302,12 +302,22 @@ pub enum Pattern {
         /// `None`: no parentheses (the variant carries no value).
         payload: Option<Box<Pattern>>,
     },
+    /// `Point { x, y: 0 }`: a struct value whose listed fields match; `x` alone binds the field `x`.
+    /// Fields that are not listed (after `..`) are ignored.
+    Struct {
+        name: String,
+        fields: Vec<(String, Pattern)>,
+    },
 }
 
 impl Pattern {
     /// Matches every value (so no later arm can be reached).
     pub fn is_irrefutable(&self) -> bool {
-        matches!(self, Pattern::Wildcard | Pattern::Binding(_))
+        match self {
+            Pattern::Wildcard | Pattern::Binding(_) => true,
+            Pattern::Struct { fields, .. } => fields.iter().all(|(_, p)| p.is_irrefutable()),
+            _ => false,
+        }
     }
 
     /// The names this pattern binds, in order.
@@ -317,6 +327,7 @@ impl Pattern {
             Pattern::Variant {
                 payload: Some(p), ..
             } => p.bindings(out),
+            Pattern::Struct { fields, .. } => fields.iter().for_each(|(_, p)| p.bindings(out)),
             _ => {}
         }
     }

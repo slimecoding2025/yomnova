@@ -1,0 +1,30 @@
+struct Point {
+    x: Int,
+    y: Int,
+}
+
+enum Shape {
+    Dot(Point),
+    Empty,
+}
+
+fn describe(p: Point) -> Text {
+    return match p {
+        Point { x: 0, y: 0 } => "origin",
+        Point { x: 0, .. } => "on the y axis",
+        Point { y: 0, .. } => "on the x axis",
+        Point { x, y } if x == y => "diagonal",
+        _ => "somewhere else"
+    }
+}
+
+fn main() -> Int {
+    emit(describe(Point { x: 0, y: 0 }))
+    emit(describe(Point { x: 0, y: 5 }))
+    emit(describe(Point { x: 3, y: 0 }))
+    emit(describe(Point { x: 4, y: 4 }))
+    emit(describe(Point { x: 1, y: 2 }))
+    let s = Shape.Dot(Point { x: 2, y: 9 })
+    emit(match s { Shape.Dot(Point { y, .. }) => y, Shape.Empty => 0 })
+    return 0
+}
