@@ -1620,3 +1620,103 @@ fn match_guard_rules_are_checked() {
         "{e:?}"
     );
 }
+
+// Expected values below come from an independent Python implementation of RFC 1071 with the RFC 768 / 793 /
+// 8200 pseudo-headers (not from this library).
+#[test]
+fn std_net_l4_checksums_match_an_independent_implementation() {
+    let out = Compiler::compile_and_run(
+        "import std.net\nfn main() -> Int {\n    let u = net.make_udp(5000, 53, bytes_of(\"hello\"))\n    let p4 = net.fill_ipv4_udp_checksum(net.make_ipv4(\"192.168.0.1\", \"10.0.0.7\", 17, 64, u))\n    emit(net.ipv4_udp_checksum(&p4))\n    emit(net.ipv4_udp_checksum_ok(&p4))\n    let u6 = net.make_udp(5000, 53, bytes_of(\"hello\"))\n    let p6 = net.fill_ipv6_udp_checksum(net.make_ipv6(\"2001:db8::1\", \"fe80::2\", 17, 64, u6))\n    emit(net.ipv6_udp_checksum(&p6))\n    emit(net.ipv6_udp_checksum_ok(&p6))\n    let t = [0, 80, 48, 57, 0, 0, 0, 1, 0, 0, 0, 2, 80, 18, 0, 0, 0, 0, 0, 0, 104, 105]\n    let seg = net.from_bytes(&t)\n    let t4 = net.fill_ipv4_tcp_checksum(net.make_ipv4(\"192.168.0.1\", \"10.0.0.7\", 6, 64, seg))\n    emit(net.ipv4_tcp_checksum(&t4))\n    emit(net.ipv4_tcp_checksum_ok(&t4))\n    let seg6 = net.from_bytes(&t)\n    let t6 = net.fill_ipv6_tcp_checksum(net.make_ipv6(\"2001:db8::1\", \"fe80::2\", 6, 64, seg6))\n    emit(net.ipv6_tcp_checksum(&t6))\n    emit(net.ipv6_tcp_checksum_ok(&t6))\n    let odd = net.make_udp(1, 2, bytes_of(\"abc\"))\n    emit(net.ipv4_udp_checksum(&net.make_ipv4(\"10.1.1.1\", \"10.2.2.2\", 17, 64, odd)))\n    return 0\n}\n",
+    );
+    // `&net.make_ipv4(..)` is not a variable, so that last line must be rejected by the borrow rule:
+    assert!(out.is_err());
+    let out = Compiler::compile_and_run(
+        "import std.net\nfn main() -> Int {\n    let u = net.make_udp(5000, 53, bytes_of(\"hello\"))\n    let p4 = net.fill_ipv4_udp_checksum(net.make_ipv4(\"192.168.0.1\", \"10.0.0.7\", 17, 64, u))\n    emit(net.ipv4_udp_checksum(&p4))\n    emit(net.ipv4_udp_checksum_ok(&p4))\n    let u6 = net.make_udp(5000, 53, bytes_of(\"hello\"))\n    let p6 = net.fill_ipv6_udp_checksum(net.make_ipv6(\"2001:db8::1\", \"fe80::2\", 17, 64, u6))\n    emit(net.ipv6_udp_checksum(&p6))\n    emit(net.ipv6_udp_checksum_ok(&p6))\n    let t = [0, 80, 48, 57, 0, 0, 0, 1, 0, 0, 0, 2, 80, 18, 0, 0, 0, 0, 0, 0, 104, 105]\n    let seg = net.from_bytes(&t)\n    let t4 = net.fill_ipv4_tcp_checksum(net.make_ipv4(\"192.168.0.1\", \"10.0.0.7\", 6, 64, seg))\n    emit(net.ipv4_tcp_checksum(&t4))\n    emit(net.ipv4_tcp_checksum_ok(&t4))\n    let seg6 = net.from_bytes(&t)\n    let t6 = net.fill_ipv6_tcp_checksum(net.make_ipv6(\"2001:db8::1\", \"fe80::2\", 6, 64, seg6))\n    emit(net.ipv6_tcp_checksum(&t6))\n    emit(net.ipv6_tcp_checksum_ok(&t6))\n    let odd = net.make_udp(1, 2, bytes_of(\"abc\"))\n    let o4 = net.make_ipv4(\"10.1.1.1\", \"10.2.2.2\", 17, 64, odd)\n    emit(net.ipv4_udp_checksum(&o4))\n    return 0\n}\n",
+    )
+    .expect("runs");
+    assert_eq!(
+        out.output_lines,
+        vec!["56724", "true", "31752", "true", "19499", "true", "60062", "true", "9325"]
+    );
+}
+
+#[test]
+fn std_net_detects_corrupted_packets_and_zero_udp_checksum_rules() {
+    let out = Compiler::compile_and_run(
+        "import std.net\nfn main() -> Int {\n    let u = net.make_udp(5000, 53, bytes_of(\"hello\"))\n    let p = net.fill_ipv4_udp_checksum(net.make_ipv4(\"1.2.3.4\", \"5.6.7.8\", 17, 64, u))\n    emit(net.ipv4_udp_checksum_ok(&p))\n    let bad = buf_set(p, 32, 99)\n    emit(net.ipv4_udp_checksum_ok(&bad))\n    let u2 = net.make_udp(5000, 53, bytes_of(\"hello\"))\n    let nocsum = net.make_ipv4(\"1.2.3.4\", \"5.6.7.8\", 17, 64, u2)\n    emit(net.ipv4_udp_checksum_ok(&nocsum))\n    let u3 = net.make_udp(5000, 53, bytes_of(\"hello\"))\n    let v6 = net.make_ipv6(\"::1\", \"::2\", 17, 64, u3)\n    emit(net.ipv6_udp_checksum_ok(&v6))\n    return 0\n}\n",
+    )
+    .expect("runs");
+    // fine packet; corrupted payload byte; IPv4 UDP checksum 0 = \"not computed\" is accepted; IPv6 requires one
+    assert_eq!(out.output_lines, vec!["true", "false", "true", "false"]);
+}
+
+#[test]
+fn std_net_ethernet_and_ipv6_headers_round_trip() {
+    let out = Compiler::compile_and_run(
+        "import std.net\nfn main() -> Int {\n    let u = net.make_udp(1, 2, bytes_of(\"x\"))\n    let p = net.make_ipv6(\"2001:db8:0:0:0:0:0:1\", \"::1\", 17, 33, u)\n    emit(net.ipv6_version(&p))\n    emit(net.ipv6_next_header(&p))\n    emit(net.ipv6_hop_limit(&p))\n    emit(net.ipv6_payload_length(&p))\n    emit(net.ipv6_src(&p))\n    emit(net.ipv6_dst(&p))\n    emit(net.ipv6_valid(&p))\n    emit(len(net.ipv6_payload(&p)))\n    let f = net.make_ethernet(\"AA:bb:cc:dd:ee:0f\", \"00:11:22:33:44:55\", 34525, p)\n    emit(net.eth_dst(&f))\n    emit(net.eth_src(&f))\n    emit(net.eth_type(&f))\n    let inner = net.eth_payload(&f)\n    emit(net.ipv6_hop_limit(&inner))\n    emit(net.ipv6_traffic_class(&inner))\n    emit(net.ipv6_flow_label(&inner))\n    return 0\n}\n",
+    )
+    .expect("runs");
+    assert_eq!(
+        out.output_lines,
+        vec![
+            "6",
+            "17",
+            "33",
+            "9",
+            "2001:db8::1",
+            "::1",
+            "true",
+            "9",
+            "aa:bb:cc:dd:ee:0f",
+            "00:11:22:33:44:55",
+            "34525",
+            "33",
+            "0",
+            "0"
+        ]
+    );
+}
+
+#[test]
+fn std_net_rejects_malformed_addresses_with_a_clear_failure() {
+    for (body, want) in [
+        (
+            "net.make_ipv6(\"1:2:3\", \"::1\", 17, 64, NetworkBuffer(0))",
+            "expected 8 groups",
+        ),
+        (
+            "net.make_ipv6(\"1:2:3:4:5:6:7:8:9\", \"::1\", 17, 64, NetworkBuffer(0))",
+            "expected 8 groups",
+        ),
+        (
+            "net.make_ipv6(\"1:2:3:4:5:6:7::8\", \"::1\", 17, 64, NetworkBuffer(0))",
+            "at least one group",
+        ),
+        (
+            "net.make_ipv6(\"12345::1\", \"::1\", 17, 64, NetworkBuffer(0))",
+            "longer than 4",
+        ),
+        (
+            "net.make_ipv6(\"g::1\", \"::1\", 17, 64, NetworkBuffer(0))",
+            "hexadecimal",
+        ),
+        (
+            "net.make_ethernet(\"aa:bb:cc\", \"00:11:22:33:44:55\", 2048, NetworkBuffer(0))",
+            "six bytes",
+        ),
+    ] {
+        let src = format!("import std.net\nfn main() -> Int {{\n    let p = {body}\n    emit(len(p))\n    return 0\n}}\n");
+        let Err(e) = Compiler::compile_and_run(&src) else {
+            panic!("should fail: {body}")
+        };
+        let all: String = e
+            .iter()
+            .map(|d| d.message.clone())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            all.contains("Program failed") && all.contains(want),
+            "{all} should mention {want}"
+        );
+    }
+}

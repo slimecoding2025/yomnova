@@ -11,6 +11,17 @@
   a non-enum value is a type error.
 * **Not done:** guards, or-patterns, struct patterns, range patterns.
 
+### `std.net`: Ethernet, IPv6, UDP/TCP checksums; `fail`
+* **Added** to `std.net`: Ethernet II (`eth_dst eth_src eth_type eth_payload`, `make_ethernet` with `aa:bb:..` MAC text); IPv6 fixed header
+  (`ipv6_version traffic_class flow_label payload_length next_header hop_limit src dst payload valid`, `make_ipv6` accepting `::` compression);
+  UDP and TCP checksums over IPv4 and IPv6 with the RFC pseudo-headers (`ipv4_udp_checksum`, `ipv4_tcp_checksum`, `ipv6_udp_checksum`,
+  `ipv6_tcp_checksum`, matching `*_ok`, and `fill_*_checksum` that return the packet with the field set). The checksums are tested against an
+  independent Python implementation of RFC 1071 for IPv4/IPv6 x UDP/TCP and an odd-length payload; corrupted packets are detected.
+  `examples/net_layers.yom`. 4 new tests (143 Rust tests total).
+* **Added** the native `fail(message)`: stops the program with `Program failed: message` (used for malformed addresses; usable in any program).
+* **Limits:** IPv6 extension headers are not walked (the next-header field is read as-is and the checksum assumes none); no VLAN tags, ARP, ICMP,
+  fragmentation or options parsing; over IPv4 a stored UDP checksum of 0 means "not computed" and is accepted, over IPv6 it is rejected.
+
 ### Match guards
 * **Added** `pattern if condition => …` in both `match` forms. The guard is type-checked as a Bool with the arm's bindings in scope; guarded arms
   do not count for exhaustiveness or make later arms unreachable; a guard that would move a value is rejected (`A match guard cannot move a value`);

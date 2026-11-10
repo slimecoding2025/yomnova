@@ -139,7 +139,10 @@ Ownership is checked statically after type checking; violations stop the program
   compute_checksum checksum_ok valid payload`, `net.udp_src_port dst_port length payload`, `net.tcp_src_port dst_port seq ack header_len syn ack_flag fin
   rst psh payload`, builders `net.make_udp(src, dst, payload)` and `net.make_ipv4("a.b.c.d", "e.f.g.h", protocol, ttl, payload)`, and
   `net.from_bytes(&Array<Int>)` / `net.to_bytes(&buf)`. Readers only check bounds; `net.ipv4_valid` checks version, lengths and checksum. No
-  Ethernet, IPv6, options, fragmentation, or TCP/UDP checksums, and no sockets.
+  Also Ethernet II (`net.eth_dst eth_src eth_type eth_payload`, `net.make_ethernet`), the IPv6 fixed header (`net.ipv6_* `, `net.make_ipv6`, `::` accepted), and UDP/TCP checksums
+  over IPv4 and IPv6 (`net.ipv4_udp_checksum`, `ipv6_tcp_checksum_ok`, `fill_ipv4_udp_checksum`, … each taking the whole IP packet). IPv6 extension headers are not
+  walked; no VLAN, ARP, ICMP, options or fragmentation, and no sockets. Malformed addresses stop the program with `fail`: `fail(message)` is a native that ends the program with
+  `Program failed: message`.
 * **Text library.** `import std.text`: `text.upper text.lower text.trim text.contains text.starts_with text.ends_with text.find text.slice
   text.repeat text.replace text.split text.from_int text.parse_int` (first argument `&s`). The natives can be called directly as
   `str_upper(s)` etc. Positions are characters; `find` gives -1 if absent; `slice(s, from, to)` needs `0 <= from <= to <= len`; an empty

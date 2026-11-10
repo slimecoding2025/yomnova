@@ -26,6 +26,8 @@ pub enum VmError {
     IntegerOverflow(String),
     #[error("Resource limit exceeded: {0}")]
     ResourceLimit(String),
+    #[error("Program failed: {0}")]
+    Failed(String),
 }
 
 pub struct CallFrame {
@@ -110,6 +112,7 @@ impl Vm {
             "str_split",
             "str_from_int",
             "str_parse_int",
+            "fail",
             "file_read",
             "file_write",
             "file_append",
@@ -699,7 +702,7 @@ impl Vm {
                     }
                     "str_contains" | "str_starts_with" | "str_ends_with" | "str_find"
                     | "str_repeat" | "str_split" | "file_write" | "file_append" => 2,
-                    "file_read" | "file_exists" => 1,
+                    "file_read" | "file_exists" | "fail" => 1,
                     "str_slice" | "str_replace" => 3,
                     other => {
                         return Err(VmError::TypeError(format!(
@@ -812,6 +815,16 @@ impl Vm {
                             }
                         }
                     }
+                    "fail" => match &args[0] {
+                        Value::Text(m) => {
+                            return Err(VmError::Failed(m.chars().take(500).collect()))
+                        }
+                        other => {
+                            return Err(VmError::TypeError(format!(
+                                "fail expects Text, got {other:?}"
+                            )))
+                        }
+                    },
                     other if other.starts_with("file_") => self.file_native(other, &args)?,
                     other if other.starts_with("str_") => Self::text_native(other, &args)?,
                     other => Self::net_native(other, args)?,

@@ -1,0 +1,19 @@
+// Ethernet -> IPv6 -> UDP, built and then parsed back, with a real UDP checksum.
+import std.net
+
+fn main() -> Int {
+    let udp = net.make_udp(5000, 53, bytes_of("hello"))
+    let ip6 = net.fill_ipv6_udp_checksum(net.make_ipv6("2001:db8::1", "fe80::2", 17, 64, udp))
+    let frame = net.make_ethernet("aa:bb:cc:dd:ee:ff", "00:11:22:33:44:55", 34525, ip6)
+
+    emit(net.eth_dst(&frame))
+    emit(net.eth_type(&frame))
+    let inner = net.eth_payload(&frame)
+    emit(net.ipv6_src(&inner))
+    emit(net.ipv6_next_header(&inner))
+    emit(net.ipv6_udp_checksum_ok(&inner))
+    let seg = net.ipv6_payload(&inner)
+    emit(net.udp_dst_port(&seg))
+    emit(net.udp_payload(&seg))
+    return 0
+}
