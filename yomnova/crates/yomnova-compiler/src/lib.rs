@@ -546,6 +546,10 @@ impl Compiler {
                         self.locals.push(HashMap::new());
                         let arm_result = (|| -> Result<(), CompilerError> {
                             self.pattern_bind(&binds, hidden, aline)?;
+                            if let Some(g) = &arm.guard {
+                                self.compile_expression(g)?;
+                                fails.push(self.emit_jump(OpCode::JumpIfFalse, aline));
+                            }
                             self.compile_block_body(&arm.body)
                         })();
                         self.locals.pop();
@@ -773,6 +777,10 @@ impl Compiler {
                         self.locals.push(HashMap::new());
                         let arm_result = (|| -> Result<(), CompilerError> {
                             self.pattern_bind(&binds, hidden, aline)?;
+                            if let Some(g) = &arm.guard {
+                                self.compile_expression(g)?;
+                                fails.push(self.emit_jump(OpCode::JumpIfFalse, aline));
+                            }
                             self.compile_expression(&arm.body)
                         })();
                         self.locals.pop();

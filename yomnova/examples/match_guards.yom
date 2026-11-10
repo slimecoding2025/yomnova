@@ -1,0 +1,35 @@
+// Match guards: `pattern if condition => ...`. A guarded arm only runs when its condition holds;
+// otherwise matching continues with the next arm. Guarded arms do not count towards exhaustiveness,
+// so a final `_` or binding arm is required.
+enum Reading {
+    Temp(Int),
+    Missing,
+}
+
+fn describe(r: Reading) -> Text {
+    return match r {
+        Reading.Temp(t) if t < 0 => "freezing",
+        Reading.Temp(t) if t < 20 => "cool",
+        Reading.Temp(_) => "warm",
+        Reading.Missing => "no data",
+    }
+}
+
+fn bucket(n: Int) -> Int {
+    return match n {
+        0 => 0,
+        x if x < 0 => 0 - 1,
+        _ => 1,
+    }
+}
+
+fn main() -> Int {
+    emit(describe(Reading.Temp(0 - 5)))
+    emit(describe(Reading.Temp(12)))
+    emit(describe(Reading.Temp(30)))
+    emit(describe(Reading.Missing))
+    emit(bucket(0))
+    emit(bucket(0 - 9))
+    emit(bucket(9))
+    return 0
+}

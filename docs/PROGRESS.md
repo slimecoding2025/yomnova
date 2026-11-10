@@ -20,7 +20,8 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | `struct` (declaration, literal, field read, nesting) | Implemented | `struct_*` and `field_access_errors` regression tests |
 | Warnings: unused binding, unreachable code | Implemented | `*_warning*`, `unused_*`, `code_after_return_*` regression tests |
 | `enum` and `match` (statement and expression, nested/literal/binding patterns, exhaustiveness incl. nested cases) | Implemented | `enum_*`, `match_*`, `nested_pattern_checks`, `examples/match_expr.yom` |
-| Match guards, or-patterns, struct patterns | Planned | — |
+| Match guards (`pattern if cond => …`) | Implemented | `match_guards_*`, `match_guard_rules_*`, `examples/match_guards.yom` |
+| Or-patterns, struct patterns, range patterns | Planned | — |
 | `for … in` over arrays, `len`, `push` | Implemented | `for_*`, `len_*`, `push_*` regression tests |
 | methods, lambdas | Parsed-only, rejected clearly | `unsupported_syntax_is_reported_not_miscompiled`, `static_checks` |
 | `import`, `type` | Planned (reserved words only) | — |
@@ -50,7 +51,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 137 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 139 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.

@@ -701,10 +701,14 @@ impl SemanticAnalyzer {
                 let mut seen: Vec<&Pattern> = Vec::new();
                 for arm in arms {
                     let binds = self.check_arm_pattern(&seen, &arm.pattern, &sty, arm.span)?;
-                    seen.push(&arm.pattern);
+                    if arm.guard.is_none() {
+                        seen.push(&arm.pattern);
+                    }
                     self.enter_scope();
                     let declared = self.declare_pattern_bindings(binds, arm.span);
-                    let result = declared.and_then(|_| self.analyze_block(&arm.body));
+                    let result = declared
+                        .and_then(|_| self.analyze_guard(arm.guard.as_ref()))
+                        .and_then(|_| self.analyze_block(&arm.body));
                     self.leave_scope();
                     result?;
                 }
@@ -767,44 +771,73 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    #[inline(never)]
+    fn analyze_match_expr(
+        &mut self,
+        scrutinee: &Expr,
+        arms: &[MatchExprArm],
+        span: Span,
+    ) -> Result<Type, SemaError> {
+        let sty = self.analyze_expression(scrutinee)?;
+        if arms.is_empty() {
+            return Err(SemaError::Invalid {
+                message: "a match expression needs at least one arm".to_string(),
+                span: span,
+            });
+        }
+        let mut seen: Vec<&Pattern> = Vec::new();
+        let mut result_ty: Option<Type> = None;
+        for arm in arms {
+            let binds = self.check_arm_pattern(&seen, &arm.pattern, &sty, arm.span)?;
+            if arm.guard.is_none() {
+                seen.push(&arm.pattern);
+            }
+            self.enter_scope();
+            let declared = self.declare_pattern_bindings(binds, arm.span);
+            let body = declared
+                .and_then(|_| self.analyze_guard(arm.guard.as_ref()))
+                .and_then(|_| self.analyze_expression(&arm.body));
+            self.leave_scope();
+            let body = body?;
+            match &result_ty {
+                None => result_ty = Some(body),
+                Some(first) => {
+                    if !body.is_assignable_to(first) {
+                        return Err(SemaError::TypeMismatch {
+                            expected: first.to_string(),
+                            found: body.to_string(),
+                            span: arm.body.span,
+                        });
+                    }
+                    if *first == Type::Unknown {
+                        result_ty = Some(body);
+                    }
+                }
+            }
+        }
+        self.check_exhaustive(&seen, &sty, span)?;
+        Ok(result_ty.unwrap_or(Type::Unknown))
+    }
+
+    /// A match guard must be a Bool; it is checked with the arm's bindings in scope.
+    fn analyze_guard(&mut self, guard: Option<&Expr>) -> Result<(), SemaError> {
+        if let Some(g) = guard {
+            let t = self.analyze_expression(g)?;
+            if t != Type::Bool && t != Type::Unknown {
+                return Err(SemaError::TypeMismatch {
+                    expected: "Bool".to_string(),
+                    found: t.to_string(),
+                    span: g.span,
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub fn analyze_expression(&mut self, expr: &Expr) -> Result<Type, SemaError> {
         let ty = match &expr.kind {
             ExprKind::Match { scrutinee, arms } => {
-                let sty = self.analyze_expression(scrutinee)?;
-                if arms.is_empty() {
-                    return Err(SemaError::Invalid {
-                        message: "a match expression needs at least one arm".to_string(),
-                        span: expr.span,
-                    });
-                }
-                let mut seen: Vec<&Pattern> = Vec::new();
-                let mut result_ty: Option<Type> = None;
-                for arm in arms {
-                    let binds = self.check_arm_pattern(&seen, &arm.pattern, &sty, arm.span)?;
-                    seen.push(&arm.pattern);
-                    self.enter_scope();
-                    let declared = self.declare_pattern_bindings(binds, arm.span);
-                    let body = declared.and_then(|_| self.analyze_expression(&arm.body));
-                    self.leave_scope();
-                    let body = body?;
-                    match &result_ty {
-                        None => result_ty = Some(body),
-                        Some(first) => {
-                            if !body.is_assignable_to(first) {
-                                return Err(SemaError::TypeMismatch {
-                                    expected: first.to_string(),
-                                    found: body.to_string(),
-                                    span: arm.body.span,
-                                });
-                            }
-                            if *first == Type::Unknown {
-                                result_ty = Some(body);
-                            }
-                        }
-                    }
-                }
-                self.check_exhaustive(&seen, &sty, expr.span)?;
-                result_ty.unwrap_or(Type::Unknown)
+                self.analyze_match_expr(scrutinee, arms, expr.span)?
             }
             ExprKind::Integer(_) => Type::Int,
             ExprKind::Float(_) => Type::Float,

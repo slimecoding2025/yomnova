@@ -1584,3 +1584,39 @@ fn std_net_short_or_inconsistent_buffers_are_errors_not_garbage() {
         assert!(Compiler::compile_and_run(&src).is_err(), "{body}");
     }
 }
+
+#[test]
+fn match_guards_choose_arms_and_fall_through() {
+    let out = run_main(
+        " let t = Shape.Circle(7)\n let a = match t {\n Shape.Circle(r) if r > 10 => \"big\",\n Shape.Circle(r) if r > 5 => \"medium\",\n Shape.Circle(_) => \"small\",\n _ => \"other\"\n }\n emit(a)\n emit(match 4 { n if n % 2 == 0 => \"even\", _ => \"odd\" })\n emit(match 5 { n if n % 2 == 0 => \"even\", _ => \"odd\" })\n match Shape.Circle(1) {\n Shape.Circle(r) if r == 2 => { emit(\"two\") }\n Shape.Circle(r) if r == 1 => { emit(\"one\") }\n _ => { emit(\"none\") }\n }\n emit(match 1 { x if x > 0 && x < 3 => x * 10, _ => 0 })",
+    );
+    assert_eq!(out, vec!["medium", "even", "odd", "one", "10"]);
+}
+
+#[test]
+fn match_guard_rules_are_checked() {
+    // guarded arms do not make a match exhaustive
+    fails_with(" emit(match 1 { x if x > 0 => 1 })", "not exhaustive");
+    fails_with(
+        " emit(match Shape.Empty { Shape.Circle(r) if r > 0 => 1, Shape.Boxed(_) => 2, Shape.Empty => 3 })",
+        "not exhaustive",
+    );
+    // the guard must be a Bool
+    fails_with(" emit(match 1 { x if x + 1 => 1, _ => 2 })", "Bool");
+    // an arm after a guarded `_` is still reachable
+    assert_eq!(
+        run_main(" emit(match 3 { _ if false => 1, 3 => 2, _ => 3 })"),
+        vec!["2"]
+    );
+    // a guard may read bindings but not undefined names
+    fails_with(" emit(match 1 { x if y > 0 => 1, _ => 2 })", "y");
+    // a guard cannot move a value
+    let src = format!("{MATCH_PRELUDE}fn eat(xs: Array<Int>) -> Bool {{\n return true\n}}\nfn main() -> Int {{\n let xs = [1]\n emit(match 1 {{ n if eat(xs) => n, _ => 0 }})\n return 0\n}}\n");
+    let Err(e) = Compiler::compile_and_run(&src) else {
+        panic!("a guard that moves a value must be rejected")
+    };
+    assert!(
+        e.iter().any(|d| d.message.contains("guard cannot move")),
+        "{e:?}"
+    );
+}

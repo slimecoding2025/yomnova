@@ -17,6 +17,8 @@ pub enum OwnershipError {
     BorrowConflict { name: String, span: Span },
     #[error("Value '{name}' is moved inside a loop at {moved_at} but declared outside it")]
     MovedInLoop { name: String, moved_at: Span },
+    #[error("A match guard cannot move a value (at {span})")]
+    MoveInGuard { span: Span },
 }
 
 impl OwnershipError {
@@ -38,6 +40,11 @@ impl OwnershipError {
             .with_hint(
                 "The second iteration would use a moved value; reassign it before the loop repeats",
             ),
+            OwnershipError::MoveInGuard { span } => Diagnostic::error(
+                "A match guard cannot move a value",
+                Some(*span),
+            )
+            .with_hint("The guard runs before the arm is chosen, so it may only read values (borrow them, or use copy values)"),
             OwnershipError::CannotMoveOut { name, span } => Diagnostic::error(
                 format!("Cannot move out of borrowed context for '{name}'"),
                 Some(*span),
@@ -354,7 +361,9 @@ impl OwnershipChecker {
                     self.scopes = before.clone();
                     self.enter_scope();
                     self.declare_pattern(&arm.pattern, &sty);
-                    let result = self.check_block(&arm.body);
+                    let result = self
+                        .check_guard(arm.guard.as_ref())
+                        .and_then(|_| self.check_block(&arm.body));
                     self.leave_scope();
                     result?;
                     after_arms.push(self.scopes.clone());
@@ -538,7 +547,9 @@ impl OwnershipChecker {
                     self.enter_scope();
                     self.declare_pattern(&arm.pattern, &sty);
                     // The arm's value flows out of the match, so a plain variable is moved.
-                    let result = self.check_expr_move(&arm.body);
+                    let result = self
+                        .check_guard(arm.guard.as_ref())
+                        .and_then(|_| self.check_expr_move(&arm.body));
                     self.leave_scope();
                     result?;
                     after_arms.push(self.scopes.clone());
@@ -637,6 +648,24 @@ impl OwnershipChecker {
     }
 
     /// A value moved in any arm is "maybe moved" after the match.
+    /// A guard runs before its arm is chosen, so it may read values but never move one.
+    fn check_guard(&mut self, guard: Option<&Expr>) -> Result<(), OwnershipError> {
+        let Some(g) = guard else { return Ok(()) };
+        let moved = |scopes: &Vec<HashMap<String, Binding>>| {
+            scopes
+                .iter()
+                .flat_map(|s| s.values())
+                .filter(|b| matches!(b.state, VariableState::Moved { .. }))
+                .count()
+        };
+        let before = moved(&self.scopes);
+        self.check_expr_use(g)?;
+        if moved(&self.scopes) != before {
+            return Err(OwnershipError::MoveInGuard { span: g.span });
+        }
+        Ok(())
+    }
+
     fn merge_arm_moves(&mut self, after_arms: &[Vec<HashMap<String, Binding>>]) {
         for after in after_arms {
             for (scope, arm_scope) in self.scopes.iter_mut().zip(after.iter()) {
@@ -712,7 +741,10 @@ fn mentions(e: &Expr, name: &str) -> bool {
             mentions(operand, name)
         }
         ExprKind::Match { scrutinee, arms } => {
-            mentions(scrutinee, name) || arms.iter().any(|a| mentions(&a.body, name))
+            mentions(scrutinee, name)
+                || arms.iter().any(|a| {
+                    mentions(&a.body, name) || a.guard.as_ref().is_some_and(|g| mentions(g, name))
+                })
         }
         ExprKind::Call { callee, args } => {
             mentions(callee, name) || args.iter().any(|a| mentions(a, name))

@@ -193,6 +193,9 @@ impl Lint {
                     for name in &names {
                         self.declare(name, arm.span);
                     }
+                    if let Some(g) = &arm.guard {
+                        self.expr(g);
+                    }
                     self.block(&arm.body);
                     self.pop();
                 }
@@ -237,6 +240,9 @@ impl Lint {
                     arm.pattern.bindings(&mut names);
                     for name in &names {
                         self.declare(name, arm.span);
+                    }
+                    if let Some(g) = &arm.guard {
+                        self.expr(g);
                     }
                     self.expr(&arm.body);
                     self.pop();

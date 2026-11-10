@@ -575,11 +575,13 @@ impl Parser {
             while !self.check(&TokenKind::CloseBrace) && !self.is_at_end() {
                 let a_start = self.current_span();
                 let pattern = self.parse_pattern()?;
+                let guard = self.parse_guard()?;
                 self.consume(&TokenKind::FatArrow, "'=>'")?;
                 let body = self.parse_block()?;
                 let span = a_start.merge(body.span);
                 arms.push(MatchArm {
                     pattern,
+                    guard,
                     body,
                     span,
                 });
@@ -705,6 +707,51 @@ impl Parser {
                 self.advance();
             }
             Ok(Stmt::Expr(expr))
+        }
+    }
+
+    /// `match value { pattern [if guard] => expr, … }` (kept out of `parse_primary` so its frame stays small).
+    #[inline(never)]
+    fn parse_match_expr(&mut self, span: Span) -> Result<Expr, ParserError> {
+        self.advance();
+        let scrutinee = self.parse_expr()?;
+        self.consume(&TokenKind::OpenBrace, "'{'")?;
+        let mut arms = Vec::new();
+        while !self.check(&TokenKind::CloseBrace) && !self.is_at_end() {
+            let a_start = self.current_span();
+            let pattern = self.parse_pattern()?;
+            let guard = self.parse_guard()?;
+            self.consume(&TokenKind::FatArrow, "'=>'")?;
+            let body = self.parse_expr()?;
+            let aspan = a_start.merge(body.span);
+            arms.push(MatchExprArm {
+                pattern,
+                guard,
+                body,
+                span: aspan,
+            });
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.consume(&TokenKind::CloseBrace, "'}'")?;
+        let full = span.merge(self.previous_span());
+        Ok(Expr {
+            kind: ExprKind::Match {
+                scrutinee: Box::new(scrutinee),
+                arms,
+            },
+            span: full,
+        })
+    }
+
+    /// `if condition` between a match pattern and `=>`.
+    fn parse_guard(&mut self) -> Result<Option<Expr>, ParserError> {
+        if self.check(&TokenKind::If) {
+            self.advance();
+            Ok(Some(self.parse_expr()?))
+        } else {
+            Ok(None)
         }
     }
 
@@ -982,36 +1029,7 @@ impl Parser {
                         span,
                     })
                 }
-                TokenKind::Match => {
-                    self.advance();
-                    let scrutinee = self.parse_expr()?;
-                    self.consume(&TokenKind::OpenBrace, "'{'")?;
-                    let mut arms = Vec::new();
-                    while !self.check(&TokenKind::CloseBrace) && !self.is_at_end() {
-                        let a_start = self.current_span();
-                        let pattern = self.parse_pattern()?;
-                        self.consume(&TokenKind::FatArrow, "'=>'")?;
-                        let body = self.parse_expr()?;
-                        let aspan = a_start.merge(body.span);
-                        arms.push(MatchExprArm {
-                            pattern,
-                            body,
-                            span: aspan,
-                        });
-                        if self.check(&TokenKind::Comma) {
-                            self.advance();
-                        }
-                    }
-                    self.consume(&TokenKind::CloseBrace, "'}'")?;
-                    let full = span.merge(self.previous_span());
-                    Ok(Expr {
-                        kind: ExprKind::Match {
-                            scrutinee: Box::new(scrutinee),
-                            arms,
-                        },
-                        span: full,
-                    })
-                }
+                TokenKind::Match => self.parse_match_expr(span),
                 TokenKind::Emit => {
                     self.advance();
                     Ok(Expr {

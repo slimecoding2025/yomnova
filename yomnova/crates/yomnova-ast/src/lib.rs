@@ -277,6 +277,8 @@ impl Stmt {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm {
     pub pattern: Pattern,
+    /// `if condition` after the pattern: the arm only runs when it is true. Guarded arms do not count for exhaustiveness.
+    pub guard: Option<Expr>,
     pub body: Block,
     pub span: Span,
 }
@@ -322,6 +324,7 @@ impl Pattern {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchExprArm {
     pub pattern: Pattern,
+    pub guard: Option<Expr>,
     pub body: Expr,
     pub span: Span,
 }

@@ -11,6 +11,14 @@
   a non-enum value is a type error.
 * **Not done:** guards, or-patterns, struct patterns, range patterns.
 
+### Match guards
+* **Added** `pattern if condition => …` in both `match` forms. The guard is type-checked as a Bool with the arm's bindings in scope; guarded arms
+  do not count for exhaustiveness or make later arms unreachable; a guard that would move a value is rejected (`A match guard cannot move a value`);
+  names used only in a guard count as read. `examples/match_guards.yom`, 2 tests (139 Rust tests total).
+* **Internal:** the match-expression parsing and analysis moved into their own functions so the recursive-descent frames stay small (a debug build
+  of the nesting-limit test overflowed its stack otherwise).
+* **Not done:** or-patterns (`A | B`), struct patterns, range patterns.
+
 ### Network protocol library (`import std.net`)
 * **Added** `std.net`, written in YOMNOVA on `NetworkBuffer` (`stdlib/net.yom`): IPv4 readers (`ipv4_version header_len total_length ttl protocol src dst`
   with `src`/`dst` as `IPv4` values), `ipv4_compute_checksum`, `ipv4_checksum_ok`, `ipv4_valid` (version, lengths, checksum), `ipv4_payload`; UDP
