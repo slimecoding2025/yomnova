@@ -224,6 +224,8 @@ export const NET_TYPES: NetType[] = [
   { name: "IPv6", status: "implemented", note: "IPv6(\"::1\") parses and validates an address; it displays in canonical form and compares with ==." },
   { name: "IPAddress", status: "planned", note: "An IPv4-or-IPv6 sum type; enums and IPv6 exist now, the combined type does not." },
   { name: "Protocol library (std.net)", status: "implemented", note: "Ethernet II, IPv4, IPv6, UDP and TCP: readers, builders, IPv4 header and UDP/TCP checksums, on NetworkBuffer. Parsing and building only: no sockets." },
+  { name: "Security library (std.sec)", status: "implemented", note: "Defensive analysis: sha256/HMAC/base64/hex natives, EICAR and PE-section checks, NOP sleds, entropy, IOC lists, port-scan, SYN-flood, ARP-spoof, ICMP-tunnel and log brute-force checks. Simple indicators, not an antivirus." },
+  { name: "VLAN, ARP, ICMP (std.net)", status: "implemented", note: "802.1Q tags, ARP over Ethernet/IPv4 and ICMPv4 echo with checksum." },
   { name: "File access", status: "implemented", note: "file_read/write/append/exists, CLI only with --allow-fs DIR; confined to that directory; off in the playground." },
   { name: "Text library", status: "implemented", note: "std.text and str_* natives: upper, lower, trim, contains, find, slice, replace, split, parse_int. Characters, not bytes; no regex." },
   { name: "NetworkBuffer", status: "implemented", note: "NetworkBuffer(n), bytes_of(text), buf_get/get16/get32, buf_set/set16/set32, buf_slice, buf_concat; every access is bounds-checked and writes return a new buffer (max 1 MiB)." },

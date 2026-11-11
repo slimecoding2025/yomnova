@@ -40,7 +40,11 @@ const FUNCTIONS: &[(&str, &str, &str)] = &[
     ("arrays", "min_of", "fn arrays_min_of(xs: &Array<Int>) -> Int {\n    mut m = xs[0]\n    for x in xs {\n        if x < m {\n            m = x\n        }\n    }\n    return m\n}"),
 ];
 
-const NET_SOURCE: &str = include_str!("stdlib/net.yom");
+/// Modules written as `.yom` files: each `fn <module>_<name>` starts at column 0.
+const FILE_MODULES: &[(&str, &str)] = &[
+    ("net", include_str!("stdlib/net.yom")),
+    ("sec", include_str!("stdlib/sec.yom")),
+];
 
 type Entry = (String, String, String);
 
@@ -51,25 +55,31 @@ fn table() -> Vec<Entry> {
         .iter()
         .map(|f| (f.0.to_string(), f.1.to_string(), f.2.to_string()))
         .collect();
-    let mut cur: Option<(String, String)> = None;
-    let flush = |cur: &mut Option<(String, String)>, all: &mut Vec<Entry>| {
-        if let Some((name, src)) = cur.take() {
-            let short = name.strip_prefix("net_").unwrap_or(&name).to_string();
-            all.push(("net".to_string(), short, src.trim_end().to_string()));
+    for (module, source) in FILE_MODULES {
+        let prefix = format!("{module}_");
+        let mut cur: Option<(String, String)> = None;
+        let flush = |cur: &mut Option<(String, String)>, all: &mut Vec<Entry>| {
+            if let Some((name, src)) = cur.take() {
+                let short = name
+                    .strip_prefix(prefix.as_str())
+                    .unwrap_or(&name)
+                    .to_string();
+                all.push((module.to_string(), short, src.trim_end().to_string()));
+            }
+        };
+        for line in source.lines() {
+            if let Some(rest) = line.strip_prefix("fn ") {
+                flush(&mut cur, &mut all);
+                let name: String = rest.chars().take_while(|c| is_ident(*c)).collect();
+                cur = Some((name, String::new()));
+            }
+            if let Some((_, src)) = cur.as_mut() {
+                src.push_str(line);
+                src.push('\n');
+            }
         }
-    };
-    for line in NET_SOURCE.lines() {
-        if let Some(rest) = line.strip_prefix("fn ") {
-            flush(&mut cur, &mut all);
-            let name: String = rest.chars().take_while(|c| is_ident(*c)).collect();
-            cur = Some((name, String::new()));
-        }
-        if let Some((_, src)) = cur.as_mut() {
-            src.push_str(line);
-            src.push('\n');
-        }
+        flush(&mut cur, &mut all);
     }
-    flush(&mut cur, &mut all);
     all
 }
 
@@ -109,7 +119,7 @@ pub fn expand(source: &str) -> Result<String, Vec<Diagnostic>> {
                 return Err(vec![err(
                     i + 1,
                     format!(
-                        "cannot import `{name}`: only the built-in modules `std.math`, `std.arrays`, `std.text` and `std.net` exist"
+                        "cannot import `{name}`: only the built-in modules `std.math`, `std.arrays`, `std.text`, `std.net` and `std.sec` exist"
                     ),
                 )]);
             }

@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use yomnova_bytecode::{Chunk, OpCode, Value};
 
+mod sec;
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum VmError {
     #[error("Stack underflow")]
@@ -117,6 +119,15 @@ impl Vm {
             "file_write",
             "file_append",
             "file_exists",
+            "sha256",
+            "hmac_sha256",
+            "hex_encode",
+            "hex_decode",
+            "base64_encode",
+            "base64_decode",
+            "buf_find",
+            "buf_entropy",
+            "file_read_bytes",
         ] {
             vm.globals
                 .insert(name.to_string(), Value::NativeFunction(name.to_string()));
@@ -695,14 +706,17 @@ impl Vm {
                     "IPv4" | "IPv6" | "Port" | "len" => 1,
                     "Endpoint" | "push" | "buf_get" | "buf_get16" | "buf_get32" | "buf_concat"
                     | "Packet" => 2,
-                    "buf_set" | "buf_set16" | "buf_set32" | "buf_slice" => 3,
+                    "buf_set" | "buf_set16" | "buf_set32" | "buf_slice" | "buf_find" => 3,
                     "NetworkBuffer" | "bytes_of" | "packet_header" | "packet_payload"
                     | "str_upper" | "str_lower" | "str_trim" | "str_from_int" | "str_parse_int" => {
                         1
                     }
                     "str_contains" | "str_starts_with" | "str_ends_with" | "str_find"
                     | "str_repeat" | "str_split" | "file_write" | "file_append" => 2,
-                    "file_read" | "file_exists" | "fail" => 1,
+                    "file_read" | "file_exists" | "fail" | "file_read_bytes" | "sha256"
+                    | "hex_encode" | "hex_decode" | "base64_encode" | "base64_decode"
+                    | "buf_entropy" => 1,
+                    "hmac_sha256" => 2,
                     "str_slice" | "str_replace" => 3,
                     other => {
                         return Err(VmError::TypeError(format!(
@@ -825,6 +839,10 @@ impl Vm {
                             )))
                         }
                     },
+                    "sha256" | "hmac_sha256" | "hex_encode" | "hex_decode" | "base64_encode"
+                    | "base64_decode" | "buf_find" | "buf_entropy" => {
+                        sec::sec_native(name.as_str(), &args, Self::MAX_BUFFER_BYTES)?
+                    }
                     other if other.starts_with("file_") => self.file_native(other, &args)?,
                     other if other.starts_with("str_") => Self::text_native(other, &args)?,
                     other => Self::net_native(other, args)?,
@@ -934,6 +952,19 @@ impl Vm {
                 let text = std::fs::read_to_string(&anchor)
                     .map_err(|e| fail(format!("{name}: '{rel}': {e}")))?;
                 Ok(Value::Text(text))
+            }
+            "file_read_bytes" => {
+                let meta = std::fs::metadata(&anchor)
+                    .map_err(|e| fail(format!("{name}: '{rel}': {e}")))?;
+                if meta.len() as usize > Self::MAX_BUFFER_BYTES {
+                    return Err(VmError::ResourceLimit(format!(
+                        "file '{rel}' is larger than {} bytes",
+                        Self::MAX_BUFFER_BYTES
+                    )));
+                }
+                let bytes =
+                    std::fs::read(&anchor).map_err(|e| fail(format!("{name}: '{rel}': {e}")))?;
+                Ok(Value::Buffer(bytes))
             }
             "file_write" | "file_append" => {
                 let Some(Value::Text(data)) = args.get(1) else {

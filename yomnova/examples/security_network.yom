@@ -1,0 +1,40 @@
+// Network-side detection with std.net and std.sec: ARP spoofing, a port scan, a SYN flood,
+// ICMP tunnelling and a VLAN-tagged frame. The packets are built here; nothing touches a network.
+import std.net
+import std.sec
+
+fn main() -> Int {
+    // ARP table learned so far, then two new announcements.
+    let ips = ["192.168.1.1", "192.168.1.20"]
+    let macs = ["aa:aa:aa:00:00:01", "aa:aa:aa:00:00:20"]
+    let honest = net.make_arp(2, "aa:aa:aa:00:00:01", "192.168.1.1", "ff:ff:ff:ff:ff:ff", "192.168.1.1")
+    let forged = net.make_arp(2, "de:ad:be:ef:00:66", "192.168.1.1", "ff:ff:ff:ff:ff:ff", "192.168.1.1")
+    emit("honest announcement conflicts with the table:")
+    emit(sec.arp_conflict(&ips, &macs, "192.168.1.1", net.arp_sender_mac(&honest)))
+    emit("forged announcement conflicts with the table:")
+    emit(sec.arp_conflict(&ips, &macs, "192.168.1.1", net.arp_sender_mac(&forged)))
+    emit(net.arp_is_gratuitous(&forged))
+
+    // One source probing many destination ports.
+    let touched = [21, 22, 23, 25, 80, 110, 139, 443, 445, 3389]
+    emit(sec.distinct_count(&touched))
+    emit(sec.port_scan(&touched, 8))
+
+    // 900 SYNs and only 12 completed handshakes in the window.
+    emit(sec.syn_flood(900, 12, 100, 10))
+
+    // An echo request whose data is far larger than a normal ping.
+    let normal = net.make_icmp_echo(8, 1, 1, bytes_of("abcdefghijklmnopqrstuvwabcdefghi"))
+    let long_data = str_repeat("exfiltrated-data-", 10)
+    let odd = net.make_icmp_echo(8, 1, 2, bytes_of(long_data))
+    emit(sec.icmp_tunnel_suspect(&normal, 56))
+    emit(sec.icmp_tunnel_suspect(&odd, 56))
+
+    // A VLAN-tagged frame carrying an ARP packet.
+    let arp = net.make_arp(1, "aa:bb:cc:00:00:01", "10.0.0.5", "00:00:00:00:00:00", "10.0.0.1")
+    let frame = net.make_vlan("ff:ff:ff:ff:ff:ff", "aa:bb:cc:00:00:01", 30, 0, 2054, arp)
+    emit(net.vlan_id(&frame))
+    let inner = net.vlan_payload(&frame)
+    emit(net.arp_valid(&inner))
+    return 0
+}

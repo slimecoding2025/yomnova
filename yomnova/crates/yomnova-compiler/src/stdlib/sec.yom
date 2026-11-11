@@ -1,0 +1,316 @@
+// std.sec: defensive analysis helpers written in YOMNOVA on top of NetworkBuffer and the
+// sha256 / buf_find / buf_entropy natives. These are simple indicators, not an antivirus:
+// signatures miss new threats and heuristics raise false alarms. A finding is a text line that
+// starts with its severity: "high:", "medium:" or "low:".
+// Every reader takes a borrowed buffer or array (`&x`) and never changes it.
+
+// ---- little helpers -------------------------------------------------------------------------
+
+fn sec_le16(b: &NetworkBuffer, off: Int) -> Int {
+    return buf_get(b, off) + buf_get(b, off + 1) * 256
+}
+
+fn sec_le32(b: &NetworkBuffer, off: Int) -> Int {
+    return sec_le16(&b, off) + sec_le16(&b, off + 2) * 65536
+}
+
+fn sec_has_text(data: &NetworkBuffer, part: Text) -> Bool {
+    return buf_find(data, bytes_of(part), 0) >= 0
+}
+
+// First occurrence of a pattern written as hex digits ("909090"), or -1.
+fn sec_find_hex(data: &NetworkBuffer, hex: Text) -> Int {
+    return buf_find(data, hex_decode(hex), 0)
+}
+
+// Longest run of one repeated byte value (0x90 is the x86 NOP used in "NOP sleds").
+fn sec_longest_run(data: &NetworkBuffer, value: Int) -> Int {
+    mut best = 0
+    mut cur = 0
+    mut i = 0
+    while i < len(data) {
+        if buf_get(data, i) == value {
+            cur = cur + 1
+            if cur > best {
+                best = cur
+            }
+        } else {
+            cur = 0
+        }
+        i = i + 1
+    }
+    return best
+}
+
+fn sec_entropy(data: &NetworkBuffer) -> Float {
+    return buf_entropy(data)
+}
+
+// ---- hashes and indicator lists -------------------------------------------------------------
+
+// Lines of a text file, trimmed, without empty lines and without lines starting with `#`.
+// Needs file access (--allow-fs on the command line).
+fn sec_load_list(path: Text) -> Array<Text> {
+    let lines = str_split(file_read(path), "\n")
+    mut out: Array<Text> = []
+    for l in lines {
+        let t = str_trim(l)
+        if len(t) > 0 && !str_starts_with(t, "#") {
+            out = push(out, t)
+        }
+    }
+    return out
+}
+
+// Is `value` one of the entries (case-insensitive)? For hash lists, IP lists and domain lists.
+fn sec_in_list(value: Text, list: &Array<Text>) -> Bool {
+    let v = str_lower(value)
+    for e in list {
+        if str_lower(e) == v {
+            return true
+        }
+    }
+    return false
+}
+
+// SHA-256 of a file's bytes as hex; the file must be inside the --allow-fs directory.
+fn sec_hash_file(path: Text) -> Text {
+    return sha256(file_read_bytes(path))
+}
+
+// ---- file and payload checks ----------------------------------------------------------------
+
+// "pe" (Windows), "elf", "zip", "pdf", "script" (#! line) or "unknown", from the first bytes.
+fn sec_file_kind(data: &NetworkBuffer) -> Text {
+    if len(data) >= 4 && buf_get(data, 0) == 127 && buf_get(data, 1) == 69 && buf_get(data, 2) == 76 && buf_get(data, 3) == 70 {
+        return "elf"
+    }
+    if len(data) >= 4 && buf_get(data, 0) == 37 && buf_get(data, 1) == 80 && buf_get(data, 2) == 68 && buf_get(data, 3) == 70 {
+        return "pdf"
+    }
+    if len(data) >= 4 && buf_get(data, 0) == 80 && buf_get(data, 1) == 75 && buf_get(data, 2) == 3 && buf_get(data, 3) == 4 {
+        return "zip"
+    }
+    if len(data) >= 2 && buf_get(data, 0) == 35 && buf_get(data, 1) == 33 {
+        return "script"
+    }
+    if len(data) >= 64 && buf_get(data, 0) == 77 && buf_get(data, 1) == 90 {
+        return "pe"
+    }
+    return "unknown"
+}
+
+// The standard EICAR antivirus test string (harmless; every scanner flags it on purpose).
+fn sec_is_eicar(data: &NetworkBuffer) -> Bool {
+    return sec_find_hex(&data, "58354f2150254041505b345c505a58353428505e2937434329377d2445494341522d5354414e444152442d414e544956495255532d544553542d46494c452124482b482a") >= 0
+}
+
+// Structural checks of a Windows PE file: header offsets, writable+executable sections,
+// sections with very high entropy. Returns findings; empty when nothing stands out.
+fn sec_pe_findings(data: &NetworkBuffer) -> Array<Text> {
+    if len(data) < 64 || buf_get(data, 0) != 77 || buf_get(data, 1) != 90 {
+        let none: Array<Text> = []
+        return none
+    }
+    mut out: Array<Text> = []
+    let pe = sec_le32(&data, 60)
+    if pe < 64 || pe + 24 > len(data) {
+        let r: Array<Text> = ["high: the PE header offset points outside the file (malformed or tampered)"]
+        return r
+    }
+    if buf_get(data, pe) != 80 || buf_get(data, pe + 1) != 69 || buf_get(data, pe + 2) != 0 || buf_get(data, pe + 3) != 0 {
+        let r: Array<Text> = ["medium: MZ file without a PE signature at the header offset"]
+        return r
+    }
+    let count = sec_le16(&data, pe + 6)
+    let table = pe + 24 + sec_le16(&data, pe + 20)
+    if count == 0 {
+        out = push(out, "medium: PE file with no sections")
+    }
+    if count > 20 {
+        out = push(out, "low: unusually many PE sections (" + str_from_int(count) + ")")
+    }
+    mut i = 0
+    while i < count && i < 96 {
+        let at = table + i * 40
+        if at + 40 > len(data) {
+            out = push(out, "medium: the PE section table runs past the end of the file")
+            i = 1000
+        } else {
+            let flags = sec_le32(&data, at + 36)
+            let executable = (flags / 536870912) % 2 == 1
+            let writable = (flags / 2147483648) % 2 == 1
+            if executable && writable {
+                out = push(out, "high: PE section " + str_from_int(i) + " is both writable and executable")
+            }
+            let raw_size = sec_le32(&data, at + 16)
+            let raw_ptr = sec_le32(&data, at + 20)
+            if raw_size >= 512 && raw_ptr + raw_size <= len(data) {
+                let part = buf_slice(data, raw_ptr, raw_size)
+                if buf_entropy(part) > 7.2 {
+                    out = push(out, "medium: PE section " + str_from_int(i) + " has very high entropy (packed or encrypted)")
+                }
+            }
+            i = i + 1
+        }
+    }
+    return out
+}
+
+// All checks on a file or payload. Findings are lines starting "high:", "medium:" or "low:".
+fn sec_scan(data: &NetworkBuffer) -> Array<Text> {
+    mut out: Array<Text> = []
+    if sec_is_eicar(&data) {
+        out = push(out, "high: EICAR antivirus test string (a harmless standard test file)")
+    }
+    let kind = sec_file_kind(&data)
+    if kind == "pe" {
+        for f in sec_pe_findings(&data) {
+            out = push(out, f)
+        }
+    }
+    let sled = sec_longest_run(&data, 144)
+    if sled >= 32 {
+        out = push(out, "medium: long run of 0x90 bytes (" + str_from_int(sled) + "), typical of a NOP sled")
+    }
+    if sec_has_text(&data, "/bin/sh") {
+        out = push(out, "low: contains the text /bin/sh")
+    }
+    if sec_has_text(&data, "cmd.exe") {
+        out = push(out, "low: contains the text cmd.exe")
+    }
+    if len(data) >= 1024 && buf_entropy(data) > 7.5 {
+        out = push(out, "low: very high entropy (compressed, encrypted or packed data)")
+    }
+    return out
+}
+
+// "malicious indicators" (any high), "suspicious" (any medium), "weak indicators only", or
+// "no indicators found" -- which is never proof that something is safe.
+fn sec_verdict(findings: &Array<Text>) -> Text {
+    mut worst = 0
+    for f in findings {
+        if str_starts_with(f, "high:") {
+            worst = 3
+        }
+        if str_starts_with(f, "medium:") && worst < 2 {
+            worst = 2
+        }
+        if str_starts_with(f, "low:") && worst < 1 {
+            worst = 1
+        }
+    }
+    if worst == 3 {
+        return "malicious indicators"
+    }
+    if worst == 2 {
+        return "suspicious"
+    }
+    if worst == 1 {
+        return "weak indicators only"
+    }
+    return "no indicators found (not proof that it is safe)"
+}
+
+// ---- network checks -------------------------------------------------------------------------
+
+// How many different values appear (for example the destination ports one source touched).
+fn sec_distinct_count(xs: &Array<Int>) -> Int {
+    mut seen: Array<Int> = []
+    for x in xs {
+        mut found = false
+        for s in seen {
+            if s == x {
+                found = true
+            }
+        }
+        if !found {
+            seen = push(seen, x)
+        }
+    }
+    return len(seen)
+}
+
+// A source that touched at least `threshold` different ports looks like a port scan.
+fn sec_port_scan(dst_ports: &Array<Int>, threshold: Int) -> Bool {
+    return sec_distinct_count(&dst_ports) >= threshold
+}
+
+// Many SYNs with few answered handshakes: more than `min_syns` SYNs and fewer than one ACK per
+// `ratio` SYNs. Counts come from the caller (for example from net.tcp_syn over a capture).
+fn sec_syn_flood(syns: Int, acks: Int, min_syns: Int, ratio: Int) -> Bool {
+    return syns >= min_syns && acks * ratio < syns
+}
+
+// ARP spoofing sign: the table already maps `ip` to a different MAC address.
+fn sec_arp_conflict(known_ips: &Array<Text>, known_macs: &Array<Text>, ip: Text, mac: Text) -> Bool {
+    mut i = 0
+    while i < len(known_ips) {
+        if known_ips[i] == ip && str_lower(known_macs[i]) != str_lower(mac) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// ICMP echo data larger than `max_len` bytes, or with high entropy, can mean tunnelling.
+fn sec_icmp_tunnel_suspect(icmp: &NetworkBuffer, max_len: Int) -> Bool {
+    if len(icmp) < 8 {
+        return false
+    }
+    let data = buf_slice(icmp, 8, len(icmp) - 8)
+    if len(data) > max_len {
+        return true
+    }
+    return len(data) >= 64 && buf_entropy(data) > 6.5
+}
+
+// ---- log checks -----------------------------------------------------------------------------
+
+// The word that follows `marker` in a line ("... from 10.0.0.5 port 22" with marker "from "), or "".
+fn sec_word_after(line: &Text, marker: &Text) -> Text {
+    let at = str_find(line, marker)
+    if at < 0 {
+        return ""
+    }
+    let rest = str_slice(line, at + len(marker), len(line))
+    let words = str_split(str_trim(rest), " ")
+    return words[0]
+}
+
+// Sources that appear on at least `threshold` lines containing `needle` (for example failed logins).
+fn sec_repeat_offenders(lines: &Array<Text>, needle: Text, marker: Text, threshold: Int) -> Array<Text> {
+    mut names: Array<Text> = []
+    mut counts: Array<Int> = []
+    for l in lines {
+        if str_contains(l, needle) {
+            let who = sec_word_after(&l, &marker)
+            if len(who) > 0 {
+                mut idx = 0 - 1
+                mut j = 0
+                while j < len(names) {
+                    if names[j] == who {
+                        idx = j
+                    }
+                    j = j + 1
+                }
+                if idx < 0 {
+                    names = push(names, who)
+                    counts = push(counts, 1)
+                } else {
+                    counts[idx] = counts[idx] + 1
+                }
+            }
+        }
+    }
+    mut out: Array<Text> = []
+    mut k = 0
+    while k < len(names) {
+        if counts[k] >= threshold {
+            out = push(out, names[k])
+        }
+        k = k + 1
+    }
+    return out
+}

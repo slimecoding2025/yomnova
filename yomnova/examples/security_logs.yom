@@ -1,0 +1,18 @@
+// Finding repeat offenders in an authentication log with std.sec.
+import std.sec
+
+fn main() -> Int {
+    let log = [
+        "Nov 10 09:01:11 sshd: Failed password for root from 203.0.113.9 port 51022",
+        "Nov 10 09:01:13 sshd: Failed password for admin from 203.0.113.9 port 51023",
+        "Nov 10 09:01:15 sshd: Failed password for oracle from 203.0.113.9 port 51024",
+        "Nov 10 09:02:40 sshd: Accepted password for salim from 198.51.100.7 port 40100",
+        "Nov 10 09:03:02 sshd: Failed password for salim from 198.51.100.7 port 40111"
+    ]
+    let offenders = sec.repeat_offenders(&log, "Failed password", "from ", 3)
+    emit(len(offenders))
+    for ip in offenders {
+        emit("possible brute force from " + ip)
+    }
+    return 0
+}

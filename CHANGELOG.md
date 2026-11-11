@@ -2,6 +2,22 @@
 
 ## Unreleased — 2026-11-03
 
+### Security-oriented tooling: `std.sec`, hashing natives, ICMP/ARP/VLAN
+YOMNOVA now aims at defensive security work: analysing and detecting, not attacking. Nothing here builds exploits or malware.
+* **Added natives** (pure, no I/O): `sha256`, `hmac_sha256` (hex text), `hex_encode/hex_decode`, `base64_encode/base64_decode`, `buf_find(buf, needle, from)`
+  (-1 when absent), `buf_entropy` (bits per byte, 0..8) and, with `--allow-fs`, `file_read_bytes(path)`. SHA-256 and HMAC are checked against the NIST and
+  RFC 4231 vectors and against `sha256sum`; bad hex/base64 input is a runtime error, never a panic. (Fixed while testing: a single repeated byte returned `-0` entropy.)
+* **Added to `std.net`:** VLAN 802.1Q (`vlan_tagged vlan_id vlan_priority vlan_inner_type vlan_payload make_vlan`), ARP over Ethernet/IPv4
+  (`arp_valid arp_operation arp_sender_mac arp_sender_ip arp_target_mac arp_target_ip arp_is_gratuitous make_arp`) and ICMPv4
+  (`icmp_type icmp_code icmp_echo_id icmp_echo_seq icmp_payload icmp_checksum_compute icmp_checksum_ok make_icmp_echo`). The ICMP checksum matches an independent Python RFC 1071 computation.
+* **Added `std.sec`** (written in YOMNOVA): `scan` (EICAR test string, PE structure checks, NOP sleds, `/bin/sh` and `cmd.exe` strings, high entropy) returning
+  findings that start with `high:`/`medium:`/`low:`, `verdict`, `file_kind`, `pe_findings`, `is_eicar`, `find_hex`, `longest_run`, `load_list`, `in_list`, `hash_file`,
+  `port_scan`, `distinct_count`, `syn_flood`, `arp_conflict`, `icmp_tunnel_suspect`, `repeat_offenders` (log brute force). Examples: `security_scan`, `security_network`,
+  `security_files`, `security_logs`. 10 new tests (161 Rust tests total, including the SHA-256 unit tests).
+* **Limits, stated plainly:** these are simple indicators, not an antivirus. Signatures miss new threats and the entropy/section heuristics raise false alarms
+  (compressed archives look "high entropy"). There is no threat-intelligence data in the repository: the only built-in signature is the harmless EICAR test string.
+  PE checks cover the section table only (no imports, no ELF/Mach-O depth). No ICMPv6, no IPv6 extension headers, no PCAP reader yet, no YARA-like rule language.
+
 ### Struct patterns; guard fix
 * **Added** struct patterns: `Point { x: 0, y }`, `Point { y, .. }` (a bare field name binds it, `field: pattern` tests it, `..` ignores the rest). They nest
   in enum payloads and other struct patterns, work in both `match` forms and or-patterns, and are type-checked (unknown field, wrong struct, wrong field type).

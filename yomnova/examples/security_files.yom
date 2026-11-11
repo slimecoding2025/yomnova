@@ -1,0 +1,15 @@
+// Hashing a file and checking it against an indicator list.
+// File access is off by default; enable one directory:
+//   yomnova run --allow-fs . examples/security_files.yom
+import std.sec
+
+fn main() -> Int {
+    file_write("sample.txt", "hello world")
+    file_write("iocs.txt", "# known-bad SHA-256 hashes, one per line\nB94D27B9934D3E08A52E52D7DA7DABFAC484EFE37A5380EE9088F7ACE2EFCDE9\n\nffffffff\n")
+    let digest = sec.hash_file("sample.txt")
+    emit(digest)
+    let iocs = sec.load_list("iocs.txt")
+    emit(len(iocs))
+    emit(sec.in_list(digest, &iocs))
+    return 0
+}

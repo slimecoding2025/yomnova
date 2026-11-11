@@ -1,0 +1,28 @@
+// Defensive scanning with std.sec: signatures and simple heuristics, with an honest verdict.
+// This is a teaching tool, not an antivirus: "no indicators found" never means "safe".
+import std.sec
+
+fn show(name: Text, data: NetworkBuffer) -> Int {
+    let findings = sec.scan(&data)
+    emit(name + ": " + sec.verdict(&findings))
+    for f in findings {
+        emit("  " + f)
+    }
+    return 0
+}
+
+fn main() -> Int {
+    // The standard EICAR antivirus test string: harmless, flagged by every scanner on purpose.
+    let _a = show("eicar.com", hex_decode("58354f2150254041505b345c505a58353428505e2937434329377d2445494341522d5354414e444152442d414e544956495255532d544553542d46494c452124482b482a"))
+    let _b = show("notes.txt", bytes_of("meeting at noon, bring the report"))
+    // A payload that starts with a long NOP sled and mentions a shell.
+    let _c = show("payload.bin", hex_decode("90909090909090909090909090909090909090909090909090909090909090909090909090909090" + hex_encode(bytes_of("/bin/sh"))))
+
+    // Hashes against an indicator list (these hashes are made up for the demo).
+    let known_bad = ["BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD", "deadbeef"]
+    let sample = bytes_of("abc")
+    let digest = sha256(sample)
+    emit("sha256(abc) is on the list:")
+    emit(sec.in_list(digest, &known_bad))
+    return 0
+}

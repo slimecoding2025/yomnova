@@ -144,7 +144,7 @@ impl fmt::Display for Type {
 /// Native functions for `NetworkBuffer` and `Packet`: (name, parameter types, return type).
 /// Shared by the type checker and the ownership checker.
 pub fn net_builtins() -> Vec<(&'static str, Vec<Type>, Type)> {
-    use Type::{Bool, Int, NetworkBuffer as Buf, Packet, Text};
+    use Type::{Bool, Float, Int, NetworkBuffer as Buf, Packet, Text};
     vec![
         ("NetworkBuffer", vec![Int], Buf),
         ("bytes_of", vec![Text], Buf),
@@ -177,6 +177,15 @@ pub fn net_builtins() -> Vec<(&'static str, Vec<Type>, Type)> {
         ("file_write", vec![Text, Text], Type::Unit),
         ("file_append", vec![Text, Text], Type::Unit),
         ("file_exists", vec![Text], Bool),
+        ("file_read_bytes", vec![Text], Buf),
+        ("sha256", vec![Buf], Text),
+        ("hmac_sha256", vec![Buf, Buf], Text),
+        ("hex_encode", vec![Buf], Text),
+        ("hex_decode", vec![Text], Buf),
+        ("base64_encode", vec![Buf], Text),
+        ("base64_decode", vec![Text], Buf),
+        ("buf_find", vec![Buf, Buf, Int], Int),
+        ("buf_entropy", vec![Buf], Float),
     ]
 }
 
@@ -206,4 +215,13 @@ pub const NET_READ_ONLY: &[&str] = &[
     "file_write",
     "file_append",
     "file_exists",
+    "file_read_bytes",
+    "sha256",
+    "hmac_sha256",
+    "hex_encode",
+    "hex_decode",
+    "base64_encode",
+    "base64_decode",
+    "buf_find",
+    "buf_entropy",
 ];

@@ -1860,3 +1860,141 @@ fn a_guard_may_end_in_a_name() {
     let out = run_main(" let k = 4\n emit(match 4 { n if n == k => \"same\", _ => \"diff\" })\n emit(match 5 { n if n == k => \"same\", _ => \"diff\" })");
     assert_eq!(out, vec!["same", "diff"]);
 }
+
+fn run_src(src: &str) -> Vec<String> {
+    Compiler::compile_and_run(src).expect(src).output_lines
+}
+
+fn run_err(src: &str) -> String {
+    match Compiler::compile_and_run(src) {
+        Ok(_) => panic!("should fail: {src}"),
+        Err(e) => e
+            .iter()
+            .map(|d| d.message.clone())
+            .collect::<Vec<_>>()
+            .join(" | "),
+    }
+}
+
+#[test]
+fn hashing_and_encoding_natives_match_published_vectors() {
+    let out = run_src(
+        "fn main() -> Int {\n emit(sha256(bytes_of(\"abc\")))\n emit(sha256(bytes_of(\"\")))\n emit(hmac_sha256(bytes_of(\"Jefe\"), bytes_of(\"what do ya want for nothing?\")))\n emit(base64_encode(bytes_of(\"Ma\")))\n emit(hex_encode(base64_decode(\"TWFu\")))\n emit(hex_encode(hex_decode(\"00FF10\")))\n emit(buf_find(bytes_of(\"hello world\"), bytes_of(\"o w\"), 0))\n emit(buf_find(bytes_of(\"hello\"), bytes_of(\"z\"), 0))\n emit(buf_entropy(bytes_of(\"aaaa\")))\n return 0\n}\n",
+    );
+    assert_eq!(
+        out,
+        vec![
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+            "TWE=",
+            "4d616e",
+            "00ff10",
+            "4",
+            "-1",
+            "0",
+        ]
+    );
+}
+
+#[test]
+fn encoding_natives_reject_bad_input_without_panicking() {
+    for bad in [
+        "hex_decode(\"abc\")",
+        "hex_decode(\"zz\")",
+        "base64_decode(\"T!==\")",
+        "base64_decode(\"TQ=\")",
+    ] {
+        let src = format!("fn main() -> Int {{\n let b = {bad}\n emit(len(b))\n return 0\n}}\n");
+        assert!(
+            run_err(&src).contains("hex") || run_err(&src).contains("base64"),
+            "{bad}"
+        );
+    }
+    assert!(run_err("fn main() -> Int {\n emit(buf_find(bytes_of(\"a\"), bytes_of(\"a\"), 0 - 1))\n return 0\n}\n").contains("negative start"));
+    // file natives stay disabled unless the command line allows them
+    assert!(
+        run_err("fn main() -> Int {\n emit(len(file_read_bytes(\"x.bin\")))\n return 0\n}\n")
+            .contains("disabled")
+    );
+}
+
+#[test]
+fn icmp_arp_and_vlan_in_std_net() {
+    let out = run_src(
+        "import std.net\nfn main() -> Int {\n let req = net.make_icmp_echo(8, 77, 1, bytes_of(\"ping\"))\n emit(buf_get16(req, 2))\n let again = net.make_icmp_echo(8, 77, 1, bytes_of(\"ping\"))\n emit(net.icmp_checksum_ok(&again))\n let broken = buf_set(again, 8, 0)\n emit(net.icmp_checksum_ok(&broken))\n let arp = net.make_arp(1, \"aa:bb:cc:00:00:01\", \"192.168.1.10\", \"00:00:00:00:00:00\", \"192.168.1.1\")\n emit(net.arp_valid(&arp))\n emit(net.arp_sender_ip(&arp))\n emit(net.arp_target_ip(&arp))\n emit(net.arp_sender_mac(&arp))\n emit(net.arp_is_gratuitous(&arp))\n let frame = net.make_vlan(\"ff:ff:ff:ff:ff:ff\", \"aa:bb:cc:00:00:01\", 100, 5, 2054, arp)\n emit(net.vlan_tagged(&frame))\n emit(net.vlan_id(&frame))\n emit(net.vlan_priority(&frame))\n emit(net.vlan_inner_type(&frame))\n let inner = net.vlan_payload(&frame)\n emit(net.arp_valid(&inner))\n return 0\n}\n",
+    );
+    // 6369 is the RFC 1071 checksum of the echo request, computed independently in Python.
+    assert_eq!(
+        out,
+        vec![
+            "6369",
+            "true",
+            "false",
+            "true",
+            "192.168.1.10",
+            "192.168.1.1",
+            "aa:bb:cc:00:00:01",
+            "false",
+            "true",
+            "100",
+            "5",
+            "2054",
+            "true"
+        ]
+    );
+    assert!(run_err("import std.net\nfn main() -> Int {\n let f = net.make_vlan(\"ff:ff:ff:ff:ff:ff\", \"aa:bb:cc:00:00:01\", 5000, 0, 2048, bytes_of(\"x\"))\n emit(len(f))\n return 0\n}\n").contains("VLAN id"));
+}
+
+const PE_HEX: &str = "4d5a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040000000504500004c010200000000000000000000000000000002012e7465787400000000100000001000000000000000000000000000000000000000000000200000e02e64617461000000001000000020000000020000a800000000000000000000000000000040000040a54dca182530bb1d6d132cded6237b2ed91e3f721fcb1971174494d6493c9d5c3460be31201e69fedaa0eee8b9997f5c7c2999fdafe593253cd654af4dfad71427a0aeb3fee9232f8af2211f9ee491c5b10becb5563bfc1e6f93427ecbc8fe2955e5cd8e46dc8ed4b7c2764d2a5a4d767706f85d8690024ad6bda3401be9c8cbccc935f6cd1f61226ae15338ae1a34004d33ba0d246ac04c81b1baf23e3bf9eef5f79f2b4934af87f5520b69b94b0d982e85bb55b672a872637acd7466fcb60e0e8ff18463b0e4b2ba29703474f064ac68f700f5b02b3dc666f45bdeaa2ccaedcd2b5157410e4dee4af2b34f430a073447de636c0e806c957ba684d6431fb5ead7424d09e15d024c5848f23d1fa6f7361d7f618d1532e70e20e2a6668de7f47e8467e546d53ec8e2a1257bdb256c9b3e4fbb498146ef7030cbf9537252dcceadd764b6a32fbb09adeae109c4a997203975352b878b145c8a42d884cf4cfda72d8e1d5dd92589082d852a7122873ee805add58942167a385286195c679f9c6994e45b8ab1098012070961f37de436ddfdc99d6e75af6547cfb11b42072482dc531c2bc3907c9617eb5e5089e40186baa8a57d119e6fb65d00abc32af38e667f022e872d49cc15c90b999b772b4fc7a6fd4c914a16db4708752b0f1544b835c0e719097dfa8701e9232f21f2812687786976ebfcc327f5931765274ba9829b4406";
+const PE_BAD_HEX: &str = "4d5a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a0860100504500004c010200000000000000000000000000000002012e7465787400000000100000001000000000000000000000000000000000000000000000200000e02e64617461000000001000000020000000020000a800000000000000000000000000000040000040a54dca182530bb1d6d132cded6237b2ed91e3f721fcb1971174494d6493c9d5c3460be31201e69fedaa0eee8b9997f5c7c2999fdafe593253cd654af4dfad71427a0aeb3fee9232f8af2211f9ee491c5b10becb5563bfc1e6f93427ecbc8fe2955e5cd8e46dc8ed4b7c2764d2a5a4d767706f85d8690024ad6bda3401be9c8cbccc935f6cd1f61226ae15338ae1a34004d33ba0d246ac04c81b1baf23e3bf9eef5f79f2b4934af87f5520b69b94b0d982e85bb55b672a872637acd7466fcb60e0e8ff18463b0e4b2ba29703474f064ac68f700f5b02b3dc666f45bdeaa2ccaedcd2b5157410e4dee4af2b34f430a073447de636c0e806c957ba684d6431fb5ead7424d09e15d024c5848f23d1fa6f7361d7f618d1532e70e20e2a6668de7f47e8467e546d53ec8e2a1257bdb256c9b3e4fbb498146ef7030cbf9537252dcceadd764b6a32fbb09adeae109c4a997203975352b878b145c8a42d884cf4cfda72d8e1d5dd92589082d852a7122873ee805add58942167a385286195c679f9c6994e45b8ab1098012070961f37de436ddfdc99d6e75af6547cfb11b42072482dc531c2bc3907c9617eb5e5089e40186baa8a57d119e6fb65d00abc32af38e667f022e872d49cc15c90b999b772b4fc7a6fd4c914a16db4708752b0f1544b835c0e719097dfa8701e9232f21f2812687786976ebfcc327f5931765274ba9829b4406";
+
+#[test]
+fn std_sec_flags_known_indicators_and_is_quiet_on_plain_data() {
+    let src = format!(
+        "import std.sec\nfn main() -> Int {{\n let eicar = hex_decode(\"58354f2150254041505b345c505a58353428505e2937434329377d2445494341522d5354414e444152442d414e544956495255532d544553542d46494c452124482b482a\")\n let f = sec.scan(&eicar)\n emit(f[0])\n emit(sec.verdict(&f))\n let plain = bytes_of(\"hello world\")\n let g = sec.scan(&plain)\n emit(len(g))\n emit(sec.verdict(&g))\n let pe = hex_decode(\"{PE_HEX}\")\n emit(sec.file_kind(&pe))\n let h = sec.scan(&pe)\n for x in h {{\n emit(x)\n }}\n emit(sec.verdict(&h))\n let bad = hex_decode(\"{PE_BAD_HEX}\")\n let k = sec.scan(&bad)\n emit(k[0])\n let sled = hex_decode(\"4141909090909090909090909090909090909090909090909090909090909090909090909090909090909090424242\")\n let m = sec.scan(&sled)\n emit(m[0])\n return 0\n}}\n"
+    );
+    let out = run_src(&src);
+    assert_eq!(
+        out[0],
+        "high: EICAR antivirus test string (a harmless standard test file)"
+    );
+    assert_eq!(out[1], "malicious indicators");
+    assert_eq!(out[2], "0");
+    assert_eq!(out[3], "no indicators found (not proof that it is safe)");
+    assert_eq!(out[4], "pe");
+    assert_eq!(out[5], "high: PE section 0 is both writable and executable");
+    assert_eq!(
+        out[6],
+        "medium: PE section 1 has very high entropy (packed or encrypted)"
+    );
+    assert_eq!(out[7], "malicious indicators");
+    assert!(out[8].starts_with("high: the PE header offset points outside the file"));
+    assert!(
+        out[9].starts_with("medium: long run of 0x90 bytes (42)"),
+        "{}",
+        out[9]
+    );
+}
+
+#[test]
+fn std_sec_network_and_log_checks() {
+    let out = run_src(
+        "import std.sec\nfn main() -> Int {\n let ports = [22, 80, 443, 22, 8080, 3306]\n emit(sec.distinct_count(&ports))\n emit(sec.port_scan(&ports, 5))\n emit(sec.port_scan(&ports, 6))\n emit(sec.syn_flood(500, 3, 100, 10))\n emit(sec.syn_flood(500, 400, 100, 10))\n let ips = [\"10.0.0.1\", \"10.0.0.2\"]\n let macs = [\"aa:aa:aa:aa:aa:01\", \"aa:aa:aa:aa:aa:02\"]\n emit(sec.arp_conflict(&ips, &macs, \"10.0.0.1\", \"AA:AA:AA:AA:AA:99\"))\n emit(sec.arp_conflict(&ips, &macs, \"10.0.0.1\", \"AA:AA:AA:AA:AA:01\"))\n emit(sec.arp_conflict(&ips, &macs, \"10.0.0.9\", \"AA:AA:AA:AA:AA:01\"))\n let logs = [\"Failed password for root from 9.9.9.9 port 22\", \"Failed password for bob from 9.9.9.9 port 22\", \"Accepted password for al from 1.1.1.1 port 22\", \"Failed password for x from 2.2.2.2 port 22\"]\n let bad = sec.repeat_offenders(&logs, \"Failed password\", \"from \", 2)\n emit(len(bad))\n emit(bad[0])\n let list = [\"BADHASH\", \"other\"]\n emit(sec.in_list(\"badhash\", &list))\n emit(sec.in_list(\"zzz\", &list))\n return 0\n}\n",
+    );
+    assert_eq!(
+        out,
+        vec![
+            "5", "true", "false", "true", "false", "true", "false", "false", "1", "9.9.9.9",
+            "true", "false"
+        ]
+    );
+}
+
+#[test]
+fn std_sec_icmp_tunnel_suspect_uses_length_and_entropy() {
+    let out = run_src(
+        "import std.net\nimport std.sec\nfn main() -> Int {\n let small = net.make_icmp_echo(8, 1, 1, bytes_of(\"ping\"))\n emit(sec.icmp_tunnel_suspect(&small, 56))\n let big = net.make_icmp_echo(8, 1, 1, bytes_of(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"))\n emit(sec.icmp_tunnel_suspect(&big, 56))\n return 0\n}\n",
+    );
+    assert_eq!(out, vec!["false", "true"]);
+}

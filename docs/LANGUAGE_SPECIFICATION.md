@@ -143,6 +143,7 @@ Ownership is checked statically after type checking; violations stop the program
   over IPv4 and IPv6 (`net.ipv4_udp_checksum`, `ipv6_tcp_checksum_ok`, `fill_ipv4_udp_checksum`, … each taking the whole IP packet). IPv6 extension headers are not
   walked; no VLAN, ARP, ICMP, options or fragmentation, and no sockets. Malformed addresses stop the program with `fail`: `fail(message)` is a native that ends the program with
   `Program failed: message`.
+* **Security tooling.** Hashing/encoding natives, VLAN/ARP/ICMP in `std.net` and the defensive library `std.sec` are described in `docs/SECURITY_TOOLING.md`.
 * **Text library.** `import std.text`: `text.upper text.lower text.trim text.contains text.starts_with text.ends_with text.find text.slice
   text.repeat text.replace text.split text.from_int text.parse_int` (first argument `&s`). The natives can be called directly as
   `str_upper(s)` etc. Positions are characters; `find` gives -1 if absent; `slice(s, from, to)` needs `0 <= from <= to <= len`; an empty

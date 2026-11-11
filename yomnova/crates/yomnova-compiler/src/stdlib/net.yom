@@ -504,3 +504,145 @@ fn net_fill_ipv6_tcp_checksum(ip: NetworkBuffer) -> NetworkBuffer {
     let c = net_ipv6_tcp_checksum(&ip)
     return buf_set16(ip, 56, c)
 }
+
+// ---------------------------------------------------------------------------------------------
+// VLAN (IEEE 802.1Q), ARP (Ethernet/IPv4) and ICMPv4. Call these on the right layer's buffer:
+// VLAN readers take the whole Ethernet frame, ARP readers take the ARP packet (net_eth_payload),
+// ICMP readers take the ICMP message (the IPv4 payload). ICMPv6 is not covered (its checksum
+// needs the IPv6 pseudo-header).
+// ---------------------------------------------------------------------------------------------
+
+// 33024 (0x8100) in the Ethernet type field means a 4-byte VLAN tag follows.
+fn net_vlan_tagged(b: &NetworkBuffer) -> Bool {
+    return len(b) >= 18 && buf_get16(b, 12) == 33024
+}
+
+fn net_vlan_id(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 14) % 4096
+}
+
+fn net_vlan_priority(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 14) / 8192
+}
+
+// The real EtherType (2048 IPv4, 2054 ARP, ...) after the tag.
+fn net_vlan_inner_type(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 16)
+}
+
+fn net_vlan_payload(b: &NetworkBuffer) -> NetworkBuffer {
+    return buf_slice(b, 18, len(b) - 18)
+}
+
+fn net_make_vlan(dst: Text, src: Text, vlan_id: Int, priority: Int, inner_type: Int, payload: NetworkBuffer) -> NetworkBuffer {
+    if vlan_id < 0 || vlan_id > 4095 || priority < 0 || priority > 7 {
+        fail("a VLAN id is 0..4095 and a priority is 0..7")
+    }
+    let tag = NetworkBuffer(4)
+    let tci = priority * 8192 + vlan_id
+    let t1 = buf_set16(tag, 0, tci)
+    let t2 = buf_set16(t1, 2, inner_type)
+    return net_make_ethernet(dst, src, 33024, buf_concat(t2, payload))
+}
+
+// ARP over Ethernet/IPv4: 28 bytes. Operation 1 = request, 2 = reply.
+fn net_arp_valid(b: &NetworkBuffer) -> Bool {
+    if len(b) < 28 {
+        return false
+    }
+    let op = buf_get16(b, 6)
+    return buf_get16(b, 0) == 1 && buf_get16(b, 2) == 2048 && buf_get(b, 4) == 6 && buf_get(b, 5) == 4 && (op == 1 || op == 2)
+}
+
+fn net_arp_operation(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 6)
+}
+
+fn net_arp_sender_mac(b: &NetworkBuffer) -> Text {
+    return net_mac_text(&b, 8)
+}
+
+fn net_arp_sender_ip(b: &NetworkBuffer) -> IPv4 {
+    return IPv4(str_from_int(buf_get(b, 14)) + "." + str_from_int(buf_get(b, 15)) + "." + str_from_int(buf_get(b, 16)) + "." + str_from_int(buf_get(b, 17)))
+}
+
+fn net_arp_target_mac(b: &NetworkBuffer) -> Text {
+    return net_mac_text(&b, 18)
+}
+
+fn net_arp_target_ip(b: &NetworkBuffer) -> IPv4 {
+    return IPv4(str_from_int(buf_get(b, 24)) + "." + str_from_int(buf_get(b, 25)) + "." + str_from_int(buf_get(b, 26)) + "." + str_from_int(buf_get(b, 27)))
+}
+
+// A gratuitous ARP announces the sender's own address: sender IP equals target IP.
+fn net_arp_is_gratuitous(b: &NetworkBuffer) -> Bool {
+    return buf_get32(b, 14) == buf_get32(b, 24)
+}
+
+fn net_make_arp(operation: Int, sender_mac: Text, sender_ip: Text, target_mac: Text, target_ip: Text) -> NetworkBuffer {
+    let sm = net_mac_bytes(&sender_mac)
+    let tm = net_mac_bytes(&target_mac)
+    let si = str_split(sender_ip, ".")
+    let ti = str_split(target_ip, ".")
+    mut h: NetworkBuffer = NetworkBuffer(28)
+    h = buf_set16(h, 0, 1)
+    h = buf_set16(h, 2, 2048)
+    h = buf_set(h, 4, 6)
+    h = buf_set(h, 5, 4)
+    h = buf_set16(h, 6, operation)
+    mut i = 0
+    while i < 6 {
+        h = buf_set(h, 8 + i, sm[i])
+        h = buf_set(h, 18 + i, tm[i])
+        i = i + 1
+    }
+    i = 0
+    while i < 4 {
+        h = buf_set(h, 14 + i, str_parse_int(si[i]))
+        h = buf_set(h, 24 + i, str_parse_int(ti[i]))
+        i = i + 1
+    }
+    return h
+}
+
+// ICMPv4: type, code, checksum over the whole message. Type 8 = echo request, 0 = echo reply,
+// 3 = destination unreachable, 11 = time exceeded.
+fn net_icmp_type(b: &NetworkBuffer) -> Int {
+    return buf_get(b, 0)
+}
+
+fn net_icmp_code(b: &NetworkBuffer) -> Int {
+    return buf_get(b, 1)
+}
+
+fn net_icmp_checksum_compute(b: &NetworkBuffer) -> Int {
+    return 65535 - net_fold(net_sum_words(&b, 0, len(b), 2))
+}
+
+fn net_icmp_checksum_ok(b: &NetworkBuffer) -> Bool {
+    return len(b) >= 8 && buf_get16(b, 2) == net_icmp_checksum_compute(&b)
+}
+
+// Echo request/reply fields.
+fn net_icmp_echo_id(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 4)
+}
+
+fn net_icmp_echo_seq(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 6)
+}
+
+// Everything after the 8-byte ICMP header (for echo: the data; for errors: the quoted IP header).
+fn net_icmp_payload(b: &NetworkBuffer) -> NetworkBuffer {
+    return buf_slice(b, 8, len(b) - 8)
+}
+
+fn net_make_icmp_echo(icmp_type: Int, id: Int, seq: Int, payload: NetworkBuffer) -> NetworkBuffer {
+    mut h: NetworkBuffer = NetworkBuffer(8)
+    h = buf_set(h, 0, icmp_type)
+    h = buf_set16(h, 4, id)
+    h = buf_set16(h, 6, seq)
+    let msg = buf_concat(h, payload)
+    let ck = net_icmp_checksum_compute(&msg)
+    return buf_set16(msg, 2, ck)
+}
