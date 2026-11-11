@@ -30,9 +30,16 @@ Classic libpcap files (little/big endian, microsecond/nanosecond): `pcap.valid(&
 `pcap.time_at(&f, off)`, `pcap.orig_length_at(&f, off)`, `pcap.packet_at(&f, off)` and the writer `pcap.make_header()` / `pcap.append(file, seconds, frame)`.
 No pcapng, no flow reassembly, whole-second timestamps only; a file read with `file_read_bytes` is limited to 1 MiB.
 
+## Detection rules (`import std.rules`)
+
+One rule per line: `severity | name | kind | pattern`. Severity is `high`, `medium` or `low`; kind is `text` (the pattern occurs as text), `hex` (it occurs as bytes) or
+`sha256` (the SHA-256 of the whole data equals it). `rules.match(&rs, &data)` returns `severity: name` findings (feed them to `sec.verdict`), `rules.check(&rs)` lists
+every unusable rule, and `rules.load(path)` reads a rule file with `--allow-fs`. Blank lines and lines starting with `#` are comments. This is not YARA: no wildcards,
+regular expressions, offsets or conditions; invalid rules never match.
+
 ## Examples
 
-`examples/security_pcap.yom`, `examples/security_scan.yom`, `security_network.yom`, `security_files.yom` (needs `--allow-fs`) and `security_logs.yom`.
+`examples/security_rules.yom`, `examples/security_pcap.yom`, `examples/security_scan.yom`, `security_network.yom`, `security_files.yom` (needs `--allow-fs`) and `security_logs.yom`.
 
 ## Honest limits
 

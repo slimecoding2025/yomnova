@@ -2033,3 +2033,42 @@ fn std_pcap_reads_little_and_big_endian_captures_and_round_trips() {
     want.push("d4c3b2a1020004000000000000000000ffff00000100000000f15365000000001400000014000000000102030405060708090a0b0c0d0e0f1011121305f15365000000000b0000000b00000068656c6c6f2d6672616d6509f1536500000000070000000700000078787878787878".to_string());
     assert_eq!(out, want);
 }
+
+#[test]
+fn std_rules_match_check_and_ignore_comments() {
+    let out = run_src(
+        "import std.rules\nimport std.sec\nfn main() -> Int {\n let rs = [\"# comment\", \"\", \"high | EICAR | text | X5O!P%@AP[4\", \"medium | sled | hex | 9090909090909090\", \"low | shell | text | /bin/sh\", \"high | listed | sha256 | BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD\", \"low | pipe | text | a|b\"]\n emit(len(rules.check(&rs)))\n let abc = bytes_of(\"abc\")\n let h1 = rules.match(&rs, &abc)\n emit(h1)\n emit(sec.verdict(&h1))\n let t = bytes_of(\"x a|b /bin/sh\")\n let h2 = rules.match(&rs, &t)\n emit(h2)\n emit(sec.verdict(&h2))\n let h = hex_decode(\"41909090909090909042\")\n let h3 = rules.match(&rs, &h)\n emit(h3)\n let none = bytes_of(\"nothing here\")\n let h4 = rules.match(&rs, &none)\n emit(len(h4))\n return 0\n}\n",
+    );
+    assert_eq!(
+        out,
+        vec![
+            "0",
+            "[high: listed]",
+            "malicious indicators",
+            "[low: shell, low: pipe]",
+            "weak indicators only",
+            "[medium: sled]",
+            "0",
+        ]
+    );
+}
+
+#[test]
+fn std_rules_check_reports_each_problem() {
+    let out = run_src(
+        "import std.rules\nfn main() -> Int {\n let bad = [\"huge | x | text | y\", \"high | x | regex | y\", \"high | x | hex | zz\", \"high | x | sha256 | abcd\", \"high | x | text | \", \"short\", \"# fine\"]\n for e in rules.check(&bad) {\n emit(e)\n }\n return 0\n}\n"
+            .replace("for e in rules.check(&bad) {", "let errs = rules.check(&bad)\n for e in errs {")
+            .as_str(),
+    );
+    assert_eq!(
+        out,
+        vec![
+            "rule 1: severity must be high, medium or low",
+            "rule 2: kind must be text, hex or sha256",
+            "rule 3: the pattern is not valid hex",
+            "rule 4: a sha256 pattern has 64 hex digits",
+            "rule 5: the pattern is empty",
+            "rule 6: expected severity|name|kind|pattern",
+        ]
+    );
+}

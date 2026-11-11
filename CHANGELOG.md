@@ -2,6 +2,13 @@
 
 ## Unreleased — 2026-11-03
 
+### `std.rules`: a small detection-rule language
+* **Added** `import std.rules`: one rule per line, `severity | name | kind | pattern`, with kinds `text` (occurs as text), `hex` (occurs as bytes) and `sha256`
+  (hash of the whole data). `rules.match(&rules, &data)` returns `severity: name` findings that `sec.verdict` can summarise, `rules.check(&rules)` reports each
+  unusable rule (`rule N: ...`), `rules.load(path)` reads a rule file (needs `--allow-fs`). Blank lines and `#` comments are skipped. A text pattern may contain `|`.
+  `examples/security_rules.yom`, 2 new tests (164 Rust tests total).
+* **Limits:** not YARA: no wildcards, no regular expressions, no conditions combining several patterns, no offsets; invalid rules never match (use `check`).
+
 ### `std.pcap`: packet-capture files
 * **Added** `import std.pcap` (written in YOMNOVA): `pcap.valid`, `pcap.linktype`, `pcap.snaplen`, `pcap.offsets` (record offsets), `pcap.count`, `pcap.truncated`,
   `pcap.time_at`, `pcap.orig_length_at`, `pcap.packet_at` for classic libpcap files (little/big endian, microsecond or nanosecond magic), plus a writer

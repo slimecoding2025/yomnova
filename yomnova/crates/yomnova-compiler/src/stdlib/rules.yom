@@ -1,0 +1,127 @@
+// std.rules: a tiny detection-rule language. One rule per line, four fields separated by `|`:
+//
+//   severity | name | kind | pattern
+//
+//   severity  high, medium or low
+//   name      free text without `|`
+//   kind      text    the pattern occurs as text anywhere in the data
+//             hex     the pattern (hex digits) occurs as bytes anywhere in the data
+//             sha256  the SHA-256 of the whole data equals the pattern (hex, any case)
+//   pattern   the rest of the line (a text pattern may contain `|`)
+//
+// Empty lines and lines starting with `#` are comments (rules_load drops them; check and match skip them). Matches come back as
+// "severity: name" lines, so std.sec's verdict can summarise them. This is a small matcher,
+// not YARA: no wildcards, no conditions, no regular expressions.
+
+fn rules_hex_ok(s: &Text) -> Bool {
+    let n = len(s)
+    if n == 0 || n % 2 == 1 {
+        return false
+    }
+    mut i = 0
+    while i < n {
+        let c = str_slice(s, i, i + 1)
+        if !str_contains("0123456789abcdefABCDEF", c) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// Blank lines and lines starting with `#` are comments in a rule list.
+fn rules_is_comment(line: &Text) -> Bool {
+    let t = str_trim(line)
+    return len(t) == 0 || str_starts_with(t, "#")
+}
+
+// The pattern field: everything after the third `|`.
+fn rules_pattern(parts: &Array<Text>) -> Text {
+    mut out = ""
+    mut i = 3
+    while i < len(parts) {
+        if i > 3 {
+            out = out + "|"
+        }
+        out = out + parts[i]
+        i = i + 1
+    }
+    return out
+}
+
+// Problems found in a rule list, as "rule N: ..." lines; empty when every rule is usable.
+fn rules_check(rules: &Array<Text>) -> Array<Text> {
+    mut errors: Array<Text> = []
+    mut n = 0
+    for line in rules {
+        n = n + 1
+        let parts = str_split(line, "|")
+        if rules_is_comment(&line) {
+            n = n + 0
+        } else if len(parts) < 4 {
+            errors = push(errors, "rule " + str_from_int(n) + ": expected severity|name|kind|pattern")
+        } else {
+            let sev = str_trim(parts[0])
+            let kind = str_trim(parts[2])
+            let pat = str_trim(rules_pattern(&parts))
+            if sev != "high" && sev != "medium" && sev != "low" {
+                errors = push(errors, "rule " + str_from_int(n) + ": severity must be high, medium or low")
+            }
+            if kind != "text" && kind != "hex" && kind != "sha256" {
+                errors = push(errors, "rule " + str_from_int(n) + ": kind must be text, hex or sha256")
+            }
+            if len(pat) == 0 {
+                errors = push(errors, "rule " + str_from_int(n) + ": the pattern is empty")
+            }
+            if (kind == "hex" || kind == "sha256") && len(pat) > 0 && !rules_hex_ok(&pat) {
+                errors = push(errors, "rule " + str_from_int(n) + ": the pattern is not valid hex")
+            }
+            if kind == "sha256" && len(pat) > 0 && len(pat) != 64 {
+                errors = push(errors, "rule " + str_from_int(n) + ": a sha256 pattern has 64 hex digits")
+            }
+        }
+    }
+    return errors
+}
+
+// Rules from a text file (needs --allow-fs); comments and blank lines are dropped.
+fn rules_load(path: Text) -> Array<Text> {
+    let lines = str_split(file_read(path), "\n")
+    mut out: Array<Text> = []
+    for l in lines {
+        let t = str_trim(l)
+        if len(t) > 0 && !str_starts_with(t, "#") {
+            out = push(out, t)
+        }
+    }
+    return out
+}
+
+// Findings ("severity: name") for every rule that matches `data`. Unusable rules never match;
+// run rules_check first to see why.
+fn rules_match(rules: &Array<Text>, data: &NetworkBuffer) -> Array<Text> {
+    mut found: Array<Text> = []
+    let digest = sha256(data)
+    for line in rules {
+        let parts = str_split(line, "|")
+        if len(parts) >= 4 && !rules_is_comment(&line) {
+            let sev = str_trim(parts[0])
+            let kind = str_trim(parts[2])
+            let pat = str_trim(rules_pattern(&parts))
+            mut hit = false
+            if kind == "text" && len(pat) > 0 {
+                hit = buf_find(data, bytes_of(str_trim(rules_pattern(&parts))), 0) >= 0
+            }
+            if kind == "hex" && rules_hex_ok(&pat) {
+                hit = buf_find(data, hex_decode(pat), 0) >= 0
+            }
+            if kind == "sha256" && rules_hex_ok(&pat) {
+                hit = str_lower(pat) == digest
+            }
+            if hit && (sev == "high" || sev == "medium" || sev == "low") {
+                found = push(found, sev + ": " + str_trim(parts[1]))
+            }
+        }
+    }
+    return found
+}

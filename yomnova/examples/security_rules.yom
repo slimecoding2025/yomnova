@@ -1,0 +1,31 @@
+// A tiny detection-rule language (std.rules): severity | name | kind | pattern.
+// kinds: text, hex (bytes) and sha256 (hash of the whole data). Not YARA: no wildcards or conditions.
+// Keep real rule sets in a text file and read them with rules.load("rules.txt") (needs --allow-fs).
+import std.rules
+import std.sec
+
+fn main() -> Int {
+    let rs = [
+        "# harmless demo rules",
+        "high   | EICAR test file | text   | X5O!P%@AP[4",
+        "medium | NOP sled        | hex    | 90909090909090909090909090909090",
+        "low    | shell path      | text   | /bin/sh",
+        "high   | listed sample   | sha256 | BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"
+    ]
+    let problems = rules.check(&rs)
+    emit(len(problems))
+    for p in problems {
+        emit(p)
+    }
+
+    let sample = bytes_of("abc")
+    let hits = rules.match(&rs, &sample)
+    emit(hits)
+    emit(sec.verdict(&hits))
+
+    let other = bytes_of("run /bin/sh now")
+    let hits2 = rules.match(&rs, &other)
+    emit(hits2)
+    emit(sec.verdict(&hits2))
+    return 0
+}
