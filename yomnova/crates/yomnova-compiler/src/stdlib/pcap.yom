@@ -1,0 +1,128 @@
+// std.pcap: read (and build) classic libpcap capture files on a NetworkBuffer.
+// Supports the four classic magic numbers (little/big endian, microsecond/nanosecond timestamps).
+// Not supported: pcapng, compressed captures. A capture read through file_read_bytes is limited
+// to 1 MiB. Every reader takes a borrowed buffer (`&b`) and never changes it.
+
+// True when the first four bytes are one of the classic pcap magic numbers.
+fn pcap_valid(b: &NetworkBuffer) -> Bool {
+    if len(b) < 24 {
+        return false
+    }
+    let m = buf_get32(b, 0)
+    return m == 2712847316 || m == 3569595041 || m == 2712812621 || m == 1295823521
+}
+
+// Big-endian files start with a1 b2 c3 d4 (or a1 b2 3c 4d for nanoseconds).
+fn pcap_big_endian(b: &NetworkBuffer) -> Bool {
+    let m = buf_get32(b, 0)
+    return m == 2712847316 || m == 2712812621
+}
+
+fn pcap_u16(b: &NetworkBuffer, off: Int, big: Bool) -> Int {
+    if big {
+        return buf_get16(b, off)
+    }
+    return buf_get(b, off) + buf_get(b, off + 1) * 256
+}
+
+fn pcap_u32(b: &NetworkBuffer, off: Int, big: Bool) -> Int {
+    if big {
+        return buf_get32(b, off)
+    }
+    return buf_get(b, off) + buf_get(b, off + 1) * 256 + buf_get(b, off + 2) * 65536 + buf_get(b, off + 3) * 16777216
+}
+
+// Link-layer type: 1 means Ethernet, 101 raw IP.
+fn pcap_linktype(b: &NetworkBuffer) -> Int {
+    return pcap_u32(&b, 20, pcap_big_endian(&b))
+}
+
+fn pcap_snaplen(b: &NetworkBuffer) -> Int {
+    return pcap_u32(&b, 16, pcap_big_endian(&b))
+}
+
+// Offsets of every complete record header (a record is 16 header bytes plus its captured bytes).
+// A truncated last record is left out; see pcap_truncated.
+fn pcap_offsets(b: &NetworkBuffer) -> Array<Int> {
+    mut out: Array<Int> = []
+    if pcap_valid(&b) {
+        let big = pcap_big_endian(&b)
+        mut off = 24
+        while off + 16 <= len(b) {
+            let n = pcap_u32(&b, off + 8, big)
+            if off + 16 + n > len(b) {
+                off = len(b)
+            } else {
+                out = push(out, off)
+                off = off + 16 + n
+            }
+        }
+    }
+    return out
+}
+
+// True when bytes remain after the last complete record (a cut-off file).
+fn pcap_truncated(b: &NetworkBuffer) -> Bool {
+    if !pcap_valid(&b) {
+        return false
+    }
+    let big = pcap_big_endian(&b)
+    mut off = 24
+    while off + 16 <= len(b) {
+        let n = pcap_u32(&b, off + 8, big)
+        if off + 16 + n > len(b) {
+            return true
+        }
+        off = off + 16 + n
+    }
+    return off != len(b)
+}
+
+fn pcap_count(b: &NetworkBuffer) -> Int {
+    return len(pcap_offsets(&b))
+}
+
+// The three readers below take an offset from pcap_offsets.
+fn pcap_time_at(b: &NetworkBuffer, off: Int) -> Int {
+    return pcap_u32(&b, off, pcap_big_endian(&b))
+}
+
+fn pcap_orig_length_at(b: &NetworkBuffer, off: Int) -> Int {
+    return pcap_u32(&b, off + 12, pcap_big_endian(&b))
+}
+
+// The captured bytes of the record (the frame, for linktype 1).
+fn pcap_packet_at(b: &NetworkBuffer, off: Int) -> NetworkBuffer {
+    let n = pcap_u32(&b, off + 8, pcap_big_endian(&b))
+    return buf_slice(b, off + 16, n)
+}
+
+// A 24-byte little-endian microsecond header for Ethernet captures.
+fn pcap_make_header() -> NetworkBuffer {
+    mut h: NetworkBuffer = NetworkBuffer(24)
+    h = buf_set(h, 0, 212)
+    h = buf_set(h, 1, 195)
+    h = buf_set(h, 2, 178)
+    h = buf_set(h, 3, 161)
+    h = buf_set(h, 4, 2)
+    h = buf_set(h, 6, 4)
+    h = buf_set(h, 16, 255)
+    h = buf_set(h, 17, 255)
+    h = buf_set(h, 20, 1)
+    return h
+}
+
+// The file with one more record appended (little-endian header as made by pcap_make_header).
+fn pcap_append(file: NetworkBuffer, seconds: Int, frame: NetworkBuffer) -> NetworkBuffer {
+    mut r: NetworkBuffer = NetworkBuffer(16)
+    let n = len(frame)
+    r = buf_set(r, 0, seconds % 256)
+    r = buf_set(r, 1, (seconds / 256) % 256)
+    r = buf_set(r, 2, (seconds / 65536) % 256)
+    r = buf_set(r, 3, (seconds / 16777216) % 256)
+    r = buf_set(r, 8, n % 256)
+    r = buf_set(r, 9, (n / 256) % 256)
+    r = buf_set(r, 12, n % 256)
+    r = buf_set(r, 13, (n / 256) % 256)
+    return buf_concat(buf_concat(file, r), frame)
+}

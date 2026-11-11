@@ -37,7 +37,8 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | VLAN 802.1Q, ARP (Ethernet/IPv4), ICMPv4 echo and checksum | Implemented | `icmp_arp_and_vlan_in_std_net`, `examples/security_network.yom` |
 | Hashing and encoding natives (`sha256`, `hmac_sha256`, hex, base64, `buf_find`, `buf_entropy`, `file_read_bytes`) | Implemented | `hashing_and_encoding_natives_*`, unit tests with NIST/RFC vectors |
 | `std.sec`: signature and heuristic scan, PE section checks, IOC lists, port scan / SYN flood / ARP spoof / ICMP tunnel / log brute-force checks | Implemented (simple indicators, not an antivirus) | `std_sec_*`, `examples/security_*.yom` |
-| Extension headers, ICMPv6, fragmentation, PCAP reader, rule language, ELF/Mach-O checks | Planned | — |
+| `std.pcap`: classic libpcap read/write | Implemented (no pcapng) | `std_pcap_*`, `examples/security_pcap.yom` |
+| Extension headers, ICMPv6, fragmentation, pcapng, rule language, ELF/Mach-O checks | Planned | — |
 | Text library: `str_*` natives and `import std.text` | Implemented | `text_library_works_*`, `text_errors_are_reported_*`, `examples/text.yom` |
 | File imports `import "f.yom" as name` with `pub` visibility, namespaced functions/structs/enums (CLI) | Implemented (source renaming) | `imports_rename_and_nest`, `bad_imports_are_errors`, `examples/modules/` |
 | Each imported library type-checked and ownership-checked on its own, errors reported in its own file | Implemented (CLI) | `libraries_are_checked_on_their_own_*` |
@@ -58,7 +59,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 161 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 162 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.

@@ -1998,3 +1998,38 @@ fn std_sec_icmp_tunnel_suspect_uses_length_and_entropy() {
     );
     assert_eq!(out, vec!["false", "true"]);
 }
+
+#[test]
+fn std_pcap_reads_little_and_big_endian_captures_and_round_trips() {
+    // The three captures were produced independently with Python's struct module.
+    let src =
+        "import std.pcap\nfn show(name: Text, f: NetworkBuffer) -> Int {\n emit(name)\n emit(pcap.valid(&f))\n emit(pcap.count(&f))\n emit(pcap.linktype(&f))\n emit(pcap.truncated(&f))\n let offs = pcap.offsets(&f)\n for o in offs {\n emit(pcap.time_at(&f, o))\n emit(pcap.orig_length_at(&f, o))\n emit(len(pcap.packet_at(&f, o)))\n }\n return 0\n}\nfn main() -> Int {\n let a = show(\"le\", hex_decode(\"d4c3b2a1020004000000000000000000ffff00000100000000f15365f40100001400000018000000000102030405060708090a0b0c0d0e0f1011121305f15365f40100000b0000000f00000068656c6c6f2d6672616d6509f15365f4010000070000000b00000078787878787878\"))\n let b = show(\"be-nanos\", hex_decode(\"a1b23c4d0002000400000000000000000000ffff000000016553f100000001f40000001400000018000102030405060708090a0b0c0d0e0f101112136553f105000001f40000000b0000000f68656c6c6f2d6672616d656553f109000001f4000000070000000b78787878787878\"))\n let c = show(\"cut\", hex_decode(\"d4c3b2a1020004000000000000000000ffff00000100000000f15365f40100001400000018000000000102030405060708090a0b0c0d0e0f1011121305f15365f40100000b0000000f00000068656c6c6f2d6672616d6509f15365f4010000070000000b00000078787878\"))\n let junk = bytes_of(\"not a capture at all, just text.\")\n emit(pcap.valid(&junk))\n emit(pcap.count(&junk))\n let built = pcap.append(pcap.append(pcap.append(pcap.make_header(), 1700000000, hex_decode(\"000102030405060708090a0b0c0d0e0f10111213\")), 1700000005, bytes_of(\"hello-frame\")), 1700000009, bytes_of(\"xxxxxxx\"))\n emit(hex_encode(built))\n return 0\n}\n";
+    let out = run_src(src);
+    let one = |name: &str, count: &str, trunc: &str| {
+        let mut v = vec![
+            name.to_string(),
+            "true".into(),
+            count.to_string(),
+            "1".into(),
+            trunc.to_string(),
+        ];
+        for (t, orig, n) in [
+            ("1700000000", "24", "20"),
+            ("1700000005", "15", "11"),
+            ("1700000009", "11", "7"),
+        ]
+        .iter()
+        .take(count.parse::<usize>().unwrap())
+        {
+            v.extend([t.to_string(), orig.to_string(), n.to_string()]);
+        }
+        v
+    };
+    let mut want = one("le", "3", "false");
+    want.extend(one("be-nanos", "3", "false"));
+    want.extend(one("cut", "2", "true"));
+    want.extend(["false".to_string(), "0".to_string()]);
+    // The file YOMNOVA builds is byte-identical to one Python wrote (no microseconds, original length = captured length).
+    want.push("d4c3b2a1020004000000000000000000ffff00000100000000f15365000000001400000014000000000102030405060708090a0b0c0d0e0f1011121305f15365000000000b0000000b00000068656c6c6f2d6672616d6509f1536500000000070000000700000078787878787878".to_string());
+    assert_eq!(out, want);
+}

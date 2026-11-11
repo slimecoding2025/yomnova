@@ -24,9 +24,15 @@ The only built-in signature is the harmless EICAR antivirus test string.
   network checks `sec.port_scan distinct_count syn_flood arp_conflict icmp_tunnel_suspect`; logs `sec.repeat_offenders(&lines, needle, marker, threshold)`. These are indicators,
   not proof: signatures miss new threats, heuristics raise false alarms, and "no indicators found" never means "safe".
 
+## Packet captures (`import std.pcap`)
+
+Classic libpcap files (little/big endian, microsecond/nanosecond): `pcap.valid(&f) linktype snaplen count truncated`, `pcap.offsets(&f)` (one offset per complete record),
+`pcap.time_at(&f, off)`, `pcap.orig_length_at(&f, off)`, `pcap.packet_at(&f, off)` and the writer `pcap.make_header()` / `pcap.append(file, seconds, frame)`.
+No pcapng, no flow reassembly, whole-second timestamps only; a file read with `file_read_bytes` is limited to 1 MiB.
+
 ## Examples
 
-`examples/security_scan.yom`, `security_network.yom`, `security_files.yom` (needs `--allow-fs`) and `security_logs.yom`.
+`examples/security_pcap.yom`, `examples/security_scan.yom`, `security_network.yom`, `security_files.yom` (needs `--allow-fs`) and `security_logs.yom`.
 
 ## Honest limits
 

@@ -2,6 +2,14 @@
 
 ## Unreleased — 2026-11-03
 
+### `std.pcap`: packet-capture files
+* **Added** `import std.pcap` (written in YOMNOVA): `pcap.valid`, `pcap.linktype`, `pcap.snaplen`, `pcap.offsets` (record offsets), `pcap.count`, `pcap.truncated`,
+  `pcap.time_at`, `pcap.orig_length_at`, `pcap.packet_at` for classic libpcap files (little/big endian, microsecond or nanosecond magic), plus a writer
+  (`pcap.make_header`, `pcap.append`). Feed it with `file_read_bytes` (needs `--allow-fs`, 1 MiB at most) and hand each frame to `std.net` / `std.sec`.
+  `examples/security_pcap.yom` finds a port scan in an in-memory capture. 1 new test (162 Rust tests total): three captures written independently with Python's
+  `struct` are read back field by field, a cut-off file is reported as truncated, and the file YOMNOVA builds is byte-identical to the Python one.
+* **Limits:** pcapng and compressed captures are not supported; records are not reassembled into flows; timestamps are whole seconds (the sub-second part is ignored).
+
 ### Security-oriented tooling: `std.sec`, hashing natives, ICMP/ARP/VLAN
 YOMNOVA now aims at defensive security work: analysing and detecting, not attacking. Nothing here builds exploits or malware.
 * **Added natives** (pure, no I/O): `sha256`, `hmac_sha256` (hex text), `hex_encode/hex_decode`, `base64_encode/base64_decode`, `buf_find(buf, needle, from)`

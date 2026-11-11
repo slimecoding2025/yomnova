@@ -1,0 +1,57 @@
+// Reading a packet capture and looking for a port scan with std.pcap, std.net and std.sec.
+// The capture is built in memory so the example runs anywhere. To analyse a real capture instead,
+// read it with file_read_bytes (needs --allow-fs, at most 1 MiB, classic libpcap format only).
+import std.net
+import std.pcap
+import std.sec
+
+// A TCP segment with the given destination port and flags byte (2 = SYN, 18 = SYN+ACK).
+fn tcp_segment(src_port: Int, dst_port: Int, flags: Int) -> NetworkBuffer {
+    mut t: NetworkBuffer = NetworkBuffer(20)
+    t = buf_set16(t, 0, src_port)
+    t = buf_set16(t, 2, dst_port)
+    t = buf_set(t, 12, 80)
+    t = buf_set(t, 13, flags)
+    t = buf_set16(t, 14, 1024)
+    return t
+}
+
+fn frame(src: Text, dst: Text, dst_port: Int, flags: Int) -> NetworkBuffer {
+    let ip = net.make_ipv4(src, dst, 6, 64, tcp_segment(40000, dst_port, flags))
+    return net.make_ethernet("aa:bb:cc:00:00:02", "aa:bb:cc:00:00:01", 2048, ip)
+}
+
+fn main() -> Int {
+    mut cap = pcap.make_header()
+    mut port = 20
+    mut t = 1700000000
+    while port < 32 {
+        cap = pcap.append(cap, t, frame("203.0.113.9", "192.168.1.10", port, 2))
+        port = port + 1
+        t = t + 1
+    }
+    cap = pcap.append(cap, t, frame("198.51.100.7", "192.168.1.10", 443, 2))
+    cap = pcap.append(cap, t + 1, frame("192.168.1.10", "198.51.100.7", 40000, 18))
+
+    emit(pcap.valid(&cap))
+    emit(pcap.count(&cap))
+
+    // Destination ports of the SYN-only packets that came from 203.0.113.9.
+    mut ports: Array<Int> = []
+    let offsets = pcap.offsets(&cap)
+    for off in offsets {
+        let f = pcap.packet_at(&cap, off)
+        if net.eth_type(&f) == 2048 {
+            let ip = net.eth_payload(&f)
+            let seg = net.ipv4_payload(&ip)
+            if net.ipv4_protocol(&ip) == 6 && net.tcp_syn(&seg) && !net.tcp_ack_flag(&seg) && net.ipv4_src(&ip) == IPv4("203.0.113.9") {
+                ports = push(ports, net.tcp_dst_port(&seg))
+            }
+        }
+    }
+    emit(len(ports))
+    emit(sec.port_scan(&ports, 10))
+    let findings = sec.scan(&cap)
+    emit(sec.verdict(&findings))
+    return 0
+}
