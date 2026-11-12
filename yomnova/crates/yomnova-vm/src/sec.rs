@@ -202,6 +202,41 @@ pub fn find(hay: &[u8], needle: &[u8], from: usize) -> i64 {
         .map_or(-1, |p| (p + from) as i64)
 }
 
+/// Parses a byte pattern written as hex digit pairs where `??` matches any byte; spaces are ignored.
+pub fn parse_wild(text: &str) -> Result<Vec<Option<u8>>, String> {
+    let t: Vec<u8> = text.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    if t.is_empty() {
+        return Err("the pattern is empty".to_string());
+    }
+    if t.len() % 2 == 1 {
+        return Err("the pattern must be whole bytes (two digits each)".to_string());
+    }
+    if t.len() / 2 > 4096 {
+        return Err("the pattern is longer than 4096 bytes".to_string());
+    }
+    t.chunks(2)
+        .map(|p| {
+            if p == b"??" {
+                Ok(None)
+            } else {
+                let s = std::str::from_utf8(p).map_err(|_| "not hex".to_string())?;
+                hex_decode(s).map(|v| Some(v[0]))
+            }
+        })
+        .collect()
+}
+
+/// Like `find`, but `None` entries of the pattern match any byte.
+pub fn find_wild(hay: &[u8], pat: &[Option<u8>], from: usize) -> i64 {
+    if pat.is_empty() || from > hay.len() || pat.len() > hay.len() - from {
+        return -1;
+    }
+    hay[from..]
+        .windows(pat.len())
+        .position(|w| w.iter().zip(pat).all(|(b, p)| p.is_none_or(|x| x == *b)))
+        .map_or(-1, |p| (p + from) as i64)
+}
+
 /// Dispatch for the analysis natives.
 pub fn sec_native(name: &str, args: &[Value], max_buffer: usize) -> Result<Value, VmError> {
     let buf = |i: usize| match &args[i] {
@@ -248,6 +283,19 @@ pub fn sec_native(name: &str, args: &[Value], max_buffer: usize) -> Result<Value
                 }
             };
             Value::Int(find(buf(0)?, buf(1)?, from))
+        }
+        "buf_find_wild" => {
+            let from = match &args[2] {
+                Value::Int(n) if *n >= 0 => *n as usize,
+                Value::Int(n) => return Err(proto(format!("negative start {n}"))),
+                other => {
+                    return Err(VmError::TypeError(format!(
+                        "{name} expects an Int start, got {other:?}"
+                    )))
+                }
+            };
+            let pat = parse_wild(text(1)?).map_err(proto)?;
+            Value::Int(find_wild(buf(0)?, &pat, from))
         }
         other => {
             return Err(VmError::TypeError(format!(
@@ -300,6 +348,22 @@ mod tests {
         assert_eq!(hex_decode("00ff10").unwrap(), vec![0, 255, 16]);
         assert!(hex_decode("abc").is_err());
         assert!(hex_decode("zz").is_err());
+    }
+
+    #[test]
+    fn wildcard_patterns_match_any_byte_where_marked() {
+        let p = |s: &str| parse_wild(s).unwrap();
+        assert_eq!(find_wild(b"\x90\x41\x90\x42", &p("90 ?? 90"), 0), 0);
+        assert_eq!(find_wild(b"\x90\x41\x91\x42", &p("90 ?? 90"), 0), -1);
+        assert_eq!(find_wild(b"abcdef", &p("63??65"), 0), 2);
+        assert_eq!(find_wild(b"abcdef", &p("63??65"), 3), -1);
+        assert_eq!(find_wild(b"ab", &p("??"), 1), 1);
+        assert_eq!(find_wild(b"ab", &p("616263"), 0), -1);
+        assert!(parse_wild("").is_err());
+        assert!(parse_wild("9").is_err());
+        assert!(parse_wild("zz").is_err());
+        assert!(parse_wild("?9").is_err());
+        assert!(parse_wild(&"00".repeat(4097)).is_err());
     }
 
     #[test]

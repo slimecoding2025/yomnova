@@ -2,6 +2,12 @@
 
 ## Unreleased — 2026-11-03
 
+### Wildcards in byte patterns
+* **Added** the native `buf_find_wild(buf, pattern, from)`: the pattern is hex digit pairs where `??` matches any byte, spaces ignored (`"41 ?? ?? 44"`);
+  returns the index or -1; at most 4096 bytes; a malformed pattern is a runtime error. `std.rules` `hex` rules now accept `??` and spaces, and `rules.check`
+  rejects malformed ones. A Rust unit test and a regression test (166 Rust tests total).
+* **Limits:** whole-byte wildcards only (no `4?` nibbles, no `[2-4]` jumps, no alternatives); still no conditions combining several patterns.
+
 ### `std.rules`: a small detection-rule language
 * **Added** `import std.rules`: one rule per line, `severity | name | kind | pattern`, with kinds `text` (occurs as text), `hex` (occurs as bytes) and `sha256`
   (hash of the whole data). `rules.match(&rules, &data)` returns `severity: name` findings that `sec.verdict` can summarise, `rules.check(&rules)` reports each

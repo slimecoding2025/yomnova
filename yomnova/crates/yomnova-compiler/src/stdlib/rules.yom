@@ -5,7 +5,7 @@
 //   severity  high, medium or low
 //   name      free text without `|`
 //   kind      text    the pattern occurs as text anywhere in the data
-//             hex     the pattern (hex digits) occurs as bytes anywhere in the data
+//             hex     the pattern (hex digits, `??` = any byte, spaces allowed) occurs as bytes in the data
 //             sha256  the SHA-256 of the whole data equals the pattern (hex, any case)
 //   pattern   the rest of the line (a text pattern may contain `|`)
 //
@@ -25,6 +25,26 @@ fn rules_hex_ok(s: &Text) -> Bool {
             return false
         }
         i = i + 1
+    }
+    return true
+}
+
+// A hex byte pattern: digit pairs or `??` wildcards, spaces ignored.
+fn rules_wild_ok(s: &Text) -> Bool {
+    let t = str_replace(s, " ", "")
+    let n = len(t)
+    if n == 0 || n % 2 == 1 {
+        return false
+    }
+    mut i = 0
+    while i < n {
+        let pair = str_slice(t, i, i + 2)
+        if pair != "??" {
+            if !rules_hex_ok(&pair) {
+                return false
+            }
+        }
+        i = i + 2
     }
     return true
 }
@@ -73,8 +93,11 @@ fn rules_check(rules: &Array<Text>) -> Array<Text> {
             if len(pat) == 0 {
                 errors = push(errors, "rule " + str_from_int(n) + ": the pattern is empty")
             }
-            if (kind == "hex" || kind == "sha256") && len(pat) > 0 && !rules_hex_ok(&pat) {
+            if kind == "sha256" && len(pat) > 0 && !rules_hex_ok(&pat) {
                 errors = push(errors, "rule " + str_from_int(n) + ": the pattern is not valid hex")
+            }
+            if kind == "hex" && len(pat) > 0 && !rules_wild_ok(&pat) {
+                errors = push(errors, "rule " + str_from_int(n) + ": the pattern is not valid hex (digit pairs and ?? only)")
             }
             if kind == "sha256" && len(pat) > 0 && len(pat) != 64 {
                 errors = push(errors, "rule " + str_from_int(n) + ": a sha256 pattern has 64 hex digits")
@@ -112,8 +135,8 @@ fn rules_match(rules: &Array<Text>, data: &NetworkBuffer) -> Array<Text> {
             if kind == "text" && len(pat) > 0 {
                 hit = buf_find(data, bytes_of(str_trim(rules_pattern(&parts))), 0) >= 0
             }
-            if kind == "hex" && rules_hex_ok(&pat) {
-                hit = buf_find(data, hex_decode(pat), 0) >= 0
+            if kind == "hex" && rules_wild_ok(&pat) {
+                hit = buf_find_wild(data, pat, 0) >= 0
             }
             if kind == "sha256" && rules_hex_ok(&pat) {
                 hit = str_lower(pat) == digest

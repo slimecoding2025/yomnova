@@ -6,7 +6,7 @@ The only built-in signature is the harmless EICAR antivirus test string.
 ## Natives
 
  `sha256(buf)` and `hmac_sha256(key, msg)` return lower-case hex `Text`; `hex_encode/base64_encode(buf)` return `Text`, `hex_decode/base64_decode(text)`
-  return a `NetworkBuffer` (malformed input is a runtime error); `buf_find(buf, needle, from)` returns the index or -1; `buf_entropy(buf)` returns a `Float` from 0 to 8
+  return a `NetworkBuffer` (malformed input is a runtime error); `buf_find(buf, needle, from)` returns the index or -1, `buf_find_wild(buf, "41 ?? 44", from)` the same with `??` matching any byte; `buf_entropy(buf)` returns a `Float` from 0 to 8
   bits per byte; `file_read_bytes(path)` reads a file as a `NetworkBuffer` (needs `--allow-fs`, same confinement as `file_read`, at most 1 MiB).
 
 ## More protocols in `std.net`
@@ -32,10 +32,10 @@ No pcapng, no flow reassembly, whole-second timestamps only; a file read with `f
 
 ## Detection rules (`import std.rules`)
 
-One rule per line: `severity | name | kind | pattern`. Severity is `high`, `medium` or `low`; kind is `text` (the pattern occurs as text), `hex` (it occurs as bytes) or
+One rule per line: `severity | name | kind | pattern`. Severity is `high`, `medium` or `low`; kind is `text` (the pattern occurs as text), `hex` (it occurs as bytes; `??` matches any byte and spaces are ignored, e.g. `41 ?? ?? 44`) or
 `sha256` (the SHA-256 of the whole data equals it). `rules.match(&rs, &data)` returns `severity: name` findings (feed them to `sec.verdict`), `rules.check(&rs)` lists
-every unusable rule, and `rules.load(path)` reads a rule file with `--allow-fs`. Blank lines and lines starting with `#` are comments. This is not YARA: no wildcards,
-regular expressions, offsets or conditions; invalid rules never match.
+every unusable rule, and `rules.load(path)` reads a rule file with `--allow-fs`. Blank lines and lines starting with `#` are comments. This is not YARA: only whole-byte `??` wildcards,
+no regular expressions, offsets or conditions; invalid rules never match.
 
 ## Examples
 

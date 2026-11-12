@@ -127,6 +127,7 @@ impl Vm {
             "base64_decode",
             "buf_find",
             "buf_entropy",
+            "buf_find_wild",
             "file_read_bytes",
         ] {
             vm.globals
@@ -706,7 +707,8 @@ impl Vm {
                     "IPv4" | "IPv6" | "Port" | "len" => 1,
                     "Endpoint" | "push" | "buf_get" | "buf_get16" | "buf_get32" | "buf_concat"
                     | "Packet" => 2,
-                    "buf_set" | "buf_set16" | "buf_set32" | "buf_slice" | "buf_find" => 3,
+                    "buf_set" | "buf_set16" | "buf_set32" | "buf_slice" | "buf_find"
+                    | "buf_find_wild" => 3,
                     "NetworkBuffer" | "bytes_of" | "packet_header" | "packet_payload"
                     | "str_upper" | "str_lower" | "str_trim" | "str_from_int" | "str_parse_int" => {
                         1
@@ -840,7 +842,7 @@ impl Vm {
                         }
                     },
                     "sha256" | "hmac_sha256" | "hex_encode" | "hex_decode" | "base64_encode"
-                    | "base64_decode" | "buf_find" | "buf_entropy" => {
+                    | "base64_decode" | "buf_find" | "buf_find_wild" | "buf_entropy" => {
                         sec::sec_native(name.as_str(), &args, Self::MAX_BUFFER_BYTES)?
                     }
                     other if other.starts_with("file_") => self.file_native(other, &args)?,

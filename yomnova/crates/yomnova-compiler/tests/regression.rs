@@ -2065,10 +2065,35 @@ fn std_rules_check_reports_each_problem() {
         vec![
             "rule 1: severity must be high, medium or low",
             "rule 2: kind must be text, hex or sha256",
-            "rule 3: the pattern is not valid hex",
+            "rule 3: the pattern is not valid hex (digit pairs and ?? only)",
             "rule 4: a sha256 pattern has 64 hex digits",
             "rule 5: the pattern is empty",
             "rule 6: expected severity|name|kind|pattern",
         ]
     );
+}
+
+#[test]
+fn wildcard_byte_patterns_in_natives_and_rules() {
+    let out = run_src(
+        "import std.rules\nfn main() -> Int {\n let d = bytes_of(\"xxABCDxx\")\n emit(buf_find_wild(d, \"?? 42\", 0))\n emit(buf_find_wild(d, \"41 ?? ?? 44\", 3))\n emit(buf_find_wild(d, \"41??4344\", 0))\n let rs = [\"high | wild | hex | 41 ?? ?? 44\", \"low | plain | hex | 4142\", \"low | bad | hex | 4?\"]\n let errs = rules.check(&rs)\n emit(errs)\n emit(rules.match(&rs, &d))\n return 0\n}\n",
+    );
+    assert_eq!(
+        out,
+        vec![
+            "2",
+            "-1",
+            "2",
+            "[rule 3: the pattern is not valid hex (digit pairs and ?? only)]",
+            "[high: wild, low: plain]"
+        ]
+    );
+    assert!(run_err(
+        "fn main() -> Int {\n emit(buf_find_wild(bytes_of(\"a\"), \"9\", 0))\n return 0\n}\n"
+    )
+    .contains("whole bytes"));
+    assert!(run_err(
+        "fn main() -> Int {\n emit(buf_find_wild(bytes_of(\"a\"), \"zz\", 0))\n return 0\n}\n"
+    )
+    .contains("hex"));
 }

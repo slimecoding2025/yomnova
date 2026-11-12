@@ -227,7 +227,7 @@ export const NET_TYPES: NetType[] = [
   { name: "Security library (std.sec)", status: "implemented", note: "Defensive analysis: sha256/HMAC/base64/hex natives, EICAR and PE-section checks, NOP sleds, entropy, IOC lists, port-scan, SYN-flood, ARP-spoof, ICMP-tunnel and log brute-force checks. Simple indicators, not an antivirus." },
   { name: "VLAN, ARP, ICMP (std.net)", status: "implemented", note: "802.1Q tags, ARP over Ethernet/IPv4 and ICMPv4 echo with checksum." },
   { name: "Packet captures (std.pcap)", status: "implemented", note: "Read and write classic libpcap files, feed frames to std.net and std.sec. No pcapng." },
-  { name: "Detection rules (std.rules)", status: "implemented", note: "Line-based rules: severity | name | text, hex or sha256 | pattern. Not YARA: no wildcards or conditions." },
+  { name: "Detection rules (std.rules)", status: "implemented", note: "Line-based rules: severity | name | text, hex or sha256 | pattern. Not YARA: whole-byte `??` wildcards only, no conditions." },
   { name: "File access", status: "implemented", note: "file_read/write/append/exists, CLI only with --allow-fs DIR; confined to that directory; off in the playground." },
   { name: "Text library", status: "implemented", note: "std.text and str_* natives: upper, lower, trim, contains, find, slice, replace, split, parse_int. Characters, not bytes; no regex." },
   { name: "NetworkBuffer", status: "implemented", note: "NetworkBuffer(n), bytes_of(text), buf_get/get16/get32, buf_set/set16/set32, buf_slice, buf_concat; every access is bounds-checked and writes return a new buffer (max 1 MiB)." },
