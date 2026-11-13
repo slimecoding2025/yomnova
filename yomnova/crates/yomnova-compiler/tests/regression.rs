@@ -2064,7 +2064,7 @@ fn std_rules_check_reports_each_problem() {
         out,
         vec![
             "rule 1: severity must be high, medium or low",
-            "rule 2: kind must be text, hex or sha256",
+            "rule 2: kind must be text, hex, sha256 or group",
             "rule 3: the pattern is not valid hex (digit pairs and ?? only)",
             "rule 4: a sha256 pattern has 64 hex digits",
             "rule 5: the pattern is empty",
@@ -2096,4 +2096,27 @@ fn wildcard_byte_patterns_in_natives_and_rules() {
         "fn main() -> Int {\n emit(buf_find_wild(bytes_of(\"a\"), \"zz\", 0))\n return 0\n}\n"
     )
     .contains("hex"));
+}
+
+#[test]
+fn std_rules_groups_combine_other_rules() {
+    let out = run_src(
+        "import std.rules\nfn main() -> Int {\n let rs = [\"low | a | text | alpha\", \"low | b | text | beta\", \"low | c | text | gamma\", \"high | two of three | group | 2 of a, b, c\", \"high | all of ab | group | all of a, b\", \"medium | any of bc | group | any of b, c\"]\n emit(rules.check(&rs))\n let d1 = bytes_of(\"alpha beta\")\n emit(rules.match(&rs, &d1))\n let d2 = bytes_of(\"only gamma\")\n emit(rules.match(&rs, &d2))\n let d3 = bytes_of(\"nothing\")\n emit(len(rules.match(&rs, &d3)))\n let bad = [\"low | a | text | x\", \"high | g | group | 3 of a, a\", \"high | g2 | group | 2 of a, zzz\", \"high | g3 | group | many of a\", \"high | g4 | group | nonsense\", \"high | g5 | group | 1 of g\", \"high | g6 | group | 2 of a, a\"]\n let errs = rules.check(&bad)\n for e in errs {\n emit(e)\n }\n return 0\n}\n",
+    );
+    let shape = "a group reads `2 of name, name` (a number, all or any, then distinct rule names)";
+    assert_eq!(
+        out,
+        vec![
+            "[]".to_string(),
+            "[low: a, low: b, high: two of three, high: all of ab, medium: any of bc]".to_string(),
+            "[low: c, medium: any of bc]".to_string(),
+            "0".to_string(),
+            format!("rule 2: {shape}"),
+            "rule 3: the group names no such rule: zzz".to_string(),
+            format!("rule 4: {shape}"),
+            format!("rule 5: {shape}"),
+            "rule 6: the group names no such rule: g".to_string(),
+            "rule 7: the group lists a rule twice: a".to_string(),
+        ]
+    );
 }

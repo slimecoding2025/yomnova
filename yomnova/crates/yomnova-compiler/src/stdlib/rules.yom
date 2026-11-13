@@ -7,6 +7,10 @@
 //   kind      text    the pattern occurs as text anywhere in the data
 //             hex     the pattern (hex digits, `??` = any byte, spaces allowed) occurs as bytes in the data
 //             sha256  the SHA-256 of the whole data equals the pattern (hex, any case)
+//             group   a condition over other rules of this list: `2 of name1, name2, name3`,
+//                     `all of a, b` or `any of a, b`. It holds when that many of the named
+//                     text/hex/sha256 rules matched (names must be distinct and contain no comma;
+//                     groups cannot refer to groups)
 //   pattern   the rest of the line (a text pattern may contain `|`)
 //
 // Empty lines and lines starting with `#` are comments (rules_load drops them; check and match skip them). Matches come back as
@@ -69,9 +73,69 @@ fn rules_pattern(parts: &Array<Text>) -> Text {
     return out
 }
 
+// The rule names listed after " of " in a group pattern ("2 of a, b" gives [a, b]).
+fn rules_group_names(pat: &Text) -> Array<Text> {
+    mut out: Array<Text> = []
+    let at = str_find(pat, " of ")
+    if at >= 0 {
+        for piece in str_split(str_slice(pat, at + 4, len(pat)), ",") {
+            out = push(out, str_trim(piece))
+        }
+    }
+    return out
+}
+
+// How many of the listed rules a group needs: a number, `all` or `any`; -1 when the head is not understood.
+fn rules_group_need(pat: &Text, listed: Int) -> Int {
+    let at = str_find(pat, " of ")
+    if at < 0 {
+        return 0 - 1
+    }
+    let head = str_trim(str_slice(pat, 0, at))
+    if head == "all" {
+        return listed
+    }
+    if head == "any" {
+        return 1
+    }
+    if len(head) == 0 || len(head) > 6 {
+        return 0 - 1
+    }
+    mut i = 0
+    while i < len(head) {
+        if !str_contains("0123456789", str_slice(head, i, i + 1)) {
+            return 0 - 1
+        }
+        i = i + 1
+    }
+    return str_parse_int(head)
+}
+
+// Names of the rules that are not groups.
+fn rules_base_names(rules: &Array<Text>) -> Array<Text> {
+    mut out: Array<Text> = []
+    for line in rules {
+        let parts = str_split(line, "|")
+        if len(parts) >= 4 && !rules_is_comment(&line) && str_trim(parts[2]) != "group" {
+            out = push(out, str_trim(parts[1]))
+        }
+    }
+    return out
+}
+
+fn rules_has_name(names: &Array<Text>, name: Text) -> Bool {
+    for n in names {
+        if n == name {
+            return true
+        }
+    }
+    return false
+}
+
 // Problems found in a rule list, as "rule N: ..." lines; empty when every rule is usable.
 fn rules_check(rules: &Array<Text>) -> Array<Text> {
     mut errors: Array<Text> = []
+    let base = rules_base_names(&rules)
     mut n = 0
     for line in rules {
         n = n + 1
@@ -87,8 +151,8 @@ fn rules_check(rules: &Array<Text>) -> Array<Text> {
             if sev != "high" && sev != "medium" && sev != "low" {
                 errors = push(errors, "rule " + str_from_int(n) + ": severity must be high, medium or low")
             }
-            if kind != "text" && kind != "hex" && kind != "sha256" {
-                errors = push(errors, "rule " + str_from_int(n) + ": kind must be text, hex or sha256")
+            if kind != "text" && kind != "hex" && kind != "sha256" && kind != "group" {
+                errors = push(errors, "rule " + str_from_int(n) + ": kind must be text, hex, sha256 or group")
             }
             if len(pat) == 0 {
                 errors = push(errors, "rule " + str_from_int(n) + ": the pattern is empty")
@@ -101,6 +165,24 @@ fn rules_check(rules: &Array<Text>) -> Array<Text> {
             }
             if kind == "sha256" && len(pat) > 0 && len(pat) != 64 {
                 errors = push(errors, "rule " + str_from_int(n) + ": a sha256 pattern has 64 hex digits")
+            }
+            if kind == "group" && len(pat) > 0 {
+                let listed = rules_group_names(&pat)
+                let need = rules_group_need(&pat, len(listed))
+                if len(listed) == 0 || need < 1 || need > len(listed) {
+                    errors = push(errors, "rule " + str_from_int(n) + ": a group reads `2 of name, name` (a number, all or any, then distinct rule names)")
+                } else {
+                    mut seen: Array<Text> = []
+                    for g in listed {
+                        if !rules_has_name(&base, str_trim(g)) {
+                            errors = push(errors, "rule " + str_from_int(n) + ": the group names no such rule: " + str_trim(g))
+                        }
+                        if rules_has_name(&seen, str_trim(g)) {
+                            errors = push(errors, "rule " + str_from_int(n) + ": the group lists a rule twice: " + str_trim(g))
+                        }
+                        seen = push(seen, str_trim(g))
+                    }
+                }
             }
         }
     }
@@ -120,10 +202,11 @@ fn rules_load(path: Text) -> Array<Text> {
     return out
 }
 
-// Findings ("severity: name") for every rule that matches `data`. Unusable rules never match;
-// run rules_check first to see why.
+// Findings ("severity: name") for every rule that matches `data`; group rules come after the
+// single-pattern rules. Unusable rules never match; run rules_check first to see why.
 fn rules_match(rules: &Array<Text>, data: &NetworkBuffer) -> Array<Text> {
     mut found: Array<Text> = []
+    mut hit_names: Array<Text> = []
     let digest = sha256(data)
     for line in rules {
         let parts = str_split(line, "|")
@@ -142,6 +225,25 @@ fn rules_match(rules: &Array<Text>, data: &NetworkBuffer) -> Array<Text> {
                 hit = str_lower(pat) == digest
             }
             if hit && (sev == "high" || sev == "medium" || sev == "low") {
+                found = push(found, sev + ": " + str_trim(parts[1]))
+                hit_names = push(hit_names, str_trim(parts[1]))
+            }
+        }
+    }
+    for line in rules {
+        let parts = str_split(line, "|")
+        if len(parts) >= 4 && !rules_is_comment(&line) && str_trim(parts[2]) == "group" {
+            let sev = str_trim(parts[0])
+            let pat = str_trim(rules_pattern(&parts))
+            let listed = rules_group_names(&pat)
+            let need = rules_group_need(&pat, len(listed))
+            mut count = 0
+            for g in listed {
+                if rules_has_name(&hit_names, str_trim(g)) {
+                    count = count + 1
+                }
+            }
+            if need >= 1 && need <= len(listed) && count >= need && (sev == "high" || sev == "medium" || sev == "low") {
                 found = push(found, sev + ": " + str_trim(parts[1]))
             }
         }

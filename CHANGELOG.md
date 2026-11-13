@@ -2,6 +2,11 @@
 
 ## Unreleased — 2026-11-03
 
+### Conditions in detection rules
+* **Added** the `group` rule kind in `std.rules`: `high | name | group | 2 of a, b, c` (also `all of ...` and `any of ...`) fires when that many of the named
+  text/hex/sha256 rules matched. `rules.check` reports a malformed group, an unknown or repeated rule name and a group that names a group. 1 new test (167 Rust tests total).
+* **Limits:** groups cannot refer to groups; rule names used in a group must be distinct and contain no comma. Still no regular expressions, offsets or `not`.
+
 ### Wildcards in byte patterns
 * **Added** the native `buf_find_wild(buf, pattern, from)`: the pattern is hex digit pairs where `??` matches any byte, spaces ignored (`"41 ?? ?? 44"`);
   returns the index or -1; at most 4096 bytes; a malformed pattern is a runtime error. `std.rules` `hex` rules now accept `??` and spaces, and `rules.check`

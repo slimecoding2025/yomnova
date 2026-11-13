@@ -10,7 +10,8 @@ fn main() -> Int {
         "high   | EICAR test file | text   | X5O!P%@AP[4",
         "medium | NOP sled        | hex    | 90909090909090909090909090909090",
         "low    | shell path      | text   | /bin/sh",
-        "high   | listed sample   | sha256 | BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"
+        "high   | listed sample   | sha256 | BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD",
+        "high   | dropper-like    | group  | 2 of NOP sled, shell path, EICAR test file"
     ]
     let problems = rules.check(&rs)
     emit(len(problems))
@@ -27,5 +28,10 @@ fn main() -> Int {
     let hits2 = rules.match(&rs, &other)
     emit(hits2)
     emit(sec.verdict(&hits2))
+
+    // Two of the three named rules match here, so the group fires too.
+    let both = bytes_of("run /bin/sh X5O!P%@AP[4 now")
+    let hits3 = rules.match(&rs, &both)
+    emit(hits3)
     return 0
 }
