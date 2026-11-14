@@ -18,8 +18,8 @@ The only built-in signature is the harmless EICAR antivirus test string.
 
 ## The library `import std.sec`
 
- Defensive helpers: `sec.scan(&buf)` returns findings (lines starting `high:`, `medium:` or `low:`) for the EICAR test string, Windows PE
-  structure problems (bad header offset, writable+executable sections, very high entropy sections), NOP sleds, `/bin/sh`/`cmd.exe` text and high entropy; `sec.verdict(&findings)`;
+ Defensive helpers: `sec.scan(&buf)` returns findings (lines starting `high:`, `medium:` or `low:`) for the EICAR test string, Windows PE and
+  little-endian ELF structure problems (bad header offset, writable+executable sections, very high entropy sections), NOP sleds, `/bin/sh`/`cmd.exe` text and high entropy; `sec.verdict(&findings)`;
   `sec.file_kind pe_findings is_eicar find_hex longest_run entropy`; indicator lists `sec.load_list(path)`, `sec.in_list(value, &list)`, `sec.hash_file(path)`;
   network checks `sec.port_scan distinct_count syn_flood arp_conflict icmp_tunnel_suspect`; logs `sec.repeat_offenders(&lines, needle, marker, threshold)`. These are indicators,
   not proof: signatures miss new threats, heuristics raise false alarms, and "no indicators found" never means "safe".
@@ -42,5 +42,5 @@ every unusable rule, and `rules.load(path)` reads a rule file with `--allow-fs`.
 
 ## Honest limits
 
-Simple indicators only. Signatures miss new threats; entropy and section heuristics raise false alarms (compressed archives look random). PE checks cover the
-section table only. No ICMPv6, IPv6 extension headers, PCAP reader or rule language yet.
+Simple indicators only. Signatures miss new threats; entropy and section heuristics raise false alarms (compressed archives look random). PE and ELF checks cover the
+section/program-header tables only (no imports, symbols or Mach-O). No ICMPv6, IPv6 extension headers, PCAP reader or rule language yet.

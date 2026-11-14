@@ -157,6 +157,77 @@ fn sec_pe_findings(data: &NetworkBuffer) -> Array<Text> {
     return out
 }
 
+// 64-bit little-endian value; anything above 2^53 is reported as 2^53 (far outside any file we read).
+fn sec_le64(b: &NetworkBuffer, off: Int) -> Int {
+    if sec_le32(&b, off + 4) > 0 {
+        return 9007199254740992
+    }
+    return sec_le32(&b, off)
+}
+
+// Structural checks of a little-endian ELF file (32 or 64 bit): program header table inside the
+// file, loadable segments that are both writable and executable, an executable stack request,
+// segments that run past the end of the file, loadable segments with very high entropy.
+fn sec_elf_findings(data: &NetworkBuffer) -> Array<Text> {
+    if sec_file_kind(&data) != "elf" || len(data) < 52 {
+        let none: Array<Text> = []
+        return none
+    }
+    mut out: Array<Text> = []
+    let class = buf_get(data, 4)
+    if buf_get(data, 5) != 1 {
+        out = push(out, "low: big-endian ELF, structure checks skipped")
+    } else if class != 1 && class != 2 {
+        out = push(out, "medium: ELF header with an unknown class byte")
+    } else {
+        mut phoff = sec_le32(&data, 28)
+        mut entsize = sec_le16(&data, 42)
+        mut count = sec_le16(&data, 44)
+        mut need = 52
+        if class == 2 {
+            need = 64
+            phoff = sec_le64(&data, 32)
+            entsize = sec_le16(&data, 54)
+            count = sec_le16(&data, 56)
+        }
+        let minsize = 32 + (class - 1) * 24
+        if len(data) < need {
+            out = push(out, "high: ELF header is cut off")
+        } else if count > 0 && (entsize < minsize || phoff + entsize * count > len(data)) {
+            out = push(out, "high: the ELF program header table lies outside the file (malformed or tampered)")
+        } else {
+            mut i = 0
+            while i < count && i < 64 {
+                let at = phoff + i * entsize
+                let kind = sec_le32(&data, at)
+                mut flags = sec_le32(&data, at + 24)
+                mut offset = sec_le32(&data, at + 4)
+                mut size = sec_le32(&data, at + 16)
+                if class == 2 {
+                    flags = sec_le32(&data, at + 4)
+                    offset = sec_le64(&data, at + 8)
+                    size = sec_le64(&data, at + 32)
+                }
+                let exec = flags % 2 == 1
+                let write = (flags / 2) % 2 == 1
+                if kind == 1 && exec && write {
+                    out = push(out, "high: ELF segment " + str_from_int(i) + " is both writable and executable")
+                }
+                if kind == 1685382481 && exec {
+                    out = push(out, "medium: the ELF file asks for an executable stack")
+                }
+                if kind == 1 && offset + size > len(data) {
+                    out = push(out, "medium: ELF segment " + str_from_int(i) + " extends past the end of the file")
+                } else if kind == 1 && size >= 512 && buf_entropy(buf_slice(data, offset, size)) > 7.2 {
+                    out = push(out, "medium: ELF segment " + str_from_int(i) + " has very high entropy (packed or encrypted)")
+                }
+                i = i + 1
+            }
+        }
+    }
+    return out
+}
+
 // All checks on a file or payload. Findings are lines starting "high:", "medium:" or "low:".
 fn sec_scan(data: &NetworkBuffer) -> Array<Text> {
     mut out: Array<Text> = []
@@ -166,6 +237,11 @@ fn sec_scan(data: &NetworkBuffer) -> Array<Text> {
     let kind = sec_file_kind(&data)
     if kind == "pe" {
         for f in sec_pe_findings(&data) {
+            out = push(out, f)
+        }
+    }
+    if kind == "elf" {
+        for f in sec_elf_findings(&data) {
             out = push(out, f)
         }
     }

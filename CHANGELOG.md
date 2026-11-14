@@ -2,6 +2,12 @@
 
 ## Unreleased — 2026-11-03
 
+### ELF checks in `std.sec`
+* **Added** `sec.elf_findings` (also run by `sec.scan` on ELF files): little-endian ELF32/ELF64 program-header checks — table outside the file, `PT_LOAD` segments that are
+  both writable and executable, an executable-stack request (`PT_GNU_STACK`), segments running past the end of the file, very high entropy segments. Big-endian ELF is
+  reported as "structure checks skipped". The test files were written independently with Python's `struct`. 1 new test (168 Rust tests total).
+* **Limits:** program headers only: no section headers, symbols, dynamic imports or Mach-O; entropy and W+X are indicators, not proof.
+
 ### Conditions in detection rules
 * **Added** the `group` rule kind in `std.rules`: `high | name | group | 2 of a, b, c` (also `all of ...` and `any of ...`) fires when that many of the named
   text/hex/sha256 rules matched. `rules.check` reports a malformed group, an unknown or repeated rule name and a group that names a group. 1 new test (167 Rust tests total).

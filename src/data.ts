@@ -224,7 +224,7 @@ export const NET_TYPES: NetType[] = [
   { name: "IPv6", status: "implemented", note: "IPv6(\"::1\") parses and validates an address; it displays in canonical form and compares with ==." },
   { name: "IPAddress", status: "planned", note: "An IPv4-or-IPv6 sum type; enums and IPv6 exist now, the combined type does not." },
   { name: "Protocol library (std.net)", status: "implemented", note: "Ethernet II, IPv4, IPv6, UDP and TCP: readers, builders, IPv4 header and UDP/TCP checksums, on NetworkBuffer. Parsing and building only: no sockets." },
-  { name: "Security library (std.sec)", status: "implemented", note: "Defensive analysis: sha256/HMAC/base64/hex natives, EICAR and PE-section checks, NOP sleds, entropy, IOC lists, port-scan, SYN-flood, ARP-spoof, ICMP-tunnel and log brute-force checks. Simple indicators, not an antivirus." },
+  { name: "Security library (std.sec)", status: "implemented", note: "Defensive analysis: sha256/HMAC/base64/hex natives, EICAR, PE-section and ELF program-header checks, NOP sleds, entropy, IOC lists, port-scan, SYN-flood, ARP-spoof, ICMP-tunnel and log brute-force checks. Simple indicators, not an antivirus." },
   { name: "VLAN, ARP, ICMP (std.net)", status: "implemented", note: "802.1Q tags, ARP over Ethernet/IPv4 and ICMPv4 echo with checksum." },
   { name: "Packet captures (std.pcap)", status: "implemented", note: "Read and write classic libpcap files, feed frames to std.net and std.sec. No pcapng." },
   { name: "Detection rules (std.rules)", status: "implemented", note: "Line-based rules: severity | name | text, hex or sha256 | pattern. Not YARA: `??` byte wildcards and `N of` groups, no regex or offsets." },
