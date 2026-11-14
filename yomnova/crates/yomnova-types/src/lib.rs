@@ -187,6 +187,7 @@ pub fn net_builtins() -> Vec<(&'static str, Vec<Type>, Type)> {
         ("buf_find", vec![Buf, Buf, Int], Int),
         ("buf_entropy", vec![Buf], Float),
         ("buf_find_wild", vec![Buf, Text, Int], Int),
+        ("buf_longest_run", vec![Buf, Int], Int),
     ]
 }
 
@@ -226,4 +227,5 @@ pub const NET_READ_ONLY: &[&str] = &[
     "buf_find",
     "buf_entropy",
     "buf_find_wild",
+    "buf_longest_run",
 ];

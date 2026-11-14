@@ -25,21 +25,7 @@ fn sec_find_hex(data: &NetworkBuffer, hex: Text) -> Int {
 
 // Longest run of one repeated byte value (0x90 is the x86 NOP used in "NOP sleds").
 fn sec_longest_run(data: &NetworkBuffer, value: Int) -> Int {
-    mut best = 0
-    mut cur = 0
-    mut i = 0
-    while i < len(data) {
-        if buf_get(data, i) == value {
-            cur = cur + 1
-            if cur > best {
-                best = cur
-            }
-        } else {
-            cur = 0
-        }
-        i = i + 1
-    }
-    return best
+    return buf_longest_run(data, value)
 }
 
 fn sec_entropy(data: &NetworkBuffer) -> Float {

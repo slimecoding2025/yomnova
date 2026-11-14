@@ -2142,3 +2142,18 @@ fn std_sec_checks_elf_program_headers() {
         ]
     );
 }
+
+#[test]
+fn buf_longest_run_native_and_big_buffers_stay_within_the_step_limit() {
+    let out = run_src(
+        "import std.sec\nfn main() -> Int {\n let b = hex_decode(\"01000000010000\")\n emit(buf_longest_run(b, 0))\n emit(buf_longest_run(b, 7))\n emit(sec.longest_run(&b, 1))\n return 0\n}\n",
+    );
+    assert_eq!(out, vec!["3", "0", "1"]);
+    assert!(run_err(
+        "fn main() -> Int {\n emit(buf_longest_run(bytes_of(\"a\"), 256))\n return 0\n}\n"
+    )
+    .contains("not a byte value"));
+    // A 600 KiB buffer is scanned in a handful of steps (the per-byte work is native).
+    let src = "import std.sec\nfn main() -> Int {\n mut b = NetworkBuffer(600000)\n b = buf_set(b, 5, 144)\n let f = sec.scan(&b)\n emit(len(f))\n return 0\n}\n";
+    assert_eq!(run_src(src), vec!["0"]);
+}

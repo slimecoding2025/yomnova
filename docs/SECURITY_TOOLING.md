@@ -6,7 +6,7 @@ The only built-in signature is the harmless EICAR antivirus test string.
 ## Natives
 
  `sha256(buf)` and `hmac_sha256(key, msg)` return lower-case hex `Text`; `hex_encode/base64_encode(buf)` return `Text`, `hex_decode/base64_decode(text)`
-  return a `NetworkBuffer` (malformed input is a runtime error); `buf_find(buf, needle, from)` returns the index or -1, `buf_find_wild(buf, "41 ?? 44", from)` the same with `??` matching any byte; `buf_entropy(buf)` returns a `Float` from 0 to 8
+  return a `NetworkBuffer` (malformed input is a runtime error); `buf_find(buf, needle, from)` returns the index or -1, `buf_find_wild(buf, "41 ?? 44", from)` the same with `??` matching any byte; `buf_entropy(buf)` returns a `Float` from 0 to 8, `buf_longest_run(buf, byte)` the longest run of one byte value
   bits per byte; `file_read_bytes(path)` reads a file as a `NetworkBuffer` (needs `--allow-fs`, same confinement as `file_read`, at most 1 MiB).
 
 ## More protocols in `std.net`

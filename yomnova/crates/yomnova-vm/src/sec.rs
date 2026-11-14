@@ -202,6 +202,20 @@ pub fn find(hay: &[u8], needle: &[u8], from: usize) -> i64 {
         .map_or(-1, |p| (p + from) as i64)
 }
 
+/// Length of the longest run of one repeated byte value.
+pub fn longest_run(data: &[u8], value: u8) -> usize {
+    let (mut best, mut cur) = (0, 0);
+    for &b in data {
+        if b == value {
+            cur += 1;
+            best = best.max(cur);
+        } else {
+            cur = 0;
+        }
+    }
+    best
+}
+
 /// Parses a byte pattern written as hex digit pairs where `??` matches any byte; spaces are ignored.
 pub fn parse_wild(text: &str) -> Result<Vec<Option<u8>>, String> {
     let t: Vec<u8> = text.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
@@ -284,6 +298,18 @@ pub fn sec_native(name: &str, args: &[Value], max_buffer: usize) -> Result<Value
             };
             Value::Int(find(buf(0)?, buf(1)?, from))
         }
+        "buf_longest_run" => {
+            let v = match &args[1] {
+                Value::Int(n) if (0..=255).contains(n) => *n as u8,
+                Value::Int(n) => return Err(proto(format!("{n} is not a byte value (0 to 255)"))),
+                other => {
+                    return Err(VmError::TypeError(format!(
+                        "{name} expects an Int byte value, got {other:?}"
+                    )))
+                }
+            };
+            Value::Int(longest_run(buf(0)?, v) as i64)
+        }
         "buf_find_wild" => {
             let from = match &args[2] {
                 Value::Int(n) if *n >= 0 => *n as usize,
@@ -364,6 +390,13 @@ mod tests {
         assert!(parse_wild("zz").is_err());
         assert!(parse_wild("?9").is_err());
         assert!(parse_wild(&"00".repeat(4097)).is_err());
+    }
+
+    #[test]
+    fn longest_run_counts_the_best_streak() {
+        assert_eq!(longest_run(&[], 0), 0);
+        assert_eq!(longest_run(&[1, 0, 0, 0, 1, 0, 0], 0), 3);
+        assert_eq!(longest_run(&[5, 5], 6), 0);
     }
 
     #[test]

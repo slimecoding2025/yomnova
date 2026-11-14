@@ -2,6 +2,13 @@
 
 ## Unreleased — 2026-11-03
 
+### Scanning real binaries: native run search, false-positive survey
+* **Found by trying it on real files:** `sec.scan` on a 142 KB system binary (`ls`) stopped with "Execution step limit exceeded", because the NOP-sled search looped over every
+  byte in YOMNOVA. **Fixed** with the native `buf_longest_run(buf, byte)`; `sec.longest_run` now calls it. A 600 KB buffer scans within the step limit (test added; 170 Rust tests total).
+* **Survey, not a benchmark:** 80 real ELF executables from `/usr/bin` of the sandbox (each under 1 MB) were scanned. 77 gave "no indicators found". 3 were flagged: `curl` (a segment with very
+  high entropy), `dash` and `cvtsudoers` (the text `/bin/sh`). All three are ordinary programs, so these are false positives: expect them, which is why the verdict says "weak indicators" or
+  "suspicious", never "infected". No real malware was available or used, so detection of real threats is untested.
+
 ### ELF checks in `std.sec`
 * **Added** `sec.elf_findings` (also run by `sec.scan` on ELF files): little-endian ELF32/ELF64 program-header checks — table outside the file, `PT_LOAD` segments that are
   both writable and executable, an executable-stack request (`PT_GNU_STACK`), segments running past the end of the file, very high entropy segments. Big-endian ELF is
