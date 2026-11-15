@@ -238,6 +238,19 @@ pub fn strings(data: &[u8], min_len: usize) -> Vec<String> {
     out
 }
 
+/// Bytes as text for display: printable ASCII stays, every other byte becomes `?`.
+pub fn text_of(data: &[u8]) -> String {
+    data.iter()
+        .map(|&b| {
+            if (0x20..=0x7e).contains(&b) {
+                b as char
+            } else {
+                '?'
+            }
+        })
+        .collect()
+}
+
 /// Length of the longest run of one repeated byte value.
 pub fn longest_run(data: &[u8], value: u8) -> usize {
     let (mut best, mut cur) = (0, 0);
@@ -350,6 +363,15 @@ pub fn sec_native(name: &str, args: &[Value], max_buffer: usize) -> Result<Value
             };
             Value::Array(strings(buf(0)?, min).into_iter().map(Value::Text).collect())
         }
+        "text_of" => {
+            let t = text_of(buf(0)?);
+            if t.len() > max_buffer {
+                return Err(VmError::ResourceLimit(format!(
+                    "{name}: result larger than {max_buffer} bytes"
+                )));
+            }
+            Value::Text(t)
+        }
         "buf_count" => Value::Int(count(buf(0)?, buf(1)?) as i64),
         "buf_longest_run" => {
             let v = match &args[1] {
@@ -443,6 +465,12 @@ mod tests {
         assert!(parse_wild("zz").is_err());
         assert!(parse_wild("?9").is_err());
         assert!(parse_wild(&"00".repeat(4097)).is_err());
+    }
+
+    #[test]
+    fn text_of_masks_non_printable_bytes() {
+        assert_eq!(text_of(b"ab\x00c\xffd~ "), "ab?c?d~ ");
+        assert_eq!(text_of(b""), "");
     }
 
     #[test]

@@ -7,6 +7,7 @@
 * `sec.odd_tcp_flags(&segment)`: names stealth-scan flag combinations (NULL, Xmas, FIN-only, SYN+FIN, SYN+RST) or returns `""`.
 * `net.tcp_flags_text(&segment)`: set TCP flags as text (`"SYN,ACK"`, `"none"` for a NULL scan, `"FIN,PSH,URG"` for an Xmas scan).
 * `sec.string_indicators(&data)`: opt-in report of dropper-style words (`powershell`, `-enc`, `VirtualAlloc`, URLs, ...) with counts; not part of `scan`, because ordinary programs contain them.
+* `text_of(buf) -> Text`: bytes as display text (printable ASCII kept, every other byte shown as `?`).
 * `buf_strings(buf, min_len) -> Array<Text>`: printable ASCII runs (like the `strings` tool), at most 10000 of them.
 * `buf_count(buf, needle)`: non-overlapping occurrences (0 for an empty needle).
 * `str_from_bool(Bool) -> Text` (`"true"` / `"false"`), handy for report lines.

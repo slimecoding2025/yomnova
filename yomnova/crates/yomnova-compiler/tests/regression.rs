@@ -2246,3 +2246,11 @@ fn ipv4_private_ranges_are_recognised() {
         ]
     );
 }
+
+#[test]
+fn text_of_shows_a_buffer_as_printable_text() {
+    assert_eq!(
+        run_src("fn main() -> Int {\n emit(text_of(bytes_of(\"hello\")))\n emit(text_of(hex_decode(\"4100ff42\")))\n return 0\n}\n"),
+        vec!["hello", "A??B"]
+    );
+}
