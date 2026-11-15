@@ -646,3 +646,32 @@ fn net_make_icmp_echo(icmp_type: Int, id: Int, seq: Int, payload: NetworkBuffer)
     let ck = net_icmp_checksum_compute(&msg)
     return buf_set16(msg, 2, ck)
 }
+
+// The set TCP flags as text, for example "SYN,ACK"; "none" when no flag is set (a NULL scan).
+// Takes the TCP segment. Order: FIN, SYN, RST, PSH, ACK, URG.
+fn net_tcp_flags_text(b: &NetworkBuffer) -> Text {
+    let f = buf_get(b, 13)
+    mut out = ""
+    if f % 2 == 1 {
+        out = out + "FIN,"
+    }
+    if (f / 2) % 2 == 1 {
+        out = out + "SYN,"
+    }
+    if (f / 4) % 2 == 1 {
+        out = out + "RST,"
+    }
+    if (f / 8) % 2 == 1 {
+        out = out + "PSH,"
+    }
+    if (f / 16) % 2 == 1 {
+        out = out + "ACK,"
+    }
+    if (f / 32) % 2 == 1 {
+        out = out + "URG,"
+    }
+    if len(out) == 0 {
+        return "none"
+    }
+    return str_slice(out, 0, len(out) - 1)
+}

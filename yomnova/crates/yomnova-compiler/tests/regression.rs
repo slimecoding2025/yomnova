@@ -2201,3 +2201,12 @@ fn std_sec_string_indicators_count_known_words() {
         ]
     );
 }
+
+#[test]
+fn tcp_flags_are_listed_as_text() {
+    let out = run_src(
+        "import std.net\nfn seg(flags: Int) -> NetworkBuffer {\n let t = NetworkBuffer(20)\n return buf_set(t, 13, flags)\n}\nfn main() -> Int {\n let a = seg(2)\n emit(net.tcp_flags_text(&a))\n let b = seg(18)\n emit(net.tcp_flags_text(&b))\n let c = seg(0)\n emit(net.tcp_flags_text(&c))\n let d = seg(41)\n emit(net.tcp_flags_text(&d))\n return 0\n}\n",
+    );
+    // 41 = FIN + PSH + URG (the \"Xmas\" scan flags)
+    assert_eq!(out, vec!["SYN", "SYN,ACK", "none", "FIN,PSH,URG"]);
+}
