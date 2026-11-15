@@ -2,6 +2,9 @@
 
 ## Unreleased — 2026-11-03
 
+### More security-analysis helpers (small steps)
+* `str_from_bool(Bool) -> Text` (`"true"` / `"false"`), handy for report lines.
+
 ### Scanning real binaries: native run search, false-positive survey
 * **Found by trying it on real files:** `sec.scan` on a 142 KB system binary (`ls`) stopped with "Execution step limit exceeded", because the NOP-sled search looped over every
   byte in YOMNOVA. **Fixed** with the native `buf_longest_run(buf, byte)`; `sec.longest_run` now calls it. A 600 KB buffer scans within the step limit (test added; 170 Rust tests total).

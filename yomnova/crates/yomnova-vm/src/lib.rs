@@ -113,6 +113,7 @@ impl Vm {
             "str_replace",
             "str_split",
             "str_from_int",
+            "str_from_bool",
             "str_parse_int",
             "fail",
             "file_read",
@@ -712,9 +713,8 @@ impl Vm {
                     | "buf_find_wild" => 3,
                     "buf_longest_run" => 2,
                     "NetworkBuffer" | "bytes_of" | "packet_header" | "packet_payload"
-                    | "str_upper" | "str_lower" | "str_trim" | "str_from_int" | "str_parse_int" => {
-                        1
-                    }
+                    | "str_upper" | "str_lower" | "str_trim" | "str_from_int" | "str_from_bool"
+                    | "str_parse_int" => 1,
                     "str_contains" | "str_starts_with" | "str_ends_with" | "str_find"
                     | "str_repeat" | "str_split" | "file_write" | "file_append" => 2,
                     "file_read" | "file_exists" | "fail" | "file_read_bytes" | "sha256"
@@ -1111,6 +1111,14 @@ impl Vm {
                 Value::Array(parts)
             }
             "str_from_int" => Value::Text(int(&args[0], name)?.to_string()),
+            "str_from_bool" => match &args[0] {
+                Value::Bool(b) => Value::Text(b.to_string()),
+                other => {
+                    return Err(VmError::TypeError(format!(
+                        "{name} expects a Bool, got {other:?}"
+                    )))
+                }
+            },
             "str_parse_int" => {
                 let s = text(&args[0], name)?;
                 Value::Int(s.parse::<i64>().map_err(|_| {

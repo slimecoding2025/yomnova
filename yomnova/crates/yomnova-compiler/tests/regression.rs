@@ -2157,3 +2157,14 @@ fn buf_longest_run_native_and_big_buffers_stay_within_the_step_limit() {
     let src = "import std.sec\nfn main() -> Int {\n mut b = NetworkBuffer(600000)\n b = buf_set(b, 5, 144)\n let f = sec.scan(&b)\n emit(len(f))\n return 0\n}\n";
     assert_eq!(run_src(src), vec!["0"]);
 }
+
+#[test]
+fn str_from_bool_turns_a_bool_into_text() {
+    assert_eq!(
+        run_src("fn main() -> Int {\n emit(\"on: \" + str_from_bool(1 < 2))\n emit(str_from_bool(false))\n return 0\n}\n"),
+        vec!["on: true", "false"]
+    );
+    assert!(
+        run_err("fn main() -> Int {\n emit(str_from_bool(1))\n return 0\n}\n").contains("Bool")
+    );
+}

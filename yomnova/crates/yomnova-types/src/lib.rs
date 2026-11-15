@@ -171,6 +171,7 @@ pub fn net_builtins() -> Vec<(&'static str, Vec<Type>, Type)> {
         ("str_replace", vec![Text, Text, Text], Text),
         ("str_split", vec![Text, Text], Type::Array(Box::new(Text))),
         ("str_from_int", vec![Int], Text),
+        ("str_from_bool", vec![Bool], Text),
         ("str_parse_int", vec![Text], Int),
         ("fail", vec![Text], Type::Unit),
         ("file_read", vec![Text], Text),
