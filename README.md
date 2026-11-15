@@ -5,37 +5,92 @@
 <h3 align="center">ONE LANGUAGE. EVERY SYSTEM.</h3>
 
 <p align="center">
-  An experimental hybrid programming language exploring the intersection of general-purpose programming, systems
-  engineering, networking, and distributed computing.
+  An experimental programming language for networking and defensive security, with a Rust compiler,
+  a bytecode VM, a security-analysis standard library and a web Playground.
+</p>
+
+<p align="center">
+  <a href="https://yomnova.onrender.com">Live demo</a> ·
+  <a href="docs/LANGUAGE_SPECIFICATION.md">Language reference</a> ·
+  <a href="docs/SECURITY_TOOLING.md">Security toolkit</a> ·
+  <a href="docs/ROADMAP.md">Roadmap</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 ---
 
-## 1. Status
+## Overview
 
-**Early-stage research project (v0.1).** A small but real language works end to end: lexer → parser → type
-checker → move checker → bytecode → VM, with a CLI and a web Playground that runs the real compiler. Most of the
-larger vision (borrowing, protocol types beyond IPv4/Port/Endpoint, concurrency, distribution) is **not built**.
-Every feature below carries a label — *Implemented*, *Partial*, *Planned* or *Research* — and
-[docs/PROGRESS.md](docs/PROGRESS.md) lists the evidence.
+YOMNOVA explores one idea: network and security code is usually spread over several languages and tools, and a single
+small language with network types, ownership rules and analysis helpers built in can make it safer to write.
+The compiler is written in Rust and runs a complete pipeline:
 
-## 2. Vision
-Software for networks is usually written in several languages and toolkits. YOMNOVA is an experiment in one
-coherent language where network types, ownership and dataflow are part of the language itself.
+```text
+source → lexer → parser → AST → type checker → ownership checker → bytecode → IR optimiser → verifier → VM
+```
 
-## 3. What works today
-* **Implemented:** functions and recursion, `let`/`mut`/`const`, `if`/`else`, `while`, short-circuit logic,
-  `Int` (checked 64-bit), `Float`, `Bool`, `Text`, arrays (literal + index), `IPv4`/`Port`/`Endpoint` values,
-  static type checking including call arguments, move-based ownership checking, a bytecode VM with resource
-  limits, and the `|>` pipeline operator / `flow` bindings.
-* **Partial:** arrays (`len`, `push` returning a new array, `for … in`; element assignment `xs[i] = v`, which copies the array; no nested-array typing beyond inference), ownership (moves only), type inference (local), formatter
-  (re-indent only).
-* **Parsed but rejected:** methods, lambdas. `struct` (literals, field reads, field assignment `p.x = v`) and `enum` with an exhaustive `match` statement work; patterns are one level deep.
-* **Planned / Research:** borrowing beyond call arguments (stored references, lifetimes), `TCP`/`UDP`, concurrency, distributed
-  runtime, IR optimisation, native code generation. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status: early-stage research project.** The language and its libraries work end to end and are covered by
+> automated tests, but they are young. Every claim in this README is backed by a test or an example; what is not built
+> is listed under [Limitations](#limitations). [docs/PROGRESS.md](docs/PROGRESS.md) holds the evidence table.
 
-## 4. Example
-Verified output below is from `yomnova run yomnova/examples/showcase.yom`.
+## Highlights
+
+| Area | What you get |
+|---|---|
+| **Language** | Functions, `let`/`mut`/`const`, `if`/`while`/`for … in`, `struct`, `enum`, pattern `match` (guards, or-patterns, ranges, struct patterns, exhaustiveness checking), pipelines (`\|>`, `flow`), checked 64-bit arithmetic |
+| **Ownership** | Move checking, plus shared (`&T`) and mutable (`&mut T`) borrows for function arguments with conflict detection |
+| **Network types** | `IPv4`, `IPv6`, `Port`, `Endpoint`, `NetworkBuffer`, `Packet` |
+| **Modules** | Built-in `std.*` libraries written in YOMNOVA itself, and file imports with `pub` visibility |
+| **Tooling** | CLI (`run`, `check`, `build`, `exec`, `disasm`, `tokens`, `ast`, `fmt`), `.yomc` bytecode files with a verifier, an optimiser you can turn off, a web Playground |
+| **Safety** | Step, stack, depth and text limits in the VM; no file access unless you pass `--allow-fs DIR`; no network access; no `unsafe` code in the workspace |
+
+## Security toolkit
+
+All of it is **defensive analysis of data you give it**. Nothing here sends packets, opens sockets, runs the data it
+inspects or contains exploit or malware code (the only test signature is the harmless EICAR string).
+
+| Library | Purpose |
+|---|---|
+| `std.net` | Ethernet, VLAN, ARP, IPv4, IPv6, ICMP, UDP, TCP and DNS readers and builders, with checksums |
+| `std.pcap` | Read and write classic libpcap captures |
+| `std.sec` | Signature and heuristic file scan (PE and ELF checks, entropy, EICAR), indicator lists, SHA-256 and HMAC, and traffic checks: port scans, SYN floods, ARP spoofing, ICMP tunnelling, odd TCP flags, DNS tunnelling, beaconing, log brute force |
+| `std.rules` | A small rule language (`severity \| name \| kind \| pattern`) with text, hex (with `??` wildcards), SHA-256 and `N of` / `all of` / `any of` / `none of` groups |
+| `std.scan` | nmap-style helpers: CIDR and port-list parsing, service and risk tables, `nmap -oG` output reading, scan-to-scan diffs, banner checks |
+
+```yomnova
+import std.sec
+
+fn main() -> Int {
+    let sample = bytes_of("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+    let findings = sec.scan(&sample)
+    emit(sec.verdict(&findings))
+    return 0
+}
+```
+
+```text
+malicious indicators
+=> 0
+```
+
+These are simple indicators, **not an antivirus or an IDS**: signatures miss new threats and heuristics raise false
+alarms. In a survey of 80 real ELF binaries from `/usr/bin`, 77 were reported clean and 3 were false positives; no real
+malware was used, so real-world detection has not been measured. Details and honest limits:
+[docs/SECURITY_TOOLING.md](docs/SECURITY_TOOLING.md). Runnable programs are in
+[`yomnova/examples/`](yomnova/examples) (`security_*.yom`).
+
+## Quick start
+
+Requirements: Rust (stable) for the compiler, Node.js 20 or newer for the web app.
+
+```bash
+git clone https://github.com/slimecoding2025/yomnova
+cd yomnova
+cargo build --release --manifest-path yomnova/Cargo.toml     # or: npm run build:compiler
+./yomnova/target/release/yomnova run yomnova/examples/showcase.yom
+```
+
+### Example
 
 ```yomnova
 module demo
@@ -58,9 +113,6 @@ fn main() -> Int {
 
     flow total = 5 |> inc |> scale(10)
     emit(total)
-
-    let message: Text = "owned once"
-    emit(message)
     return 0
 }
 ```
@@ -69,7 +121,6 @@ fn main() -> Int {
 YOMNOVA
 127.0.0.1:8080
 60
-owned once
 => 0
 ```
 
@@ -80,100 +131,82 @@ error: Use of moved value 'msg'
   = hint: Value was previously moved at line 9
 ```
 
-## 5. Architecture
-`source → lexer → parser → AST → semantic analysis / types → ownership → bytecode → IR optimiser → VM`. The optimiser
-(`yomnova-ir`) lifts each chunk of bytecode into a linear IR with symbolic jump targets, optimises it and lowers it back;
-`--no-opt` turns it off. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+## Command line
 
-## 6. Requirements
-Rust (stable, edition 2021) and Node.js ≥ 20 for the web app. No other tools are required.
-
-## 7. Build the compiler
-```bash
-cargo build --release --manifest-path yomnova/Cargo.toml     # or: npm run build:compiler
-```
-
-## 8. Command-line usage
 ```text
-yomnova run [-d|--disassemble] <file>   compile and run
-yomnova check <file>                    parse, type-check, ownership-check only
-yomnova build [-o out] <file>           compile to a .yomc bytecode file (does not run the program)
-yomnova exec <file.yomc>                run a .yomc file produced by `build`
-yomnova disasm <file>                   print the bytecode listing
-yomnova tokens <file> | ast <file>      show tokens / syntax tree
-yomnova fmt [--check] <file>            re-indent source
+yomnova run [-d] [--no-opt] [--allow-fs DIR] <file>   compile and run
+yomnova check <file>                                  parse, type-check and ownership-check only
+yomnova build [-o out] <file>                         compile to a .yomc bytecode file
+yomnova exec [--allow-fs DIR] <file.yomc>             run a .yomc file
+yomnova disasm <file>                                 print the bytecode listing
+yomnova tokens <file> | ast <file>                    show tokens / syntax tree
+yomnova fmt [--check] <file>                          re-indent source
 yomnova version
 ```
 
-## 9. Web site and Playground
+## Web site and Playground
+
 ```bash
 npm install
-npm run dev        # http://localhost:3000 (Vite middleware + API)
-npm run build && npm start   # production: serves dist/
+npm run dev                  # http://localhost:3000
+npm run build && npm start   # production build served from dist/
 ```
+
 The Playground sends your code to `server.ts`, which runs the real `yomnova` binary (5 s timeout, 1 MiB output cap,
-4 concurrent jobs). Tabs show the program's output, diagnostics, tokens, AST and bytecode — all produced by the
-compiler. If the server or binary is unavailable the site says so; nothing is simulated. Set `YOMNOVA_BIN` to use a
-specific binary. **There is no OS-level sandbox**; run behind container isolation if you expose it publicly.
+4 concurrent jobs) and shows output, diagnostics, tokens, AST and bytecode exactly as the compiler produced them.
+Set `YOMNOVA_BIN` to use a specific binary. **There is no OS-level sandbox**: put it behind container isolation if you
+expose it publicly. A `Dockerfile` and a Render Blueprint (`render.yaml`) are included, see
+[docs/DEPLOY.md](docs/DEPLOY.md).
 
-### Deploying
-A `Dockerfile` and a Render Blueprint (`render.yaml`) are included; see [docs/DEPLOY.md](docs/DEPLOY.md) (image build and
-Render deployment not yet verified).
+**AI Assistant (optional).** A suggest-only panel explains compiler errors and code and proposes fixes you can check
+with the compiler. It is off unless the server has `OPENROUTER_API_KEY`, and it sends your code to the model provider.
+It has been tested with a mock provider; see [docs/AI_ASSISTANT.md](docs/AI_ASSISTANT.md).
 
-### AI Assistant (optional)
-The Playground has a suggest-only AI panel (explain compiler errors, explain selected code, syntax tutoring, fix
-suggestions you can validate with the compiler). It is **off** unless the server has `OPENROUTER_API_KEY`, sends your
-code to the chosen model provider through OpenRouter, and has only been tested against a mock provider. See
-[docs/AI_ASSISTANT.md](docs/AI_ASSISTANT.md) for setup, privacy and limitations.
+## Testing
 
-## 10. Examples
-`yomnova/examples/`: `hello`, `variables`, `functions`, `pipeline`, `dataflow`, `ownership`, `ownership_fail`
-(rejected by the ownership checker), `type_error` (rejected by the type checker), `tcp-client`, `showcase`.
-
-## 11. Testing
 ```bash
 cd yomnova
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace          # unit tests + end-to-end regression suite
+cargo test --workspace            # unit tests + end-to-end regression suite
+cd .. && npm run test:ai          # AI assistant tests (mock provider)
 ```
-Honest verification notes and what could not be run are in [docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md).
 
-## 12. Project structure
+The Rust suite includes fuzz-style tests that feed random, truncated and corrupted PE, ELF, pcap and DNS data to the
+analysis libraries and corrupted `.yomc` files to the loader and VM. What was and was not verified:
+[docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md).
+
+## Project layout
+
 ```text
-yomnova/            Rust workspace (14 crates) + examples
-src/  server.ts     React/GSAP site and node:http API
-public/brand/       logo set (generated by scripts/generate-brand.py)
-docs/               specification, grammar, architecture, roadmap, progress, audits
+yomnova/            Rust workspace (14 crates), standard library sources and examples
+src/  server.ts     React/GSAP site and the Node API behind the Playground
+public/brand/       logo set
+docs/               specification, grammar, architecture, security toolkit, roadmap, progress, audits
+tests/              AI assistant and end-to-end tests
 ```
 
-## 13. Language reference
-[docs/LANGUAGE_SPECIFICATION.md](docs/LANGUAGE_SPECIFICATION.md) · [docs/GRAMMAR.md](docs/GRAMMAR.md)
+## Limitations
 
-## 14. Safety and limits
-Integer arithmetic is checked; the VM caps steps (1,000,000), stack (65,536), call depth (10,000) and text (16 MiB);
-the parser caps nesting (150). The language has no file, process or network access. The workspace contains no
-`unsafe` code.
+* Borrows exist only as function arguments; there are no stored references or lifetimes.
+* Methods and lambdas are parsed but rejected with a clear error; there is no concurrency, no `TCP`/`UDP` sockets and
+  no distributed runtime.
+* Nested or-patterns and per-field coverage analysis in struct patterns are not implemented.
+* Libraries are expanded into the program's source, not compiled separately; `.yomc` is version 2 only, with no
+  signatures.
+* Security helpers: no pcapng, no IPv6 extension headers or ICMPv6, no Mach-O, no regular expressions in rules, no
+  active scanning.
+* Not verified: the live OpenRouter provider and iOS Safari.
 
-## 15. Known limitations
-Several errors per run, but lexical errors are reported one at a time and later stages wait for earlier ones · only two warnings (unused binding, unreachable code) · references exist only as function parameters (`&T`, `&mut T`), so there are no lifetime annotations and no stored references · the `.yomc` format is version 2 only (no compatibility across opcode changes, no signatures) ·
-the formatter only re-indents · the Playground editor is a plain text area with a small highlighter (not Monaco) ·
-IR, `yomnova-network-core` and `yomnova-stdlib` are not wired into the pipeline.
+## Roadmap, changelog, contributing
 
-## 16. Roadmap
-[docs/ROADMAP.md](docs/ROADMAP.md)
+[docs/ROADMAP.md](docs/ROADMAP.md) · [CHANGELOG.md](CHANGELOG.md) · [CONTRIBUTING.md](CONTRIBUTING.md)
 
-## 17. Changelog
-[CHANGELOG.md](CHANGELOG.md)
+## License
 
-## 18. Contributing
-[CONTRIBUTING.md](CONTRIBUTING.md)
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. Unless you explicitly state
+otherwise, any contribution you submit for inclusion is dual-licensed as above, without additional terms.
 
-## 19. License
-Dual-licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+## Author
 
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this project, as defined
-in the Apache-2.0 license, is dual-licensed as above, without any additional terms or conditions.
-
-## 20. Author
 Created by **Mouhamed Salim Bousmina** · <https://github.com/slimecoding2025/yomnova>
