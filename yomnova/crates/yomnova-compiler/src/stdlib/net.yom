@@ -698,3 +698,93 @@ fn net_ipv4_src_private(b: &NetworkBuffer) -> Bool {
 fn net_ipv4_dst_private(b: &NetworkBuffer) -> Bool {
     return net_ipv4_private_at(&b, 16)
 }
+
+// ---------------------------------------------------------------------------------------------
+// DNS (RFC 1035), on the UDP payload: header fields and the first question. Compressed names
+// (pointers) are not followed; a question never needs them.
+// ---------------------------------------------------------------------------------------------
+
+fn net_dns_id(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 0)
+}
+
+fn net_dns_is_response(b: &NetworkBuffer) -> Bool {
+    return buf_get(b, 2) >= 128
+}
+
+fn net_dns_qdcount(b: &NetworkBuffer) -> Int {
+    return buf_get16(b, 4)
+}
+
+// Offset just after the first question's name, or -1 when the name is malformed
+// (label longer than 63, a compression pointer, or running past the end).
+fn net_dns_name_end(b: &NetworkBuffer) -> Int {
+    mut pos = 12
+    mut result = 0 - 1
+    mut running = len(b) >= 13
+    while running {
+        if pos >= len(b) {
+            running = false
+        } else {
+            let n = buf_get(b, pos)
+            if n == 0 {
+                result = pos + 1
+                running = false
+            } else if n > 63 || pos + 1 + n > len(b) {
+                running = false
+            } else {
+                pos = pos + 1 + n
+            }
+        }
+    }
+    return result
+}
+
+// The queried name such as "example.com" (printable bytes; others shown as ?), or "" when malformed.
+fn net_dns_qname(b: &NetworkBuffer) -> Text {
+    let end = net_dns_name_end(&b)
+    if end < 0 {
+        return ""
+    }
+    mut out = ""
+    mut pos = 12
+    while pos < end - 1 {
+        let n = buf_get(b, pos)
+        if len(out) > 0 {
+            out = out + "."
+        }
+        out = out + text_of(buf_slice(b, pos + 1, n))
+        pos = pos + 1 + n
+    }
+    return out
+}
+
+// Query type after the name: 1 A, 28 AAAA, 15 MX, 16 TXT, 255 ANY. 0 when malformed or cut off.
+fn net_dns_qtype(b: &NetworkBuffer) -> Int {
+    let end = net_dns_name_end(&b)
+    if end < 0 || end + 2 > len(b) {
+        return 0
+    }
+    return buf_get16(b, end)
+}
+
+// A one-question recursive query for `name` (labels of 1 to 63 bytes) and the given type, class IN.
+fn net_make_dns_query(id: Int, name: Text, qtype: Int) -> NetworkBuffer {
+    mut h: NetworkBuffer = NetworkBuffer(12)
+    h = buf_set16(h, 0, id)
+    h = buf_set16(h, 2, 256)
+    h = buf_set16(h, 4, 1)
+    mut q = h
+    for label in str_split(name, ".") {
+        if len(label) < 1 || len(label) > 63 {
+            fail("a DNS label is 1 to 63 bytes long")
+        }
+        let one = NetworkBuffer(1)
+        let lenbyte = buf_set(one, 0, len(label))
+        q = buf_concat(buf_concat(q, lenbyte), bytes_of(label))
+    }
+    mut tail: NetworkBuffer = NetworkBuffer(5)
+    tail = buf_set16(tail, 1, qtype)
+    tail = buf_set16(tail, 3, 1)
+    return buf_concat(q, tail)
+}

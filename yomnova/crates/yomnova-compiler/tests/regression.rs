@@ -2254,3 +2254,29 @@ fn text_of_shows_a_buffer_as_printable_text() {
         vec!["hello", "A??B"]
     );
 }
+
+#[test]
+fn dns_questions_are_built_and_parsed() {
+    let out = run_src(
+        "import std.net\nfn main() -> Int {\n let q = net.make_dns_query(4660, \"www.example.com\", 1)\n emit(hex_encode(q))\n emit(net.dns_id(&q))\n emit(net.dns_is_response(&q))\n emit(net.dns_qdcount(&q))\n emit(net.dns_qname(&q))\n emit(net.dns_qtype(&q))\n let r = hex_decode(\"123481800001000100000000076578616d706c6503636f6d00001c0001\")\n emit(net.dns_is_response(&r))\n emit(net.dns_qname(&r))\n emit(net.dns_qtype(&r))\n let bad = hex_decode(\"123401000001000000000000ff\")\n emit(net.dns_qname(&bad))\n emit(net.dns_qtype(&bad))\n let cut = hex_decode(\"12340100000100000000000003777777\")\n emit(len(net.dns_qname(&cut)))\n return 0\n}\n",
+    );
+    // The first line was produced independently with Python's struct module.
+    assert_eq!(
+        out,
+        vec![
+            "12340100000100000000000003777777076578616d706c6503636f6d0000010001",
+            "4660",
+            "false",
+            "1",
+            "www.example.com",
+            "1",
+            "true",
+            "example.com",
+            "28",
+            "",
+            "0",
+            "0",
+        ]
+    );
+    assert!(run_err("import std.net\nfn main() -> Int {\n let q = net.make_dns_query(1, \"a..b\", 1)\n emit(len(q))\n return 0\n}\n").contains("label"));
+}
