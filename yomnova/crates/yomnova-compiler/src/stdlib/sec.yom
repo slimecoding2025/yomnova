@@ -417,3 +417,33 @@ fn sec_odd_tcp_flags(seg: &NetworkBuffer) -> Text {
     }
     return ""
 }
+
+// Reasons a DNS query name looks like tunnelling or data exfiltration, or "" when it looks ordinary:
+// a name over 80 characters, a label of 50 or more characters, or a long all-hex label (24+ digits).
+// Heuristic only: CDNs and some services use long random-looking names.
+fn sec_dns_suspect(qname: &Text) -> Text {
+    if len(qname) > 80 {
+        return "very long name (" + str_from_int(len(qname)) + " characters)"
+    }
+    for label in str_split(qname, ".") {
+        if len(label) >= 50 {
+            return "very long label (" + str_from_int(len(label)) + " characters)"
+        }
+        if len(label) >= 24 {
+            mut hex = true
+            mut i = 0
+            while i < len(label) {
+                if !str_contains("0123456789abcdefABCDEF", str_slice(label, i, i + 1)) {
+                    hex = false
+                    i = len(label)
+                } else {
+                    i = i + 1
+                }
+            }
+            if hex {
+                return "long hex-looking label (" + str_from_int(len(label)) + " digits)"
+            }
+        }
+    }
+    return ""
+}

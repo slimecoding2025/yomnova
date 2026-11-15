@@ -2280,3 +2280,21 @@ fn dns_questions_are_built_and_parsed() {
     );
     assert!(run_err("import std.net\nfn main() -> Int {\n let q = net.make_dns_query(1, \"a..b\", 1)\n emit(len(q))\n return 0\n}\n").contains("label"));
 }
+
+#[test]
+fn sec_dns_suspect_flags_tunnel_like_names() {
+    let out = run_src(
+        "import std.sec\nfn main() -> Int {\n let a = \"www.example.com\"\n emit(sec.dns_suspect(&a))\n let b = \"4a6f686e20446f65206c6f67696e3d61646d696e.evil.example\"\n emit(sec.dns_suspect(&b))\n let c = str_repeat(\"x\", 55) + \".example.com\"\n emit(sec.dns_suspect(&c))\n let d = str_repeat(\"ab.\", 30) + \"com\"\n emit(sec.dns_suspect(&d))\n let e = \"a1b2c3d4e5f6a1b2c3d4e5f6.example.com\"\n emit(sec.dns_suspect(&e))\n let f = \"abcdefghijklmnopqrstuvwxyz.example.com\"\n emit(len(sec.dns_suspect(&f)))\n return 0\n}\n",
+    );
+    assert_eq!(
+        out,
+        vec![
+            "",
+            "long hex-looking label (40 digits)",
+            "very long label (55 characters)",
+            "very long name (93 characters)",
+            "long hex-looking label (24 digits)",
+            "0",
+        ]
+    );
+}
