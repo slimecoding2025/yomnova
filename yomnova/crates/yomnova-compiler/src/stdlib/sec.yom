@@ -390,3 +390,30 @@ fn sec_repeat_offenders(lines: &Array<Text>, needle: Text, marker: Text, thresho
     }
     return out
 }
+
+// Names an abnormal TCP flag combination used by stealth scans, or returns "" for ordinary flags.
+// Takes the TCP segment. NULL (no flags), Xmas (FIN+PSH+URG), FIN-only, SYN+FIN and SYN+RST.
+fn sec_odd_tcp_flags(seg: &NetworkBuffer) -> Text {
+    let f = buf_get(seg, 13) % 64
+    let fin = f % 2 == 1
+    let syn = (f / 2) % 2 == 1
+    let rst = (f / 4) % 2 == 1
+    let psh = (f / 8) % 2 == 1
+    let urg = (f / 32) % 2 == 1
+    if f == 0 {
+        return "NULL scan (no flags)"
+    }
+    if fin && psh && urg {
+        return "Xmas scan (FIN+PSH+URG)"
+    }
+    if syn && fin {
+        return "illegal SYN+FIN"
+    }
+    if syn && rst {
+        return "illegal SYN+RST"
+    }
+    if f == 1 {
+        return "FIN-only (FIN scan)"
+    }
+    return ""
+}

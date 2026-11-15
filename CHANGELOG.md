@@ -3,6 +3,7 @@
 ## Unreleased — 2026-11-03
 
 ### More security-analysis helpers (small steps)
+* `sec.odd_tcp_flags(&segment)`: names stealth-scan flag combinations (NULL, Xmas, FIN-only, SYN+FIN, SYN+RST) or returns `""`.
 * `net.tcp_flags_text(&segment)`: set TCP flags as text (`"SYN,ACK"`, `"none"` for a NULL scan, `"FIN,PSH,URG"` for an Xmas scan).
 * `sec.string_indicators(&data)`: opt-in report of dropper-style words (`powershell`, `-enc`, `VirtualAlloc`, URLs, ...) with counts; not part of `scan`, because ordinary programs contain them.
 * `buf_strings(buf, min_len) -> Array<Text>`: printable ASCII runs (like the `strings` tool), at most 10000 of them.

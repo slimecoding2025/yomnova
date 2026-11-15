@@ -2210,3 +2210,22 @@ fn tcp_flags_are_listed_as_text() {
     // 41 = FIN + PSH + URG (the \"Xmas\" scan flags)
     assert_eq!(out, vec!["SYN", "SYN,ACK", "none", "FIN,PSH,URG"]);
 }
+
+#[test]
+fn sec_names_stealth_scan_flag_combinations() {
+    let out = run_src(
+        "import std.sec\nfn seg(flags: Int) -> NetworkBuffer {\n let t = NetworkBuffer(20)\n return buf_set(t, 13, flags)\n}\nfn main() -> Int {\n let a = seg(0)\n emit(sec.odd_tcp_flags(&a))\n let b = seg(41)\n emit(sec.odd_tcp_flags(&b))\n let c = seg(3)\n emit(sec.odd_tcp_flags(&c))\n let d = seg(6)\n emit(sec.odd_tcp_flags(&d))\n let e = seg(1)\n emit(sec.odd_tcp_flags(&e))\n let f = seg(2)\n emit(len(sec.odd_tcp_flags(&f)))\n let g = seg(24)\n emit(len(sec.odd_tcp_flags(&g)))\n return 0\n}\n",
+    );
+    assert_eq!(
+        out,
+        vec![
+            "NULL scan (no flags)",
+            "Xmas scan (FIN+PSH+URG)",
+            "illegal SYN+FIN",
+            "illegal SYN+RST",
+            "FIN-only (FIN scan)",
+            "0",
+            "0",
+        ]
+    );
+}
