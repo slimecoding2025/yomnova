@@ -2298,3 +2298,14 @@ fn sec_dns_suspect_flags_tunnel_like_names() {
         ]
     );
 }
+
+#[test]
+fn sec_beaconing_needs_a_steady_interval() {
+    let out = run_src(
+        "import std.sec\nfn main() -> Int {\n let a = [100, 160, 220, 281, 340, 400]\n emit(sec.beaconing(&a, 2))\n let b = [100, 160, 220, 300, 340, 400]\n emit(sec.beaconing(&b, 2))\n let c = [100, 160, 220]\n emit(sec.beaconing(&c, 2))\n let d = [400, 340, 280, 220, 160, 100]\n emit(sec.beaconing(&d, 2))\n let e = [5, 5, 5, 5, 5, 5]\n emit(sec.beaconing(&e, 2))\n let f = [0, 30, 60, 91, 120, 150, 181]\n emit(sec.beaconing(&f, 1))\n return 0\n}\n",
+    );
+    assert_eq!(
+        out,
+        vec!["true", "false", "false", "false", "false", "true"]
+    );
+}

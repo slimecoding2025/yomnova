@@ -7,6 +7,7 @@
 * `sec.odd_tcp_flags(&segment)`: names stealth-scan flag combinations (NULL, Xmas, FIN-only, SYN+FIN, SYN+RST) or returns `""`.
 * `net.tcp_flags_text(&segment)`: set TCP flags as text (`"SYN,ACK"`, `"none"` for a NULL scan, `"FIN,PSH,URG"` for an Xmas scan).
 * `sec.string_indicators(&data)`: opt-in report of dropper-style words (`powershell`, `-enc`, `VirtualAlloc`, URLs, ...) with counts; not part of `scan`, because ordinary programs contain them.
+* `sec.beaconing(&times, tolerance)`: at least 5 ascending connection times whose gaps all stay within the tolerance of the average gap look like a beacon (heuristic; timers behave the same).
 * `sec.dns_suspect(&name)`: why a DNS name looks like tunnelling (over 80 characters, a label of 50+ characters, a long all-hex label), or `""`. Heuristic only.
 * `std.net` DNS: `net.dns_id dns_is_response dns_qdcount dns_qname dns_qtype` on a UDP payload and `net.make_dns_query(id, name, type)`. Names are read without following compression pointers; malformed names give `""`. The built query matches bytes produced independently with Python.
 * `text_of(buf) -> Text`: bytes as display text (printable ASCII kept, every other byte shown as `?`).
