@@ -1,0 +1,38 @@
+// DNS and timing checks: build queries, read the queried name back, flag tunnel-like names,
+// spot a beacon in connection times and name stealth-scan TCP flags. Nothing touches a network.
+import std.net
+import std.sec
+
+fn main() -> Int {
+    let names = ["www.example.com", "4a6f686e20446f65206c6f67696e3d61646d696e.c2.example", "login.example.org"]
+    for name in names {
+        let q = net.make_dns_query(7, name, 1)
+        let back = net.dns_qname(&q)
+        let why = sec.dns_suspect(&back)
+        if len(why) == 0 {
+            emit(back + ": ordinary")
+        } else {
+            emit(back + ": " + why)
+        }
+    }
+
+    // Connection times (seconds) from one host to one destination.
+    let steady = [1000, 1060, 1120, 1181, 1240, 1300, 1360]
+    let human = [1000, 1007, 1090, 1100, 1450, 1457, 1900]
+    emit("steady looks like a beacon: " + str_from_bool(sec.beaconing(&steady, 2)))
+    emit("human looks like a beacon: " + str_from_bool(sec.beaconing(&human, 2)))
+
+    // TCP flag combinations seen in a capture.
+    let flags = [2, 18, 0, 41, 3]
+    for f in flags {
+        mut seg: NetworkBuffer = NetworkBuffer(20)
+        seg = buf_set(seg, 13, f)
+        let odd = sec.odd_tcp_flags(&seg)
+        if len(odd) == 0 {
+            emit(net.tcp_flags_text(&seg) + ": normal")
+        } else {
+            emit(net.tcp_flags_text(&seg) + ": " + odd)
+        }
+    }
+    return 0
+}
