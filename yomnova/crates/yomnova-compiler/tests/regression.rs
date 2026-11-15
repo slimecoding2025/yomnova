@@ -2406,3 +2406,42 @@ fn analysis_survives_corrupted_copies_of_valid_pe_and_elf_files() {
         }
     }
 }
+
+#[test]
+fn pcap_and_dns_readers_survive_corrupted_input() {
+    let fixtures = ["d4c3b2a1020004000000000000000000ffff00000100000000f15365f40100001400000018000000000102030405060708090a0b0c0d0e0f1011121305f15365f40100000b0000000f00000068656c6c6f2d6672616d6509f15365f4010000070000000b00000078787878787878", "12340100000100000000000003777777076578616d706c6503636f6d0000010001"];
+    for (k, fixture) in fixtures.iter().enumerate() {
+        let original: Vec<u8> = (0..fixture.len() / 2)
+            .map(|i| u8::from_str_radix(&fixture[i * 2..i * 2 + 2], 16).unwrap())
+            .collect();
+        for seed in 0..150u64 {
+            let mut data = original.clone();
+            let noise = lcg_bytes(seed + 5000 * (k as u64 + 1), 8);
+            for pair in noise.chunks(2).take(1 + (seed % 4) as usize) {
+                let at = (pair[0] as usize * 5 + pair[1] as usize) % data.len();
+                data[at] = pair[1] ^ pair[0];
+            }
+            if seed % 7 == 0 {
+                data.truncate(((seed as usize * 11) % data.len()).max(1));
+            }
+            let hex: String = data.iter().map(|b| format!("{b:02x}")).collect();
+            let src = format!(
+                "import std.pcap\nimport std.net\nfn main() -> Int {{\n let b = hex_decode(\"{hex}\")\n emit(pcap.valid(&b))\n emit(pcap.count(&b))\n emit(pcap.truncated(&b))\n emit(pcap.duration(&b))\n emit(pcap.captured_bytes(&b))\n let offs = pcap.offsets(&b)\n for o in offs {{\n emit(len(pcap.packet_at(&b, o)))\n emit(pcap.time_at(&b, o))\n }}\n emit(net.dns_qname(&b))\n emit(net.dns_qtype(&b))\n emit(net.dns_qdcount(&b))\n return 0\n}}\n"
+            );
+            if let Err(e) = Compiler::compile_and_run(&src) {
+                let msg = e
+                    .iter()
+                    .map(|d| d.message.clone())
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                // dns_qdcount / dns_id on a buffer shorter than their field is a bounds error by design:
+                // it must be that exact, reported error and nothing else.
+                assert!(
+                    msg.contains("buffer access out of bounds") && data.len() < 6,
+                    "fixture {k} seed {seed} ({} bytes): {msg}",
+                    data.len()
+                );
+            }
+        }
+    }
+}
