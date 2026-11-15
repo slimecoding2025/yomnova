@@ -2168,3 +2168,11 @@ fn str_from_bool_turns_a_bool_into_text() {
         run_err("fn main() -> Int {\n emit(str_from_bool(1))\n return 0\n}\n").contains("Bool")
     );
 }
+
+#[test]
+fn buf_count_counts_non_overlapping_matches() {
+    assert_eq!(
+        run_src("fn main() -> Int {\n emit(buf_count(bytes_of(\"a.b.c.d\"), bytes_of(\".\")))\n emit(buf_count(bytes_of(\"aaaa\"), bytes_of(\"aa\")))\n emit(buf_count(bytes_of(\"abc\"), bytes_of(\"z\")))\n return 0\n}\n"),
+        vec!["3", "2", "0"]
+    );
+}

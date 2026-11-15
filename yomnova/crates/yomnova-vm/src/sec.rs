@@ -202,6 +202,19 @@ pub fn find(hay: &[u8], needle: &[u8], from: usize) -> i64 {
         .map_or(-1, |p| (p + from) as i64)
 }
 
+/// Non-overlapping occurrences of `needle` (an empty needle counts 0).
+pub fn count(hay: &[u8], needle: &[u8]) -> usize {
+    let (mut n, mut at) = (0, 0);
+    loop {
+        let p = find(hay, needle, at);
+        if p < 0 {
+            return n;
+        }
+        n += 1;
+        at = p as usize + needle.len();
+    }
+}
+
 /// Length of the longest run of one repeated byte value.
 pub fn longest_run(data: &[u8], value: u8) -> usize {
     let (mut best, mut cur) = (0, 0);
@@ -298,6 +311,7 @@ pub fn sec_native(name: &str, args: &[Value], max_buffer: usize) -> Result<Value
             };
             Value::Int(find(buf(0)?, buf(1)?, from))
         }
+        "buf_count" => Value::Int(count(buf(0)?, buf(1)?) as i64),
         "buf_longest_run" => {
             let v = match &args[1] {
                 Value::Int(n) if (0..=255).contains(n) => *n as u8,
@@ -390,6 +404,14 @@ mod tests {
         assert!(parse_wild("zz").is_err());
         assert!(parse_wild("?9").is_err());
         assert!(parse_wild(&"00".repeat(4097)).is_err());
+    }
+
+    #[test]
+    fn count_is_non_overlapping() {
+        assert_eq!(count(b"aaaa", b"aa"), 2);
+        assert_eq!(count(b"abcabc", b"bc"), 2);
+        assert_eq!(count(b"abc", b""), 0);
+        assert_eq!(count(b"", b"a"), 0);
     }
 
     #[test]

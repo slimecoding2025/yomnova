@@ -130,6 +130,7 @@ impl Vm {
             "buf_entropy",
             "buf_find_wild",
             "buf_longest_run",
+            "buf_count",
             "file_read_bytes",
         ] {
             vm.globals
@@ -721,6 +722,7 @@ impl Vm {
                     | "hex_encode" | "hex_decode" | "base64_encode" | "base64_decode"
                     | "buf_entropy" => 1,
                     "hmac_sha256" => 2,
+                    "buf_count" => 2,
                     "str_slice" | "str_replace" => 3,
                     other => {
                         return Err(VmError::TypeError(format!(
@@ -848,6 +850,7 @@ impl Vm {
                     | "buf_entropy" => {
                         sec::sec_native(name.as_str(), &args, Self::MAX_BUFFER_BYTES)?
                     }
+                    "buf_count" => sec::sec_native(name.as_str(), &args, Self::MAX_BUFFER_BYTES)?,
                     other if other.starts_with("file_") => self.file_native(other, &args)?,
                     other if other.starts_with("str_") => Self::text_native(other, &args)?,
                     other => Self::net_native(other, args)?,

@@ -187,6 +187,7 @@ pub fn net_builtins() -> Vec<(&'static str, Vec<Type>, Type)> {
         ("base64_decode", vec![Text], Buf),
         ("buf_find", vec![Buf, Buf, Int], Int),
         ("buf_entropy", vec![Buf], Float),
+        ("buf_count", vec![Buf, Buf], Int),
         ("buf_find_wild", vec![Buf, Text, Int], Int),
         ("buf_longest_run", vec![Buf, Int], Int),
     ]
@@ -227,6 +228,7 @@ pub const NET_READ_ONLY: &[&str] = &[
     "base64_decode",
     "buf_find",
     "buf_entropy",
+    "buf_count",
     "buf_find_wild",
     "buf_longest_run",
 ];
