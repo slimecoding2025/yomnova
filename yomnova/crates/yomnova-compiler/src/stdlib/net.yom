@@ -675,3 +675,26 @@ fn net_tcp_flags_text(b: &NetworkBuffer) -> Text {
     }
     return str_slice(out, 0, len(out) - 1)
 }
+
+// Is the IPv4 address at `off` in the buffer private, loopback or link-local?
+// 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8 and 169.254.0.0/16.
+fn net_ipv4_private_at(b: &NetworkBuffer, off: Int) -> Bool {
+    let a = buf_get(b, off)
+    let c = buf_get(b, off + 1)
+    if a == 10 || a == 127 {
+        return true
+    }
+    if a == 172 && c >= 16 && c <= 31 {
+        return true
+    }
+    return (a == 192 && c == 168) || (a == 169 && c == 254)
+}
+
+// Take the IPv4 header (or packet).
+fn net_ipv4_src_private(b: &NetworkBuffer) -> Bool {
+    return net_ipv4_private_at(&b, 12)
+}
+
+fn net_ipv4_dst_private(b: &NetworkBuffer) -> Bool {
+    return net_ipv4_private_at(&b, 16)
+}

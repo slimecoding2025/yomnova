@@ -2229,3 +2229,20 @@ fn sec_names_stealth_scan_flag_combinations() {
         ]
     );
 }
+
+#[test]
+fn ipv4_private_ranges_are_recognised() {
+    let out = run_src(
+        "import std.net\nfn main() -> Int {\n for pair in [\"10.1.2.3|8.8.8.8\", \"172.16.0.1|172.32.0.1\", \"192.168.5.5|192.169.0.1\", \"127.0.0.1|169.254.9.9\", \"172.15.0.1|11.0.0.1\"] {\n let parts = str_split(pair, \"|\")\n let p = bytes_of(\"x\")\n let ip = net.make_ipv4(parts[0], parts[1], 6, 64, p)\n emit(str_from_bool(net.ipv4_src_private(&ip)) + \" \" + str_from_bool(net.ipv4_dst_private(&ip)))\n }\n return 0\n}\n",
+    );
+    assert_eq!(
+        out,
+        vec![
+            "true false",
+            "true false",
+            "true false",
+            "true true",
+            "false false"
+        ]
+    );
+}

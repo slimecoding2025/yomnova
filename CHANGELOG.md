@@ -3,6 +3,7 @@
 ## Unreleased — 2026-11-03
 
 ### More security-analysis helpers (small steps)
+* `net.ipv4_src_private(&ip)` / `net.ipv4_dst_private(&ip)`: private (10/8, 172.16/12, 192.168/16), loopback and link-local addresses.
 * `sec.odd_tcp_flags(&segment)`: names stealth-scan flag combinations (NULL, Xmas, FIN-only, SYN+FIN, SYN+RST) or returns `""`.
 * `net.tcp_flags_text(&segment)`: set TCP flags as text (`"SYN,ACK"`, `"none"` for a NULL scan, `"FIN,PSH,URG"` for an Xmas scan).
 * `sec.string_indicators(&data)`: opt-in report of dropper-style words (`powershell`, `-enc`, `VirtualAlloc`, URLs, ...) with counts; not part of `scan`, because ordinary programs contain them.
