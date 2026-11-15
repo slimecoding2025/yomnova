@@ -2319,3 +2319,11 @@ fn std_rules_none_of_fires_when_nothing_matched() {
     // "0 of" is not a valid head: it is reported by check and never fires.
     assert_eq!(out, vec!["1", "[medium: clean]", "[low: a]"]);
 }
+
+#[test]
+fn pcap_duration_and_captured_bytes() {
+    let out = run_src(
+        "import std.pcap\nfn main() -> Int {\n let empty = pcap.make_header()\n emit(pcap.duration(&empty))\n emit(pcap.captured_bytes(&empty))\n let one = pcap.append(pcap.make_header(), 100, bytes_of(\"abc\"))\n emit(pcap.duration(&one))\n let two = pcap.append(one, 160, bytes_of(\"hello\"))\n emit(pcap.duration(&two))\n emit(pcap.captured_bytes(&two))\n let back = pcap.append(pcap.append(pcap.make_header(), 500, bytes_of(\"a\")), 400, bytes_of(\"b\"))\n emit(pcap.duration(&back))\n return 0\n}\n",
+    );
+    assert_eq!(out, vec!["0", "0", "0", "60", "8", "0"]);
+}

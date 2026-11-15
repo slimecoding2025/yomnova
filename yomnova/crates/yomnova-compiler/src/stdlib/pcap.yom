@@ -126,3 +126,26 @@ fn pcap_append(file: NetworkBuffer, seconds: Int, frame: NetworkBuffer) -> Netwo
     r = buf_set(r, 13, (n / 256) % 256)
     return buf_concat(buf_concat(file, r), frame)
 }
+
+// Seconds between the first and the last record's timestamp (0 for fewer than two records).
+// Records are taken in file order; a capture whose clock went backwards gives 0.
+fn pcap_duration(b: &NetworkBuffer) -> Int {
+    let offs = pcap_offsets(&b)
+    if len(offs) < 2 {
+        return 0
+    }
+    let span = pcap_time_at(&b, offs[len(offs) - 1]) - pcap_time_at(&b, offs[0])
+    if span < 0 {
+        return 0
+    }
+    return span
+}
+
+// Total captured bytes of all complete records (frame data only, headers not counted).
+fn pcap_captured_bytes(b: &NetworkBuffer) -> Int {
+    mut total = 0
+    for off in pcap_offsets(&b) {
+        total = total + pcap_u32(&b, off + 8, pcap_big_endian(&b))
+    }
+    return total
+}
