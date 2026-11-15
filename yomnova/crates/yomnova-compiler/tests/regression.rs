@@ -2176,3 +2176,12 @@ fn buf_count_counts_non_overlapping_matches() {
         vec!["3", "2", "0"]
     );
 }
+
+#[test]
+fn buf_strings_lists_printable_runs() {
+    assert_eq!(
+        run_src("fn main() -> Int {\n let b = hex_decode(\"0068656c6c6f0001776f726c6421ff61620041424344\")\n let s = buf_strings(b, 4)\n emit(len(s))\n emit(s[0])\n emit(s[1])\n emit(s[2])\n emit(len(buf_strings(b, 2)))\n return 0\n}\n"),
+        vec!["3", "hello", "world!", "ABCD", "4"]
+    );
+    assert!(run_err("fn main() -> Int {\n let s = buf_strings(bytes_of(\"abc\"), 0)\n emit(len(s))\n return 0\n}\n").contains("at least 1"));
+}

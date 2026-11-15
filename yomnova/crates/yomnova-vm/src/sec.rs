@@ -215,6 +215,29 @@ pub fn count(hay: &[u8], needle: &[u8]) -> usize {
     }
 }
 
+/// Printable ASCII runs (space to `~`, and tab) of at least `min_len` bytes, like the `strings`
+/// tool. At most `MAX_STRINGS` runs are returned.
+pub const MAX_STRINGS: usize = 10_000;
+
+pub fn strings(data: &[u8], min_len: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur: Vec<u8> = Vec::new();
+    for &b in data.iter().chain(std::iter::once(&0u8)) {
+        if (0x20..=0x7e).contains(&b) || b == b'\t' {
+            cur.push(b);
+        } else {
+            if cur.len() >= min_len {
+                out.push(String::from_utf8_lossy(&cur).into_owned());
+                if out.len() >= MAX_STRINGS {
+                    return out;
+                }
+            }
+            cur.clear();
+        }
+    }
+    out
+}
+
 /// Length of the longest run of one repeated byte value.
 pub fn longest_run(data: &[u8], value: u8) -> usize {
     let (mut best, mut cur) = (0, 0);
@@ -311,6 +334,22 @@ pub fn sec_native(name: &str, args: &[Value], max_buffer: usize) -> Result<Value
             };
             Value::Int(find(buf(0)?, buf(1)?, from))
         }
+        "buf_strings" => {
+            let min = match &args[1] {
+                Value::Int(n) if *n >= 1 => *n as usize,
+                Value::Int(n) => {
+                    return Err(proto(format!(
+                        "the minimum length must be at least 1, got {n}"
+                    )))
+                }
+                other => {
+                    return Err(VmError::TypeError(format!(
+                        "{name} expects an Int minimum length, got {other:?}"
+                    )))
+                }
+            };
+            Value::Array(strings(buf(0)?, min).into_iter().map(Value::Text).collect())
+        }
         "buf_count" => Value::Int(count(buf(0)?, buf(1)?) as i64),
         "buf_longest_run" => {
             let v = match &args[1] {
@@ -404,6 +443,16 @@ mod tests {
         assert!(parse_wild("zz").is_err());
         assert!(parse_wild("?9").is_err());
         assert!(parse_wild(&"00".repeat(4097)).is_err());
+    }
+
+    #[test]
+    fn strings_extracts_printable_runs() {
+        let data = b"\x00\x01hello\x02ab\x00world!\xff\xfeabcd";
+        assert_eq!(strings(data, 4), vec!["hello", "world!", "abcd"]);
+        assert_eq!(strings(data, 2), vec!["hello", "ab", "world!", "abcd"]);
+        assert!(strings(b"", 1).is_empty());
+        let many: Vec<u8> = b"abcd\x00".repeat(MAX_STRINGS + 5);
+        assert_eq!(strings(&many, 4).len(), MAX_STRINGS);
     }
 
     #[test]

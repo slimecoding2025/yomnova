@@ -3,6 +3,7 @@
 ## Unreleased — 2026-11-03
 
 ### More security-analysis helpers (small steps)
+* `buf_strings(buf, min_len) -> Array<Text>`: printable ASCII runs (like the `strings` tool), at most 10000 of them.
 * `buf_count(buf, needle)`: non-overlapping occurrences (0 for an empty needle).
 * `str_from_bool(Bool) -> Text` (`"true"` / `"false"`), handy for report lines.
 
