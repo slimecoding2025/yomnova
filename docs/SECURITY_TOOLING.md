@@ -36,6 +36,14 @@ One rule per line: `severity | name | kind | pattern`. Severity is `high`, `medi
 `sha256` (the SHA-256 of the whole data equals it) or `group` (a condition over other rules: `2 of a, b, c`, `all of a, b`, `any of a, b`, `none of a, b`; no group of groups). `rules.match(&rs, &data)` returns `severity: name` findings (feed them to `sec.verdict`), `rules.check(&rs)` lists
 every unusable rule, and `rules.load(path)` reads a rule file with `--allow-fs`. Blank lines and lines starting with `#` are comments. This is not YARA: only whole-byte `??` wildcards and simple `N of` groups, no regular expressions, offsets or `not`; invalid rules never match.
 
+## Cookbook
+
+- Hash a file: `let h = sec.hash_file("a.bin")` (needs `--allow-fs`), compare with a known list via `sec.in_list`.
+- Scan a file and judge it: `let f = sec.scan(&data)`, then `sec.verdict(&f)`.
+- Rules plus scan together: `rules.match(&rs, &data)` and `sec.scan(&data)` both return `severity: text` lines.
+- Network capture review: loop `pcap.offsets(&cap)`, take `pcap.packet_at`, then `sec.port_scan`, `sec.syn_flood`, `sec.dns_suspect` or `sec.beaconing`.
+- Every function is defensive analysis of data you supply; nothing here sends traffic or runs the data.
+
 ## Examples
 
 `examples/security_dns.yom`, `examples/security_strings.yom`, `examples/security_rules.yom`, `examples/security_pcap.yom`, `examples/security_scan.yom`, `security_network.yom`, `security_files.yom` (needs `--allow-fs`) and `security_logs.yom`.
