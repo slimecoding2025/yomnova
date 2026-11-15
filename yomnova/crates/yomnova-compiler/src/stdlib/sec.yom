@@ -166,15 +166,22 @@ fn sec_elf_findings(data: &NetworkBuffer) -> Array<Text> {
     } else if class != 1 && class != 2 {
         out = push(out, "medium: ELF header with an unknown class byte")
     } else {
-        mut phoff = sec_le32(&data, 28)
-        mut entsize = sec_le16(&data, 42)
-        mut count = sec_le16(&data, 44)
         mut need = 52
         if class == 2 {
             need = 64
-            phoff = sec_le64(&data, 32)
-            entsize = sec_le16(&data, 54)
-            count = sec_le16(&data, 56)
+        }
+        mut phoff = 0
+        mut entsize = 0
+        mut count = 0
+        if len(data) >= need {
+            phoff = sec_le32(&data, 28)
+            entsize = sec_le16(&data, 42)
+            count = sec_le16(&data, 44)
+            if class == 2 {
+                phoff = sec_le64(&data, 32)
+                entsize = sec_le16(&data, 54)
+                count = sec_le16(&data, 56)
+            }
         }
         let minsize = 32 + (class - 1) * 24
         if len(data) < need {

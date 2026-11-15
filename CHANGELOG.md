@@ -7,6 +7,9 @@
 * `sec.odd_tcp_flags(&segment)`: names stealth-scan flag combinations (NULL, Xmas, FIN-only, SYN+FIN, SYN+RST) or returns `""`.
 * `net.tcp_flags_text(&segment)`: set TCP flags as text (`"SYN,ACK"`, `"none"` for a NULL scan, `"FIN,PSH,URG"` for an Xmas scan).
 * `sec.string_indicators(&data)`: opt-in report of dropper-style words (`powershell`, `-enc`, `VirtualAlloc`, URLs, ...) with counts; not part of `scan`, because ordinary programs contain them.
+* **Bug found by the new fuzz test and fixed:** `sec.scan` on a cut-off ELF64 (between 52 and 63 bytes) read header fields past the end and stopped with a bounds error;
+  it now reports "ELF header is cut off". `analysis_functions_never_fail_on_random_or_header_shaped_garbage` feeds 240 deterministic pseudo-random and header-shaped buffers (PE, ELF, pcap, DNS prefixes)
+  through `sec.scan`, `sec.verdict`, `pcap.*`, `net.dns_*` and `rules.match`.
 * `examples/security_dns.yom`: DNS name checks, beacon timing and stealth-scan flags.
 * `examples/security_strings.yom`: strings, dropper-style words, counts and a verdict on an in-memory blob.
 * `pcap.duration(&f)` (seconds between the first and last record) and `pcap.captured_bytes(&f)`.

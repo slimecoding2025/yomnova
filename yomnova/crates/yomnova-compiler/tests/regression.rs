@@ -2327,3 +2327,48 @@ fn pcap_duration_and_captured_bytes() {
     );
     assert_eq!(out, vec!["0", "0", "0", "60", "8", "0"]);
 }
+
+/// Deterministic pseudo-random bytes (a linear congruential generator), so failures reproduce.
+fn lcg_bytes(seed: u64, n: usize) -> Vec<u8> {
+    let mut x = seed;
+    (0..n)
+        .map(|_| {
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (x >> 33) as u8
+        })
+        .collect()
+}
+
+#[test]
+fn analysis_functions_never_fail_on_random_or_header_shaped_garbage() {
+    // PE / ELF / pcap / DNS-looking prefixes reach the deeper parsing code; the rest is noise.
+    let prefixes: [&[u8]; 5] = [
+        b"",
+        b"MZ",
+        b"\x7fELF\x02\x01",
+        b"\xd4\xc3\xb2\xa1",
+        b"\x12\x34\x01\x00\x00\x01",
+    ];
+    for seed in 0..240u64 {
+        let mut data = prefixes[(seed % 5) as usize].to_vec();
+        data.extend(lcg_bytes(seed, (seed as usize * 7) % 400));
+        let hex: String = data.iter().map(|b| format!("{b:02x}")).collect();
+        let src = format!(
+            "import std.sec\nimport std.pcap\nimport std.net\nimport std.rules\nfn main() -> Int {{\n let b = hex_decode(\"{hex}\")\n let f = sec.scan(&b)\n emit(len(f))\n let s = sec.verdict(&f)\n emit(len(s))\n emit(pcap.count(&b))\n emit(pcap.duration(&b))\n let q = net.dns_qname(&b)\n emit(len(q))\n emit(net.dns_qtype(&b))\n let rs = [\"low | x | text | ab\", \"low | y | hex | 4d ?? 90\", \"high | g | group | 1 of x, y\"]\n emit(len(rules.match(&rs, &b)))\n return 0\n}}\n"
+        );
+        if let Err(e) = Compiler::compile_and_run(&src) {
+            let msg = e
+                .iter()
+                .map(|d| d.message.clone())
+                .collect::<Vec<_>>()
+                .join(" | ");
+            panic!(
+                "seed {seed} ({} bytes, prefix {:?}): {msg}",
+                data.len(),
+                prefixes[(seed % 5) as usize]
+            );
+        }
+    }
+}
