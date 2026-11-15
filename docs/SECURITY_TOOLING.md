@@ -38,7 +38,7 @@ every unusable rule, and `rules.load(path)` reads a rule file with `--allow-fs`.
 
 ## Examples
 
-`examples/security_rules.yom`, `examples/security_pcap.yom`, `examples/security_scan.yom`, `security_network.yom`, `security_files.yom` (needs `--allow-fs`) and `security_logs.yom`.
+`examples/security_strings.yom`, `examples/security_rules.yom`, `examples/security_pcap.yom`, `examples/security_scan.yom`, `security_network.yom`, `security_files.yom` (needs `--allow-fs`) and `security_logs.yom`.
 
 ## Honest limits
 

@@ -1,0 +1,32 @@
+// Triage a blob the way an analyst would: printable strings, dropper-style words, counts and an
+// overall verdict. The sample is built in memory from harmless text between binary bytes.
+import std.sec
+
+fn main() -> Int {
+    let gap = hex_decode("0001fffe")
+    let a = buf_concat(gap, bytes_of("run powershell -enc QQBCAEMA"))
+    let b = buf_concat(a, gap)
+    let c = buf_concat(b, bytes_of("http://example.test/a.bin"))
+    let d = buf_concat(c, gap)
+    let e = buf_concat(d, bytes_of("hi"))
+    let sample = buf_concat(e, gap)
+    emit(len(sample))
+
+    let strings = buf_strings(sample, 6)
+    emit(len(strings))
+    for s in strings {
+        emit("string: " + s)
+    }
+
+    let words = sec.string_indicators(&sample)
+    for w in words {
+        emit(w)
+    }
+    emit("gap bytes found: " + str_from_int(buf_count(sample, gap)))
+    emit(text_of(buf_slice(sample, 0, 12)))
+
+    let findings = sec.scan(&sample)
+    emit(sec.verdict(&findings))
+    emit(sec.verdict(&words))
+    return 0
+}
