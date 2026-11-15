@@ -44,11 +44,18 @@ every unusable rule, and `rules.load(path)` reads a rule file with `--allow-fs`.
 - Network capture review: loop `pcap.offsets(&cap)`, take `pcap.packet_at`, then `sec.port_scan`, `sec.syn_flood`, `sec.dns_suspect` or `sec.beaconing`.
 - Every function is defensive analysis of data you supply; nothing here sends traffic or runs the data.
 
+## Scan planning and nmap output (`import std.scan`)
+
+nmap-style helpers that **send no packets and open no sockets**: `scan.hosts(&target)` (an address or a CIDR block from /22 to /32), `scan.ports(&spec)` / `scan.spec_ok(&spec)` (`22,80,8000-8100`, at most 10000 ports),
+`scan.top_ports()`, `scan.ip_to_int` / `scan.int_to_ip`, `scan.service(port)`, `scan.risk(port)` and `scan.risk_note(port)`, `scan.open_ports(&text)` and `scan.exposure(&text)` for `nmap -oG` output,
+`scan.diff(&before, &after)` (opened/closed ports between two scans) and `scan.banner_product` / `scan.banner_findings` for service banners.
+The service table has about 30 TCP ports; banner checks cover only SSH protocol 1, vsFTPd 2.3.4 and version-announcing web servers. It does not scan: run nmap yourself on systems you are allowed to test.
+
 ## Examples
 
-`examples/security_dns.yom`, `examples/security_strings.yom`, `examples/security_rules.yom`, `examples/security_pcap.yom`, `examples/security_scan.yom`, `security_network.yom`, `security_files.yom` (needs `--allow-fs`) and `security_logs.yom`.
+`examples/security_scan_plan.yom`, `examples/security_dns.yom`, `examples/security_strings.yom`, `examples/security_rules.yom`, `examples/security_pcap.yom`, `examples/security_scan.yom`, `security_network.yom`, `security_files.yom` (needs `--allow-fs`) and `security_logs.yom`.
 
 ## Honest limits
 
 Simple indicators only. Signatures miss new threats; entropy and section heuristics raise false alarms (compressed archives look random). PE and ELF checks cover the
-section/program-header tables only (no imports, symbols or Mach-O). No ICMPv6, IPv6 extension headers, PCAP reader or rule language yet.
+section/program-header tables only (no imports, symbols or Mach-O). No ICMPv6, IPv6 extension headers, pcapng or active scanning yet.

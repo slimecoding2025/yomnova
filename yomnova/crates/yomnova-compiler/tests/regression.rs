@@ -2445,3 +2445,70 @@ fn pcap_and_dns_readers_survive_corrupted_input() {
         }
     }
 }
+
+#[test]
+fn std_scan_parses_targets_ports_nmap_output_and_banners() {
+    let out = run_src("import std.scan\nfn main() -> Int {\n let a = \"22,80,8000-8002,x,0,70000\"\n emit(scan.ports(&a))\n let b = \"22,80-90\"\n emit(scan.spec_ok(&b))\n let c = \"22,abc\"\n emit(scan.spec_ok(&c))\n let h1 = \"10.0.0.0/29\"\n emit(scan.hosts(&h1))\n let h2 = \"10.0.0.0/22\"\n emit(len(scan.hosts(&h2)))\n let h3 = \"10.0.0.0/16\"\n emit(len(scan.hosts(&h3)))\n let h4 = \"192.168.1.7\"\n emit(scan.hosts(&h4))\n let h5 = \"10.0.0.2/31\"\n emit(scan.hosts(&h5))\n let ip = \"1.2.3.4\"\n emit(scan.ip_to_int(&ip))\n emit(scan.int_to_ip(16909060))\n emit(scan.service(443))\n emit(scan.risk(23))\n let g = \"# Nmap\\nHost: 10.0.0.5 ()\\tPorts: 22/open/tcp//ssh//OpenSSH 7.4/, 23/open/tcp//telnet///, 80/closed/tcp//http///, 6379/open/tcp////\\tIgnored State: closed (1)\\nHost: 10.0.0.6 ()\\tStatus: Up\\n\"\n emit(scan.open_ports(&g))\n emit(scan.exposure(&g))\n let g2 = \"Host: 10.0.0.5 ()\\tPorts: 22/open/tcp//ssh///, 8080/open/tcp//http-proxy///\\n\"\n let o1 = scan.open_ports(&g)\n let o2 = scan.open_ports(&g2)\n emit(scan.diff(&o1, &o2))\n let bn = \"SSH-2.0-OpenSSH_7.4p1\"\n emit(scan.banner_product(&bn))\n let bn2 = \"SSH-1.5-Old\"\n emit(scan.banner_findings(&bn2))\n let bn3 = \"220 (vsFTPd 2.3.4)\"\n emit(scan.banner_product(&bn3))\n emit(scan.banner_findings(&bn3))\n let bn4 = \"Server: Apache/2.4.7\"\n emit(scan.banner_findings(&bn4))\n return 0\n}\n");
+    assert_eq!(out[0], "[22, 80, 8000, 8001, 8002]");
+    assert_eq!(out[1], "true");
+    assert_eq!(out[2], "false");
+    assert_eq!(
+        out[3],
+        "[10.0.0.1, 10.0.0.2, 10.0.0.3, 10.0.0.4, 10.0.0.5, 10.0.0.6]"
+    );
+    assert_eq!(out[4], "1022");
+    assert_eq!(out[5], "0");
+    assert_eq!(out[6], "[192.168.1.7]");
+    assert_eq!(out[7], "[10.0.0.2, 10.0.0.3]");
+    assert_eq!(out[8], "16909060");
+    assert_eq!(out[9], "1.2.3.4");
+    assert_eq!(
+        out[12],
+        "[10.0.0.5 22/tcp ssh, 10.0.0.5 23/tcp telnet, 10.0.0.5 6379/tcp redis]"
+    );
+    assert!(out[13].starts_with("[high: 10.0.0.5 port 23 (telnet)"));
+    assert_eq!(out[14], "[opened: 10.0.0.5 8080/tcp http-proxy, closed: 10.0.0.5 23/tcp telnet, closed: 10.0.0.5 6379/tcp redis]");
+    assert_eq!(out[15], "OpenSSH 7.4p1");
+    assert_eq!(out[16], "[high: SSH protocol 1 is obsolete and insecure]");
+    assert_eq!(
+        out[19],
+        "[low: the server announces its exact version (Apache/2.4.7)]"
+    );
+}
+
+#[test]
+fn std_scan_never_fails_on_garbage_text() {
+    for (i, junk) in [
+        "",
+        "Host: ",
+        "Host: x Ports: ",
+        "Host: 1.2.3.4 () Ports: 1/open/tcp",
+        "Ports: 22/open/tcp//ssh///",
+        "////",
+        "/",
+        "999.1.1.1/24",
+        "1.2.3.4/abc",
+        "1.2.3.4/",
+        "-",
+        ",",
+        "5-1",
+        "--",
+        "SSH-",
+        "Server: ",
+        "vsFTPd ",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let src = format!(
+            "import std.scan\nfn main() -> Int {{\n let j = \"{}\"\n emit(len(scan.ports(&j)))\n emit(scan.spec_ok(&j))\n emit(len(scan.hosts(&j)))\n emit(scan.ip_to_int(&j))\n emit(len(scan.open_ports(&j)))\n emit(len(scan.exposure(&j)))\n emit(scan.banner_product(&j))\n emit(len(scan.banner_findings(&j)))\n return 0\n}}\n",
+            junk.replace('\\', "\\\\")
+        );
+        if let Err(e) = Compiler::compile_and_run(&src) {
+            panic!(
+                "case {i} {junk:?}: {:?}",
+                e.iter().map(|d| d.message.clone()).collect::<Vec<_>>()
+            );
+        }
+    }
+}

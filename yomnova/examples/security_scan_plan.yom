@@ -1,0 +1,41 @@
+import std.scan
+fn main() -> Int {
+ let a = "22,80,8000-8002,x,0,70000"
+ emit(scan.ports(&a))
+ let b = "22,80-90"
+ emit(scan.spec_ok(&b))
+ let c = "22,abc"
+ emit(scan.spec_ok(&c))
+ let h1 = "10.0.0.0/29"
+ emit(scan.hosts(&h1))
+ let h2 = "10.0.0.0/22"
+ emit(len(scan.hosts(&h2)))
+ let h3 = "10.0.0.0/16"
+ emit(len(scan.hosts(&h3)))
+ let h4 = "192.168.1.7"
+ emit(scan.hosts(&h4))
+ let h5 = "10.0.0.2/31"
+ emit(scan.hosts(&h5))
+ let ip = "1.2.3.4"
+ emit(scan.ip_to_int(&ip))
+ emit(scan.int_to_ip(16909060))
+ emit(scan.service(443))
+ emit(scan.risk(23))
+ let g = "# Nmap\nHost: 10.0.0.5 ()\tPorts: 22/open/tcp//ssh//OpenSSH 7.4/, 23/open/tcp//telnet///, 80/closed/tcp//http///, 6379/open/tcp////\tIgnored State: closed (1)\nHost: 10.0.0.6 ()\tStatus: Up\n"
+ emit(scan.open_ports(&g))
+ emit(scan.exposure(&g))
+ let g2 = "Host: 10.0.0.5 ()\tPorts: 22/open/tcp//ssh///, 8080/open/tcp//http-proxy///\n"
+ let o1 = scan.open_ports(&g)
+ let o2 = scan.open_ports(&g2)
+ emit(scan.diff(&o1, &o2))
+ let bn = "SSH-2.0-OpenSSH_7.4p1"
+ emit(scan.banner_product(&bn))
+ let bn2 = "SSH-1.5-Old"
+ emit(scan.banner_findings(&bn2))
+ let bn3 = "220 (vsFTPd 2.3.4)"
+ emit(scan.banner_product(&bn3))
+ emit(scan.banner_findings(&bn3))
+ let bn4 = "Server: Apache/2.4.7"
+ emit(scan.banner_findings(&bn4))
+ return 0
+}

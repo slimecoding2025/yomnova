@@ -1,0 +1,355 @@
+// std.scan: nmap-style helpers for planning and reading port scans. This module sends no
+// packets and opens no sockets: it parses target and port specifications, names services, rates
+// exposed ports, reads nmap's grepable output (`nmap -oG`) and compares two scan results.
+// A finding is a text line that starts with its severity ("high:", "medium:" or "low:").
+// Port knowledge is a small built-in table, not a full service database.
+
+fn scan_is_number(s: &Text) -> Bool {
+    let n = len(s)
+    if n == 0 || n > 9 {
+        return false
+    }
+    mut i = 0
+    while i < n {
+        if !str_contains("0123456789", str_slice(s, i, i + 1)) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// One piece of a port list: "80" or "100-200" (1..65535, low <= high).
+fn scan_piece_ok(p: &Text) -> Bool {
+    let t = str_trim(p)
+    let dash = str_find(t, "-")
+    if dash < 0 {
+        let a = str_slice(t, 0, len(t))
+        if !scan_is_number(&a) {
+            return false
+        }
+        let v = str_parse_int(a)
+        return v >= 1 && v <= 65535
+    }
+    let lo = str_slice(t, 0, dash)
+    let hi = str_slice(t, dash + 1, len(t))
+    if !scan_is_number(&lo) || !scan_is_number(&hi) {
+        return false
+    }
+    let a = str_parse_int(lo)
+    let b = str_parse_int(hi)
+    return a >= 1 && b <= 65535 && a <= b
+}
+
+// Is every piece of "22,80,8000-8100" valid?
+fn scan_spec_ok(spec: &Text) -> Bool {
+    let pieces = str_split(spec, ",")
+    for p in pieces {
+        if !scan_piece_ok(&p) {
+            return false
+        }
+    }
+    return len(pieces) > 0
+}
+
+// The ports of a valid spec, in order (duplicates are kept). Invalid pieces are skipped and the
+// result is cut at 10000 ports so a huge range cannot exhaust the VM.
+fn scan_ports(spec: &Text) -> Array<Int> {
+    mut out: Array<Int> = []
+    let pieces = str_split(spec, ",")
+    for p in pieces {
+        if scan_piece_ok(&p) {
+            let t = str_trim(p)
+            let dash = str_find(t, "-")
+            mut a = 0
+            mut b = 0
+            if dash < 0 {
+                a = str_parse_int(t)
+                b = a
+            } else {
+                a = str_parse_int(str_slice(t, 0, dash))
+                b = str_parse_int(str_slice(t, dash + 1, len(t)))
+            }
+            mut port = a
+            while port <= b && len(out) < 10000 {
+                out = push(out, port)
+                port = port + 1
+            }
+        }
+    }
+    return out
+}
+
+// The 25 ports most worth checking first on an unknown host.
+fn scan_top_ports() -> Array<Int> {
+    return [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445, 993, 995, 1433, 1723, 3306, 3389, 5432, 5900, 6379, 8080, 8443, 27017]
+}
+
+// ---- IPv4 text <-> number ---------------------------------------------------------------------
+
+// "10.0.0.1" -> 167772161, or -1 when it is not a dotted IPv4 address.
+fn scan_ip_to_int(ip: &Text) -> Int {
+    let parts = str_split(str_trim(ip), ".")
+    if len(parts) != 4 {
+        return -1
+    }
+    mut n = 0
+    for p in parts {
+        if !scan_is_number(&p) {
+            return -1
+        }
+        let v = str_parse_int(p)
+        if v > 255 {
+            return -1
+        }
+        n = n * 256 + v
+    }
+    return n
+}
+
+fn scan_int_to_ip(n: Int) -> Text {
+    let a = n / 16777216 % 256
+    let b = n / 65536 % 256
+    let c = n / 256 % 256
+    let d = n % 256
+    return str_from_int(a) + "." + str_from_int(b) + "." + str_from_int(c) + "." + str_from_int(d)
+}
+
+// The addresses of a target: "10.0.0.5" or "10.0.0.0/24". For /22../30 the network and broadcast
+// addresses are left out; /31 and /32 list every address. Anything invalid, or a block larger than
+// /22 (1024 addresses), gives an empty list.
+fn scan_hosts(target: &Text) -> Array<Text> {
+    mut out: Array<Text> = []
+    let t = str_trim(target)
+    let slash = str_find(t, "/")
+    mut base = -1
+    mut bits = 32
+    if slash < 0 {
+        base = scan_ip_to_int(&t)
+    } else {
+        let ip_part = str_slice(t, 0, slash)
+        let bits_part = str_slice(t, slash + 1, len(t))
+        if scan_is_number(&bits_part) {
+            bits = str_parse_int(bits_part)
+            base = scan_ip_to_int(&ip_part)
+        }
+    }
+    if base >= 0 && bits >= 22 && bits <= 32 {
+        mut size = 1
+        mut e = 32 - bits
+        while e > 0 {
+            size = size * 2
+            e = e - 1
+        }
+        let first = base / size * size
+        mut lo = 1
+        mut hi = size - 1
+        if bits >= 31 {
+            lo = 0
+            hi = size
+        }
+        mut k = lo
+        while k < hi {
+            out = push(out, scan_int_to_ip(first + k))
+            k = k + 1
+        }
+    }
+    return out
+}
+
+// ---- services and exposure --------------------------------------------------------------------
+
+// Common name of a TCP port, "unknown" when it is not in the table.
+fn scan_service(port: Int) -> Text {
+    if port == 21 { return "ftp" }
+    if port == 22 { return "ssh" }
+    if port == 23 { return "telnet" }
+    if port == 25 { return "smtp" }
+    if port == 53 { return "dns" }
+    if port == 80 { return "http" }
+    if port == 110 { return "pop3" }
+    if port == 111 { return "rpcbind" }
+    if port == 135 { return "msrpc" }
+    if port == 139 { return "netbios-ssn" }
+    if port == 143 { return "imap" }
+    if port == 161 { return "snmp" }
+    if port == 389 { return "ldap" }
+    if port == 443 { return "https" }
+    if port == 445 { return "smb" }
+    if port == 993 { return "imaps" }
+    if port == 995 { return "pop3s" }
+    if port == 1433 { return "mssql" }
+    if port == 1723 { return "pptp" }
+    if port == 2049 { return "nfs" }
+    if port == 3306 { return "mysql" }
+    if port == 3389 { return "rdp" }
+    if port == 5432 { return "postgresql" }
+    if port == 5900 { return "vnc" }
+    if port == 6379 { return "redis" }
+    if port == 8080 { return "http-alt" }
+    if port == 8443 { return "https-alt" }
+    if port == 9200 { return "elasticsearch" }
+    if port == 11211 { return "memcached" }
+    if port == 27017 { return "mongodb" }
+    return "unknown"
+}
+
+// How worrying it is to find this port open on a host that is reachable from outside:
+// "high", "medium", "low" or "" (nothing special). Plain-text or remote-administration services
+// are rated higher; this is guidance, not a verdict.
+fn scan_risk(port: Int) -> Text {
+    if port == 23 || port == 445 || port == 3389 || port == 5900 || port == 6379 || port == 27017 || port == 9200 || port == 11211 {
+        return "high"
+    }
+    if port == 21 || port == 111 || port == 135 || port == 139 || port == 161 || port == 2049 || port == 1433 || port == 3306 || port == 5432 {
+        return "medium"
+    }
+    if port == 25 || port == 110 || port == 143 || port == 80 || port == 8080 {
+        return "low"
+    }
+    return ""
+}
+
+fn scan_risk_note(port: Int) -> Text {
+    if port == 23 { return "telnet sends passwords in clear text" }
+    if port == 21 { return "ftp sends credentials in clear text" }
+    if port == 445 { return "smb exposed; restrict to the local network" }
+    if port == 3389 { return "remote desktop exposed; use a VPN and MFA" }
+    if port == 5900 { return "vnc exposed; often weak or no authentication" }
+    if port == 6379 { return "redis exposed; usually has no authentication by default" }
+    if port == 27017 { return "mongodb exposed; check that authentication is on" }
+    if port == 9200 { return "elasticsearch exposed; check that authentication is on" }
+    if port == 11211 { return "memcached exposed; can be abused for amplification" }
+    if port == 111 || port == 2049 { return "rpc/nfs exposed; restrict to trusted hosts" }
+    if port == 135 || port == 139 { return "windows rpc/netbios exposed" }
+    if port == 161 { return "snmp exposed; check community strings" }
+    if port == 1433 || port == 3306 || port == 5432 { return "database exposed; keep it on an internal network" }
+    if port == 25 || port == 110 || port == 143 { return "mail protocol without TLS on this port" }
+    if port == 80 || port == 8080 { return "plain http; redirect to https" }
+    return ""
+}
+
+// ---- reading nmap output ----------------------------------------------------------------------
+
+// Open ports from nmap grepable output (`nmap -oG file`). Each entry looks like
+// "10.0.0.5 22/tcp ssh". Lines without a "Ports:" part are ignored.
+fn scan_open_ports(text: &Text) -> Array<Text> {
+    mut out: Array<Text> = []
+    let lines = str_split(text, "\n")
+    for line in lines {
+        let hp = str_find(line, "Host: ")
+        let pp = str_find(line, "Ports: ")
+        if hp >= 0 && pp > hp {
+            let rest = str_slice(line, hp + 6, len(line))
+            let ip = str_slice(rest, 0, str_find(rest, " "))
+            let ports_all = str_slice(line, pp + 7, len(line))
+            let tab = str_find(ports_all, "\t")
+            mut ports_txt = ports_all + ""
+            if tab >= 0 {
+                ports_txt = str_slice(ports_all, 0, tab)
+            }
+            let entries = str_split(ports_txt, ",")
+            for e in entries {
+                let f = str_split(str_trim(e), "/")
+                if len(f) >= 5 && f[1] == "open" {
+                    mut name = f[4]
+                    if len(name) == 0 {
+                        name = scan_service(str_parse_int(f[0]))
+                    }
+                    out = push(out, ip + " " + f[0] + "/" + f[2] + " " + name)
+                }
+            }
+        }
+    }
+    return out
+}
+
+// Findings for the open ports of an nmap grepable file (see scan_risk); only TCP ports that the
+// table rates are reported.
+fn scan_exposure(text: &Text) -> Array<Text> {
+    mut out: Array<Text> = []
+    let open = scan_open_ports(&text)
+    for o in open {
+        let parts = str_split(o, " ")
+        let pt = str_split(parts[1], "/")
+        let p0 = pt[0]
+        if pt[1] == "tcp" && scan_is_number(&p0) {
+            let port = str_parse_int(p0)
+            let sev = scan_risk(port)
+            if len(sev) > 0 {
+                out = push(out, sev + ": " + parts[0] + " port " + pt[0] + " (" + parts[2] + "): " + scan_risk_note(port))
+            }
+        }
+    }
+    return out
+}
+
+// What changed between two lists of open ports (from scan_open_ports): "opened: ..." for entries
+// only in `after`, "closed: ..." for entries only in `before`.
+fn scan_diff(before: &Array<Text>, after: &Array<Text>) -> Array<Text> {
+    mut out: Array<Text> = []
+    for a in after {
+        mut seen = false
+        for b in before {
+            if a == b {
+                seen = true
+            }
+        }
+        if !seen {
+            out = push(out, "opened: " + a)
+        }
+    }
+    for b in before {
+        mut seen = false
+        for a in after {
+            if a == b {
+                seen = true
+            }
+        }
+        if !seen {
+            out = push(out, "closed: " + b)
+        }
+    }
+    return out
+}
+
+// ---- service banners --------------------------------------------------------------------------
+
+// A short product/version guess from a banner line such as "SSH-2.0-OpenSSH_7.4p1" or
+// "220 (vsFTPd 2.3.4)", or "" when it is not recognised.
+fn scan_banner_product(banner: &Text) -> Text {
+    let b = str_trim(banner)
+    if str_starts_with(b, "SSH-") {
+        let dash = str_find(str_slice(b, 4, len(b)), "-")
+        if dash >= 0 {
+            return str_replace(str_slice(b, 4 + dash + 1, len(b)), "_", " ")
+        }
+    }
+    let at = str_find(b, "vsFTPd ")
+    if at >= 0 {
+        return str_trim(str_replace(str_slice(b, at, len(b)), ")", ""))
+    }
+    let srv = str_find(b, "Server: ")
+    if srv >= 0 {
+        return str_trim(str_slice(b, srv + 8, len(b)))
+    }
+    return ""
+}
+
+// Findings for a banner: SSH protocol 1, a release with a well-known backdoor, and web servers
+// that announce their exact version.
+fn scan_banner_findings(banner: &Text) -> Array<Text> {
+    mut out: Array<Text> = []
+    let b = str_trim(banner)
+    if str_starts_with(b, "SSH-1.") && !str_starts_with(b, "SSH-1.99") {
+        out = push(out, "high: SSH protocol 1 is obsolete and insecure")
+    }
+    if str_contains(b, "vsFTPd 2.3.4") {
+        out = push(out, "high: vsFTPd 2.3.4 shipped with a known backdoor; upgrade")
+    }
+    let product = scan_banner_product(&b)
+    if str_starts_with(b, "Server: ") && str_contains(product, "/") {
+        out = push(out, "low: the server announces its exact version (" + product + ")")
+    }
+    return out
+}

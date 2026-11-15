@@ -2,6 +2,11 @@
 
 ## Unreleased — 2026-11-03
 
+### `std.scan`: nmap-style planning and reading (no packets sent)
+* New library `import std.scan`: `hosts` (address or CIDR /22–/32), `ports`/`spec_ok` (`22,80,8000-8100`, capped at 10000), `top_ports`, `ip_to_int`/`int_to_ip`, `service`, `risk`, `risk_note`,
+  `open_ports`/`exposure` (reads `nmap -oG` output), `diff` (opened/closed between two scans), `banner_product`/`banner_findings`. It opens no sockets; active scanning is deliberately not built.
+* Tests: `std_scan_parses_targets_ports_nmap_output_and_banners`, `std_scan_never_fails_on_garbage_text`; example `security_scan_plan.yom`. README rewritten to match the current state of the project.
+
 ### More security-analysis helpers (small steps)
 * `net.ipv4_src_private(&ip)` / `net.ipv4_dst_private(&ip)`: private (10/8, 172.16/12, 192.168/16), loopback and link-local addresses.
 * `sec.odd_tcp_flags(&segment)`: names stealth-scan flag combinations (NULL, Xmas, FIN-only, SYN+FIN, SYN+RST) or returns `""`.

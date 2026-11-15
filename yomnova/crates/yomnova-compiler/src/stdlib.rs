@@ -46,6 +46,7 @@ const FILE_MODULES: &[(&str, &str)] = &[
     ("sec", include_str!("stdlib/sec.yom")),
     ("pcap", include_str!("stdlib/pcap.yom")),
     ("rules", include_str!("stdlib/rules.yom")),
+    ("scan", include_str!("stdlib/scan.yom")),
 ];
 
 type Entry = (String, String, String);
@@ -121,7 +122,7 @@ pub fn expand(source: &str) -> Result<String, Vec<Diagnostic>> {
                 return Err(vec![err(
                     i + 1,
                     format!(
-                        "cannot import `{name}`: only the built-in modules `std.math`, `std.arrays`, `std.text`, `std.net`, `std.sec`, `std.pcap` and `std.rules` exist"
+                        "cannot import `{name}`: only the built-in modules `std.math`, `std.arrays`, `std.text`, `std.net`, `std.sec`, `std.pcap`, `std.rules` and `std.scan` exist"
                     ),
                 )]);
             }
