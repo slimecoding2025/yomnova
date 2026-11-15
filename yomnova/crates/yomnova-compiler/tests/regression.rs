@@ -2185,3 +2185,19 @@ fn buf_strings_lists_printable_runs() {
     );
     assert!(run_err("fn main() -> Int {\n let s = buf_strings(bytes_of(\"abc\"), 0)\n emit(len(s))\n return 0\n}\n").contains("at least 1"));
 }
+
+#[test]
+fn std_sec_string_indicators_count_known_words() {
+    let out = run_src(
+        "import std.sec\nfn main() -> Int {\n let b = bytes_of(\"run powershell -enc AAA then powershell again; fetch http://x and http://y\")\n let f = sec.string_indicators(&b)\n for x in f {\n emit(x)\n }\n let c = bytes_of(\"quiet text\")\n emit(len(sec.string_indicators(&c)))\n return 0\n}\n",
+    );
+    assert_eq!(
+        out,
+        vec![
+            "low: contains \"http://\" (2 times)",
+            "low: contains \"powershell\" (2 times)",
+            "low: contains \"-enc\" (1 times)",
+            "0",
+        ]
+    );
+}

@@ -3,6 +3,7 @@
 ## Unreleased — 2026-11-03
 
 ### More security-analysis helpers (small steps)
+* `sec.string_indicators(&data)`: opt-in report of dropper-style words (`powershell`, `-enc`, `VirtualAlloc`, URLs, ...) with counts; not part of `scan`, because ordinary programs contain them.
 * `buf_strings(buf, min_len) -> Array<Text>`: printable ASCII runs (like the `strings` tool), at most 10000 of them.
 * `buf_count(buf, needle)`: non-overlapping occurrences (0 for an empty needle).
 * `str_from_bool(Bool) -> Text` (`"true"` / `"false"`), handy for report lines.

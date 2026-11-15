@@ -247,6 +247,20 @@ fn sec_scan(data: &NetworkBuffer) -> Array<Text> {
     return out
 }
 
+// Opt-in string indicators (not part of scan: ordinary programs contain URLs and shell words).
+// Returns "low: ... (N times)" lines for text commonly seen in droppers and loaders. Case-sensitive.
+fn sec_string_indicators(data: &NetworkBuffer) -> Array<Text> {
+    let words = ["http://", "https://", "powershell", "-enc ", "cmd /c", "wget ", "curl ", "chmod +x", "base64 -d", "VirtualAlloc", "CreateRemoteThread", "WriteProcessMemory", "LoadLibrary", "GetProcAddress"]
+    mut out: Array<Text> = []
+    for w in words {
+        let n = buf_count(data, bytes_of(w + ""))
+        if n > 0 {
+            out = push(out, "low: contains \"" + str_trim(w) + "\" (" + str_from_int(n) + " times)")
+        }
+    }
+    return out
+}
+
 // "malicious indicators" (any high), "suspicious" (any medium), "weak indicators only", or
 // "no indicators found" -- which is never proof that something is safe.
 fn sec_verdict(findings: &Array<Text>) -> Text {
