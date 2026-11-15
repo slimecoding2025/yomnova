@@ -2103,7 +2103,8 @@ fn std_rules_groups_combine_other_rules() {
     let out = run_src(
         "import std.rules\nfn main() -> Int {\n let rs = [\"low | a | text | alpha\", \"low | b | text | beta\", \"low | c | text | gamma\", \"high | two of three | group | 2 of a, b, c\", \"high | all of ab | group | all of a, b\", \"medium | any of bc | group | any of b, c\"]\n emit(rules.check(&rs))\n let d1 = bytes_of(\"alpha beta\")\n emit(rules.match(&rs, &d1))\n let d2 = bytes_of(\"only gamma\")\n emit(rules.match(&rs, &d2))\n let d3 = bytes_of(\"nothing\")\n emit(len(rules.match(&rs, &d3)))\n let bad = [\"low | a | text | x\", \"high | g | group | 3 of a, a\", \"high | g2 | group | 2 of a, zzz\", \"high | g3 | group | many of a\", \"high | g4 | group | nonsense\", \"high | g5 | group | 1 of g\", \"high | g6 | group | 2 of a, a\"]\n let errs = rules.check(&bad)\n for e in errs {\n emit(e)\n }\n return 0\n}\n",
     );
-    let shape = "a group reads `2 of name, name` (a number, all or any, then distinct rule names)";
+    let shape =
+        "a group reads `2 of name, name` (a number, all, any or none, then distinct rule names)";
     assert_eq!(
         out,
         vec![
@@ -2308,4 +2309,13 @@ fn sec_beaconing_needs_a_steady_interval() {
         out,
         vec!["true", "false", "false", "false", "false", "true"]
     );
+}
+
+#[test]
+fn std_rules_none_of_fires_when_nothing_matched() {
+    let out = run_src(
+        "import std.rules\nfn main() -> Int {\n let rs = [\"low | a | text | alpha\", \"low | b | text | beta\", \"medium | clean | group | none of a, b\", \"low | zero | group | 0 of a\"]\n let errs = rules.check(&rs)\n emit(len(errs))\n let d1 = bytes_of(\"gamma\")\n emit(rules.match(&rs, &d1))\n let d2 = bytes_of(\"alpha\")\n emit(rules.match(&rs, &d2))\n return 0\n}\n",
+    );
+    // "0 of" is not a valid head: it is reported by check and never fires.
+    assert_eq!(out, vec!["1", "[medium: clean]", "[low: a]"]);
 }

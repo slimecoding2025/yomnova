@@ -8,7 +8,7 @@
 //             hex     the pattern (hex digits, `??` = any byte, spaces allowed) occurs as bytes in the data
 //             sha256  the SHA-256 of the whole data equals the pattern (hex, any case)
 //             group   a condition over other rules of this list: `2 of name1, name2, name3`,
-//                     `all of a, b` or `any of a, b`. It holds when that many of the named
+//                     `all of a, b`, `any of a, b` or `none of a, b` (fires when none matched). It holds when that many of the named
 //                     text/hex/sha256 rules matched (names must be distinct and contain no comma;
 //                     groups cannot refer to groups)
 //   pattern   the rest of the line (a text pattern may contain `|`)
@@ -98,6 +98,9 @@ fn rules_group_need(pat: &Text, listed: Int) -> Int {
     if head == "any" {
         return 1
     }
+    if head == "none" {
+        return 0
+    }
     if len(head) == 0 || len(head) > 6 {
         return 0 - 1
     }
@@ -108,7 +111,11 @@ fn rules_group_need(pat: &Text, listed: Int) -> Int {
         }
         i = i + 1
     }
-    return str_parse_int(head)
+    let n = str_parse_int(head)
+    if n < 1 {
+        return 0 - 1
+    }
+    return n
 }
 
 // Names of the rules that are not groups.
@@ -169,8 +176,8 @@ fn rules_check(rules: &Array<Text>) -> Array<Text> {
             if kind == "group" && len(pat) > 0 {
                 let listed = rules_group_names(&pat)
                 let need = rules_group_need(&pat, len(listed))
-                if len(listed) == 0 || need < 1 || need > len(listed) {
-                    errors = push(errors, "rule " + str_from_int(n) + ": a group reads `2 of name, name` (a number, all or any, then distinct rule names)")
+                if len(listed) == 0 || need < 0 || need > len(listed) {
+                    errors = push(errors, "rule " + str_from_int(n) + ": a group reads `2 of name, name` (a number, all, any or none, then distinct rule names)")
                 } else {
                     mut seen: Array<Text> = []
                     for g in listed {
@@ -243,7 +250,7 @@ fn rules_match(rules: &Array<Text>, data: &NetworkBuffer) -> Array<Text> {
                     count = count + 1
                 }
             }
-            if need >= 1 && need <= len(listed) && count >= need && (sev == "high" || sev == "medium" || sev == "low") {
+            if need >= 0 && need <= len(listed) && (count >= need && need > 0 || count == 0 && need == 0) && (sev == "high" || sev == "medium" || sev == "low") {
                 found = push(found, sev + ": " + str_trim(parts[1]))
             }
         }
