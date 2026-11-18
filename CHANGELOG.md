@@ -2,6 +2,9 @@
 
 ## Unreleased — 2026-11-03
 
+### pcapng reader
+* `pcap.ng_valid`, `pcap.ng_offsets`, `pcap.ng_count`, `pcap.ng_packet_at`: reads Enhanced Packet Blocks from pcapng files (little and big endian); malformed block lengths stop the walk. Test uses fixtures built with Python `struct` plus cut-off copies.
+
 ### `std.scan`: nmap-style planning and reading (no packets sent)
 * New library `import std.scan`: `hosts` (address or CIDR /22–/32), `ports`/`spec_ok` (`22,80,8000-8100`, capped at 10000), `top_ports`, `ip_to_int`/`int_to_ip`, `service`, `risk`, `risk_note`,
   `open_ports`/`exposure` (reads `nmap -oG` output), `diff` (opened/closed between two scans), `banner_product`/`banner_findings`. It opens no sockets; active scanning is deliberately not built.

@@ -1,6 +1,6 @@
 // std.pcap: read (and build) classic libpcap capture files on a NetworkBuffer.
 // Supports the four classic magic numbers (little/big endian, microsecond/nanosecond timestamps).
-// Not supported: pcapng, compressed captures. A capture read through file_read_bytes is limited
+// pcapng has a minimal reader (pcap_ng_*). Not supported: compressed captures. A capture read through file_read_bytes is limited
 // to 1 MiB. Every reader takes a borrowed buffer (`&b`) and never changes it.
 
 // True when the first four bytes are one of the classic pcap magic numbers.
@@ -148,4 +148,60 @@ fn pcap_captured_bytes(b: &NetworkBuffer) -> Int {
         total = total + pcap_u32(&b, off + 8, pcap_big_endian(&b))
     }
     return total
+}
+
+// ---- pcapng (read only) -------------------------------------------------------------------------
+// Minimal pcapng reader: a file that starts with a Section Header Block. Only the first section's
+// byte order is used and only Enhanced Packet Blocks (type 6) count as packets; other block types
+// (interface descriptions, statistics, name resolution, simple packets) are skipped.
+
+fn pcap_ng_valid(b: &NetworkBuffer) -> Bool {
+    if len(b) < 28 {
+        return false
+    }
+    let order = buf_get32(b, 8)
+    return buf_get32(b, 0) == 168627466 && (order == 439041101 || order == 1295788826)
+}
+
+fn pcap_ng_big_endian(b: &NetworkBuffer) -> Bool {
+    return buf_get32(b, 8) == 439041101
+}
+
+// Offsets of every Enhanced Packet Block that is complete and well formed. A block with a bad length
+// (under 12, not a multiple of 4, or past the end of the file) stops the walk.
+fn pcap_ng_offsets(b: &NetworkBuffer) -> Array<Int> {
+    mut out: Array<Int> = []
+    if pcap_ng_valid(&b) {
+        let big = pcap_ng_big_endian(&b)
+        mut off = 0
+        while off + 12 <= len(b) {
+            let kind = pcap_u32(&b, off, big)
+            let total = pcap_u32(&b, off + 4, big)
+            if total < 12 || total % 4 != 0 || off + total > len(b) {
+                off = len(b)
+            } else {
+                if kind == 6 && total >= 32 {
+                    out = push(out, off)
+                }
+                off = off + total
+            }
+        }
+    }
+    return out
+}
+
+fn pcap_ng_count(b: &NetworkBuffer) -> Int {
+    return len(pcap_ng_offsets(&b))
+}
+
+// Captured bytes of the Enhanced Packet Block at `off` (an offset from pcap_ng_offsets); empty when
+// the stated captured length does not fit inside the block.
+fn pcap_ng_packet_at(b: &NetworkBuffer, off: Int) -> NetworkBuffer {
+    let big = pcap_ng_big_endian(&b)
+    let total = pcap_u32(&b, off + 4, big)
+    let n = pcap_u32(&b, off + 20, big)
+    if 28 + n + 4 > total {
+        return buf_slice(b, off, 0)
+    }
+    return buf_slice(b, off + 28, n)
 }

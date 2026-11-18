@@ -194,7 +194,7 @@ tests/              AI assistant and end-to-end tests
 * Nested or-patterns and per-field coverage analysis in struct patterns are not implemented.
 * Libraries are expanded into the program's source, not compiled separately; `.yomc` is version 2 only, with no
   signatures.
-* Security helpers: no pcapng, no IPv6 extension headers or ICMPv6, no Mach-O, no regular expressions in rules, no
+* Security helpers: pcapng limited to packet bytes, no IPv6 extension headers or ICMPv6, no Mach-O, no regular expressions in rules, no
   active scanning.
 * Not verified: the live OpenRouter provider and iOS Safari.
 

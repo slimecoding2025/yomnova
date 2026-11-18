@@ -28,7 +28,7 @@ The only built-in signature is the harmless EICAR antivirus test string.
 
 Classic libpcap files (little/big endian, microsecond/nanosecond): `pcap.valid(&f) linktype snaplen count truncated`, `pcap.offsets(&f)` (one offset per complete record),
 `pcap.time_at(&f, off)`, `pcap.orig_length_at(&f, off)`, `pcap.packet_at(&f, off)` and the writer `pcap.make_header()` / `pcap.append(file, seconds, frame)`.
-No pcapng, no flow reassembly, whole-second timestamps only; a file read with `file_read_bytes` is limited to 1 MiB.
+Minimal pcapng reading: `pcap.ng_valid(&f)`, `pcap.ng_offsets(&f)` (Enhanced Packet Blocks of the first section, either byte order), `pcap.ng_count(&f)`, `pcap.ng_packet_at(&f, off)`; no pcapng timestamps, interface metadata or writer. No flow reassembly, whole-second timestamps only; a file read with `file_read_bytes` is limited to 1 MiB.
 
 ## Detection rules (`import std.rules`)
 
@@ -58,4 +58,4 @@ The service table has about 30 TCP ports; banner checks cover only SSH protocol 
 ## Honest limits
 
 Simple indicators only. Signatures miss new threats; entropy and section heuristics raise false alarms (compressed archives look random). PE and ELF checks cover the
-section/program-header tables only (no imports, symbols or Mach-O). No ICMPv6, IPv6 extension headers, pcapng or active scanning yet.
+section/program-header tables only (no imports, symbols or Mach-O). No ICMPv6, IPv6 extension headers or active scanning yet.

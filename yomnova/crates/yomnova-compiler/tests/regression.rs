@@ -2512,3 +2512,19 @@ fn std_scan_never_fails_on_garbage_text() {
         }
     }
 }
+
+#[test]
+fn std_pcap_reads_pcapng_files_of_both_byte_orders() {
+    // fixtures built with Python struct: SHB + IDB + EPB("ABCDE") + NRB + EPB("xy")
+    for hex in ["0a0d0d0a1c0000004d3c2b1a01000000ffffffffffffffff1c000000010000001400000001000000ffff0000140000000600000028000000000000000000000000000000050000000500000041424344450000002800000004000000100000000000000010000000060000002400000000000000000000000000000002000000020000007879000024000000", "0a0d0d0a0000001c1a2b3c4d00010000ffffffffffffffff0000001c0000000100000014000100000000ffff000000140000000600000028000000000000000000000000000000050000000541424344450000000000002800000004000000100000000000000010000000060000002400000000000000000000000000000002000000027879000000000024"] {
+        let src = format!("import std.pcap\nfn main() -> Int {{\n let b = hex_decode(\"{hex}\")\n emit(pcap.ng_valid(&b))\n emit(pcap.ng_count(&b))\n let offs = pcap.ng_offsets(&b)\n for o in offs {{\n emit(text_of(pcap.ng_packet_at(&b, o)))\n }}\n emit(pcap.valid(&b))\n return 0\n}}\n");
+        assert_eq!(run_src(&src), vec!["true", "2", "ABCDE", "xy", "false"]);
+    }
+    // cut-off and garbage never fail
+    let le = "0a0d0d0a1c0000004d3c2b1a01000000ffffffffffffffff1c000000010000001400000001000000ffff0000140000000600000028000000000000000000000000000000050000000500000041424344450000002800000004000000100000000000000010000000060000002400000000000000000000000000000002000000020000007879000024000000";
+    for cut in [0usize, 10, 27, 28, 60, 100, 128, le.len() / 2 - 3] {
+        let hex = &le[..(cut * 2).min(le.len())];
+        let src = format!("import std.pcap\nfn main() -> Int {{\n let b = hex_decode(\"{hex}\")\n emit(pcap.ng_valid(&b))\n emit(pcap.ng_count(&b))\n return 0\n}}\n");
+        run_src(&src);
+    }
+}
