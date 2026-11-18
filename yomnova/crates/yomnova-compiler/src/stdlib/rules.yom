@@ -53,6 +53,41 @@ fn rules_wild_ok(s: &Text) -> Bool {
     return true
 }
 
+// Kind `at`: the pattern is `OFFSET: hex bytes` (`??` allowed), e.g. `0: 4d5a`. It matches only when the bytes
+// start exactly at that offset. Returns the offset, or -1 when the pattern is not of that shape.
+fn rules_at_offset(pat: &Text) -> Int {
+    let colon = str_find(pat, ":")
+    if colon < 1 || colon > 9 {
+        return -1
+    }
+    let num = str_trim(str_slice(pat, 0, colon))
+    let n = len(num)
+    if n == 0 {
+        return -1
+    }
+    mut i = 0
+    while i < n {
+        if !str_contains("0123456789", str_slice(num, i, i + 1)) {
+            return -1
+        }
+        i = i + 1
+    }
+    return str_parse_int(num)
+}
+
+fn rules_at_hex(pat: &Text) -> Text {
+    let colon = str_find(pat, ":")
+    return str_trim(str_slice(pat, colon + 1, len(pat)))
+}
+
+fn rules_at_ok(pat: &Text) -> Bool {
+    if rules_at_offset(&pat) < 0 {
+        return false
+    }
+    let hex = rules_at_hex(&pat)
+    return rules_wild_ok(&hex)
+}
+
 // Blank lines and lines starting with `#` are comments in a rule list.
 fn rules_is_comment(line: &Text) -> Bool {
     let t = str_trim(line)
@@ -158,11 +193,14 @@ fn rules_check(rules: &Array<Text>) -> Array<Text> {
             if sev != "high" && sev != "medium" && sev != "low" {
                 errors = push(errors, "rule " + str_from_int(n) + ": severity must be high, medium or low")
             }
-            if kind != "text" && kind != "hex" && kind != "sha256" && kind != "group" {
-                errors = push(errors, "rule " + str_from_int(n) + ": kind must be text, hex, sha256 or group")
+            if kind != "text" && kind != "hex" && kind != "at" && kind != "sha256" && kind != "group" {
+                errors = push(errors, "rule " + str_from_int(n) + ": kind must be text, hex, at, sha256 or group")
             }
             if len(pat) == 0 {
                 errors = push(errors, "rule " + str_from_int(n) + ": the pattern is empty")
+            }
+            if kind == "at" && len(pat) > 0 && !rules_at_ok(&pat) {
+                errors = push(errors, "rule " + str_from_int(n) + ": an at pattern is OFFSET: hex (for example 0: 4d5a)")
             }
             if kind == "sha256" && len(pat) > 0 && !rules_hex_ok(&pat) {
                 errors = push(errors, "rule " + str_from_int(n) + ": the pattern is not valid hex")
@@ -227,6 +265,10 @@ fn rules_match(rules: &Array<Text>, data: &NetworkBuffer) -> Array<Text> {
             }
             if kind == "hex" && rules_wild_ok(&pat) {
                 hit = buf_find_wild(data, pat, 0) >= 0
+            }
+            if kind == "at" && rules_at_ok(&pat) {
+                let at = rules_at_offset(&pat)
+                hit = buf_find_wild(data, rules_at_hex(&pat), at) == at
             }
             if kind == "sha256" && rules_hex_ok(&pat) {
                 hit = str_lower(pat) == digest

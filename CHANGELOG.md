@@ -2,6 +2,9 @@
 
 ## Unreleased — 2026-11-03
 
+### Rules: offset matching
+* New rule kind `at`: `high | MZ header | at | 0: 4d5a` matches only when the bytes start exactly at that offset (`??` wildcards allowed). `rules.check` reports a malformed `OFFSET: hex`. The kind list in the error message is now "text, hex, at, sha256 or group".
+
 ### pcapng reader
 * `pcap.ng_valid`, `pcap.ng_offsets`, `pcap.ng_count`, `pcap.ng_packet_at`: reads Enhanced Packet Blocks from pcapng files (little and big endian); malformed block lengths stop the walk. Test uses fixtures built with Python `struct` plus cut-off copies.
 

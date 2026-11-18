@@ -2064,7 +2064,7 @@ fn std_rules_check_reports_each_problem() {
         out,
         vec![
             "rule 1: severity must be high, medium or low",
-            "rule 2: kind must be text, hex, sha256 or group",
+            "rule 2: kind must be text, hex, at, sha256 or group",
             "rule 3: the pattern is not valid hex (digit pairs and ?? only)",
             "rule 4: a sha256 pattern has 64 hex digits",
             "rule 5: the pattern is empty",
@@ -2527,4 +2527,15 @@ fn std_pcap_reads_pcapng_files_of_both_byte_orders() {
         let src = format!("import std.pcap\nfn main() -> Int {{\n let b = hex_decode(\"{hex}\")\n emit(pcap.ng_valid(&b))\n emit(pcap.ng_count(&b))\n return 0\n}}\n");
         run_src(&src);
     }
+}
+
+#[test]
+fn std_rules_at_kind_matches_only_at_the_given_offset() {
+    let out = run_src(
+        "import std.rules\nfn main() -> Int {\n let rs = [\"high | mz at start | at | 0: 4d5a\", \"low | mz later | at | 2: 4d 5a\", \"low | wild | at | 1: ?? 5a\", \"low | far | at | 500: 4d5a\", \"low | bad1 | at | 4d5a\", \"low | bad2 | at | x: 4d5a\", \"low | bad3 | at | 0: 4\"]\n let errs = rules.check(&rs)\n emit(len(errs))\n let d = hex_decode(\"4d5a4d5a\")\n emit(rules.match(&rs, &d))\n let e = hex_decode(\"004d5a\")\n emit(rules.match(&rs, &e))\n let tiny = hex_decode(\"4d\")\n emit(len(rules.match(&rs, &tiny)))\n return 0\n}\n",
+    );
+    assert_eq!(out[0], "3");
+    assert_eq!(out[1], "[high: mz at start, low: mz later]");
+    assert_eq!(out[2], "[low: wild]");
+    assert_eq!(out[3], "0");
 }

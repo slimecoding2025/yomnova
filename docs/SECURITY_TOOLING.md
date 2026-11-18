@@ -33,8 +33,9 @@ Minimal pcapng reading: `pcap.ng_valid(&f)`, `pcap.ng_offsets(&f)` (Enhanced Pac
 ## Detection rules (`import std.rules`)
 
 One rule per line: `severity | name | kind | pattern`. Severity is `high`, `medium` or `low`; kind is `text` (the pattern occurs as text), `hex` (it occurs as bytes; `??` matches any byte and spaces are ignored, e.g. `41 ?? ?? 44`) or
+`at` (`OFFSET: hex`, e.g. `0: 4d5a`: the bytes must start exactly at that offset; `??` allowed) or
 `sha256` (the SHA-256 of the whole data equals it) or `group` (a condition over other rules: `2 of a, b, c`, `all of a, b`, `any of a, b`, `none of a, b`; no group of groups). `rules.match(&rs, &data)` returns `severity: name` findings (feed them to `sec.verdict`), `rules.check(&rs)` lists
-every unusable rule, and `rules.load(path)` reads a rule file with `--allow-fs`. Blank lines and lines starting with `#` are comments. This is not YARA: only whole-byte `??` wildcards and simple `N of` groups, no regular expressions, offsets or `not`; invalid rules never match.
+every unusable rule, and `rules.load(path)` reads a rule file with `--allow-fs`. Blank lines and lines starting with `#` are comments. This is not YARA: only whole-byte `??` wildcards and simple `N of` groups, no regular expressions, no `not` operator (use `none of`) and offsets only through the `at` kind; invalid rules never match.
 
 ## Cookbook
 

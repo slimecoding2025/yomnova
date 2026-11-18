@@ -38,7 +38,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | Hashing and encoding natives (`sha256`, `hmac_sha256`, hex, base64, `buf_find`, `buf_entropy`, `file_read_bytes`) | Implemented | `hashing_and_encoding_natives_*`, unit tests with NIST/RFC vectors |
 | `std.sec`: signature and heuristic scan, PE section checks, IOC lists, port scan / SYN flood / ARP spoof / ICMP tunnel / log brute-force checks | Implemented (simple indicators, not an antivirus) | `std_sec_*`, `examples/security_*.yom` |
 | ELF program-header checks in `std.sec` | Implemented (no sections/symbols) | `std_sec_checks_elf_*` |
-| `std.rules`: line-based detection rules (text, hex, sha256) | Implemented (byte wildcards `??`, `N of` / `all of` / `any of` groups) | `std_rules_*`, `examples/security_rules.yom` |
+| `std.rules`: line-based detection rules (text, hex, sha256) | Implemented (byte wildcards `??`, exact-offset `at` kind, `N of` / `all of` / `any of` groups) | `std_rules_*`, `examples/security_rules.yom` |
 | `std.pcap`: classic libpcap read/write, minimal pcapng reader | Implemented (pcapng: packets only) | `std_pcap_*`, `examples/security_pcap.yom` |
 | `std.scan`: nmap-style target/port parsing, service and risk tables, `nmap -oG` reading, scan diffs, banner checks (no packets sent) | Implemented | `std_scan_*`, `examples/security_scan_plan.yom` |
 | Extension headers, ICMPv6, fragmentation, richer rules (regex, offsets, not), ELF section/symbol and Mach-O checks | Planned | — |
@@ -62,7 +62,7 @@ batteries described in [FINAL_AUDIT.md](FINAL_AUDIT.md). Baseline: [INITIAL_AUDI
 | AI Assistant (OpenRouter, suggest-only) | Implemented; tested with a mock provider only, live provider NOT verified (see [AI_ASSISTANT.md](AI_ASSISTANT.md)) |
 
 ## Quality gates (last run, sandbox without registry access — see FINAL_AUDIT.md §Verification environment)
-`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 192 Rust tests pass.
+`cargo fmt --check` clean · `cargo clippy --workspace --all-targets -D warnings` clean · 193 Rust tests pass.
 
 AI Assistant (2026-11-02): `npm run test:ai` 46 pass against the real compiler binary with a mocked OpenRouter; Playwright
 end-to-end 14 checks pass (Chromium, mock provider). `npm run build` / `npm run lint` were not run with real tooling.
