@@ -345,7 +345,7 @@ fn net_ipv6_payload_length(b: &NetworkBuffer) -> Int {
     return buf_get16(b, 4)
 }
 
-// 6 TCP, 17 UDP, 58 ICMPv6 (the first header after the fixed one; extension headers are not walked).
+// 6 TCP, 17 UDP, 58 ICMPv6 (the first header after the fixed one; see net_ipv6_upper_protocol to skip extension headers).
 fn net_ipv6_next_header(b: &NetworkBuffer) -> Int {
     return buf_get(b, 6)
 }
@@ -391,6 +391,128 @@ fn net_make_ipv6(src: Text, dst: Text, next_header: Int, hop_limit: Int, payload
         i = i + 1
     }
     return buf_concat(h, payload)
+}
+
+// ---------------------------------------------------------------------------------------------
+// IPv6 extension headers and ICMPv6. Every function takes the whole IPv6 packet.
+// Walks hop-by-hop (0), routing (43), destination options (60), fragment (44) and
+// authentication (51) headers, at most 8 of them. A malformed chain, a chain that runs past the end
+// of the packet and a non-first fragment (no upper-layer header inside) give -1.
+// ---------------------------------------------------------------------------------------------
+
+// what: 0 = offset of the upper-layer header, 1 = its protocol number, 2 = number of extension headers.
+fn net_ipv6_walk(ip: &NetworkBuffer, what: Int) -> Int {
+    if !net_ipv6_valid(&ip) {
+        return -1
+    }
+    mut nh = buf_get(ip, 6)
+    mut off = 40
+    mut count = 0
+    mut bad = false
+    while !bad && (nh == 0 || nh == 43 || nh == 60 || nh == 44 || nh == 51) {
+        if count >= 8 || off + 8 > len(ip) {
+            bad = true
+        } else {
+            let next = buf_get(ip, off)
+            mut size = (buf_get(ip, off + 1) + 1) * 8
+            if nh == 44 {
+                size = 8
+                if buf_get16(ip, off + 2) / 8 != 0 {
+                    bad = true
+                }
+            }
+            if nh == 51 {
+                size = (buf_get(ip, off + 1) + 2) * 4
+            }
+            nh = next
+            off = off + size
+            count = count + 1
+        }
+    }
+    if bad || off > 40 + buf_get16(ip, 4) {
+        return -1
+    }
+    if what == 0 {
+        return off
+    }
+    if what == 1 {
+        return nh
+    }
+    return count
+}
+
+fn net_ipv6_upper_offset(ip: &NetworkBuffer) -> Int {
+    return net_ipv6_walk(&ip, 0)
+}
+
+fn net_ipv6_upper_protocol(ip: &NetworkBuffer) -> Int {
+    return net_ipv6_walk(&ip, 1)
+}
+
+fn net_ipv6_ext_count(ip: &NetworkBuffer) -> Int {
+    return net_ipv6_walk(&ip, 2)
+}
+
+// Does the chain contain a fragment header (next header 44), even a non-first fragment?
+fn net_ipv6_is_fragment(ip: &NetworkBuffer) -> Bool {
+    if !net_ipv6_valid(&ip) {
+        return false
+    }
+    mut nh = buf_get(ip, 6)
+    mut off = 40
+    mut n = 0
+    while n < 8 && off + 8 <= len(ip) && (nh == 0 || nh == 43 || nh == 60 || nh == 51) {
+        let next = buf_get(ip, off)
+        if nh == 51 {
+            off = off + (buf_get(ip, off + 1) + 2) * 4
+        } else {
+            off = off + (buf_get(ip, off + 1) + 1) * 8
+        }
+        nh = next
+        n = n + 1
+    }
+    return nh == 44
+}
+
+// ICMPv6 (next header 58) after any extension headers. Types: 128 echo request, 129 echo reply,
+// 133-137 neighbour discovery, 1-4 errors.
+fn net_icmp6_valid(ip: &NetworkBuffer) -> Bool {
+    let off = net_ipv6_upper_offset(&ip)
+    return off >= 0 && net_ipv6_upper_protocol(&ip) == 58 && 40 + buf_get16(ip, 4) - off >= 8
+}
+
+fn net_icmp6_type(ip: &NetworkBuffer) -> Int {
+    return buf_get(ip, net_ipv6_upper_offset(&ip))
+}
+
+fn net_icmp6_code(ip: &NetworkBuffer) -> Int {
+    return buf_get(ip, net_ipv6_upper_offset(&ip) + 1)
+}
+
+fn net_icmp6_checksum_compute(ip: &NetworkBuffer) -> Int {
+    let off = net_ipv6_upper_offset(&ip)
+    let end = 40 + buf_get16(ip, 4)
+    let pseudo = net_sum_words(&ip, 8, 40, 0 - 1) + (end - off) + 58
+    return 65535 - net_fold(pseudo + net_sum_words(&ip, off, end, off + 2))
+}
+
+fn net_icmp6_checksum_ok(ip: &NetworkBuffer) -> Bool {
+    if !net_icmp6_valid(&ip) {
+        return false
+    }
+    return buf_get16(ip, net_ipv6_upper_offset(&ip) + 2) == net_icmp6_checksum_compute(&ip)
+}
+
+// A complete IPv6 packet carrying an ICMPv6 echo request (128) or reply (129), hop limit 64.
+fn net_make_icmp6_echo(src: Text, dst: Text, icmp_type: Int, id: Int, seq: Int, payload: NetworkBuffer) -> NetworkBuffer {
+    mut h: NetworkBuffer = NetworkBuffer(8)
+    h = buf_set(h, 0, icmp_type)
+    h = buf_set16(h, 4, id)
+    h = buf_set16(h, 6, seq)
+    let msg = buf_concat(h, payload)
+    let ip = net_make_ipv6(src, dst, 58, 64, msg)
+    let c = net_icmp6_checksum_compute(&ip)
+    return buf_set16(ip, 42, c)
 }
 
 // ---------------------------------------------------------------------------------------------

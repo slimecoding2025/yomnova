@@ -15,6 +15,8 @@ The only built-in signature is the harmless EICAR antivirus test string.
   ARP over Ethernet/IPv4 (on the ARP packet): `net.arp_valid arp_operation arp_sender_mac arp_sender_ip arp_target_mac arp_target_ip arp_is_gratuitous` and
   `net.make_arp(op, sender_mac, sender_ip, target_mac, target_ip)`. ICMPv4 (on the ICMP message): `net.icmp_type icmp_code icmp_echo_id icmp_echo_seq icmp_payload
   icmp_checksum_compute icmp_checksum_ok` and `net.make_icmp_echo(type, id, seq, payload)`.
+  IPv6 extension headers and ICMPv6 (on the whole IPv6 packet): `net.ipv6_upper_offset ipv6_upper_protocol ipv6_ext_count ipv6_is_fragment` walk hop-by-hop, routing, destination-options, fragment and authentication headers (at most 8; a bad chain or a non-first fragment gives -1),
+  and `net.icmp6_valid icmp6_type icmp6_code icmp6_checksum_compute icmp6_checksum_ok` plus `net.make_icmp6_echo(src, dst, type, id, seq, payload)` (RFC 4443 checksum with the IPv6 pseudo-header). No fragment reassembly and no neighbour-discovery option parsing.
 
 ## The library `import std.sec`
 
@@ -59,4 +61,4 @@ The service table has about 30 TCP ports; banner checks cover only SSH protocol 
 ## Honest limits
 
 Simple indicators only. Signatures miss new threats; entropy and section heuristics raise false alarms (compressed archives look random). PE and ELF checks cover the
-section/program-header tables only (no imports, symbols or Mach-O). No ICMPv6, IPv6 extension headers or active scanning yet.
+section/program-header tables only (no imports, symbols or Mach-O). No fragment reassembly, neighbour-discovery options or active scanning yet.

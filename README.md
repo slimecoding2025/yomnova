@@ -51,7 +51,7 @@ inspects or contains exploit or malware code (the only test signature is the har
 
 | Library | Purpose |
 |---|---|
-| `std.net` | Ethernet, VLAN, ARP, IPv4, IPv6, ICMP, UDP, TCP and DNS readers and builders, with checksums |
+| `std.net` | Ethernet, VLAN, ARP, IPv4, IPv6 (with extension headers), ICMP, ICMPv6, UDP, TCP and DNS readers and builders, with checksums |
 | `std.pcap` | Read and write classic libpcap captures |
 | `std.sec` | Signature and heuristic file scan (PE and ELF checks, entropy, EICAR), indicator lists, SHA-256 and HMAC, and traffic checks: port scans, SYN floods, ARP spoofing, ICMP tunnelling, odd TCP flags, DNS tunnelling, beaconing, log brute force |
 | `std.rules` | A small rule language (`severity \| name \| kind \| pattern`) with text, hex (with `??` wildcards), SHA-256 and `N of` / `all of` / `any of` / `none of` groups |
@@ -194,7 +194,7 @@ tests/              AI assistant and end-to-end tests
 * Nested or-patterns and per-field coverage analysis in struct patterns are not implemented.
 * Libraries are expanded into the program's source, not compiled separately; `.yomc` is version 2 only, with no
   signatures.
-* Security helpers: pcapng limited to packet bytes, no IPv6 extension headers or ICMPv6, no Mach-O, no regular expressions in rules, no
+* Security helpers: pcapng limited to packet bytes, no IPv6 fragment reassembly, no Mach-O, no regular expressions in rules, no
   active scanning.
 * Not verified: the live OpenRouter provider and iOS Safari.
 

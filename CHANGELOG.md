@@ -2,6 +2,10 @@
 
 ## Unreleased — 2026-11-03
 
+### IPv6 extension headers and ICMPv6
+* `net.ipv6_upper_offset`, `ipv6_upper_protocol`, `ipv6_ext_count`, `ipv6_is_fragment`: walk up to 8 extension headers; malformed chains and non-first fragments return -1.
+* `net.icmp6_valid/type/code/checksum_compute/checksum_ok` and `net.make_icmp6_echo`. Test fixtures (plain, hop-by-hop, first and non-first fragment, header loop, truncated chain) and the RFC 4443 checksum were built independently with Python; the builder reproduces the Python packet byte for byte.
+
 ### Rules: offset matching
 * New rule kind `at`: `high | MZ header | at | 0: 4d5a` matches only when the bytes start exactly at that offset (`??` wildcards allowed). `rules.check` reports a malformed `OFFSET: hex`. The kind list in the error message is now "text, hex, at, sha256 or group".
 

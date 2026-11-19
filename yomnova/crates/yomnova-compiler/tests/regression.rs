@@ -2539,3 +2539,29 @@ fn std_rules_at_kind_matches_only_at_the_given_offset() {
     assert_eq!(out[2], "[low: wild]");
     assert_eq!(out[3], "0");
 }
+
+#[test]
+fn std_net_walks_ipv6_extension_headers_and_checks_icmpv6() {
+    // fixtures built with Python struct and an independent RFC 4443 / RFC 1071 checksum
+    let prog = |hex: &str| {
+        format!("import std.net\nfn main() -> Int {{\n let b = hex_decode(\"{hex}\")\n emit(net.ipv6_upper_offset(&b))\n emit(net.ipv6_upper_protocol(&b))\n emit(net.ipv6_ext_count(&b))\n emit(net.ipv6_is_fragment(&b))\n emit(net.icmp6_valid(&b))\n return 0\n}}\n")
+    };
+    assert_eq!(run_src(&prog("60000000000c3a4020010db800000000000000000000000120010db800000000000000000000000280004d481234000161626364")), vec!["40", "58", "0", "false", "true"]);
+    assert_eq!(run_src(&prog("600000000014004020010db800000000000000000000000120010db80000000000000000000000023a00010400000000810030990007000978797a21")), vec!["48", "58", "1", "false", "true"]);
+    assert_eq!(run_src(&prog("6000000000102c4020010db800000000000000000000000120010db800000000000000000000000211000000000000013132333435363738")), vec!["48", "17", "1", "true", "false"]);
+    assert_eq!(run_src(&prog("6000000000102c4020010db800000000000000000000000120010db800000000000000000000000211000008000000013132333435363738")), vec!["-1", "-1", "-1", "true", "false"]);
+    assert_eq!(run_src(&prog("600000000018004020010db800000000000000000000000120010db8000000000000000000000002000000000000000000000000000000000000000000000000")), vec!["-1", "-1", "-1", "false", "false"]);
+    assert_eq!(run_src(&prog("600000000004004020010db800000000000000000000000120010db80000000000000000000000023a050000")), vec!["-1", "-1", "-1", "false", "false"]);
+    let check = |hex: &str| {
+        run_src(&format!("import std.net\nfn main() -> Int {{\n let b = hex_decode(\"{hex}\")\n emit(net.icmp6_type(&b))\n emit(net.icmp6_code(&b))\n emit(net.icmp6_checksum_ok(&b))\n return 0\n}}\n"))
+    };
+    assert_eq!(check("60000000000c3a4020010db800000000000000000000000120010db800000000000000000000000280004d481234000161626364"), vec!["128", "0", "true"]);
+    assert_eq!(check("600000000014004020010db800000000000000000000000120010db80000000000000000000000023a00010400000000810030990007000978797a21"), vec!["129", "0", "true"]);
+    // flip one payload byte: the checksum must fail
+    let mut bad = "60000000000c3a4020010db800000000000000000000000120010db800000000000000000000000280004d481234000161626364".to_string();
+    bad.replace_range(bad.len() - 2.., "00");
+    assert_eq!(check(&bad)[2], "false");
+    // the builder reproduces the independently built packet byte for byte
+    let built = run_src("import std.net\nfn main() -> Int {\n let p = bytes_of(\"abcd\")\n let pkt = net.make_icmp6_echo(\"2001:db8::1\", \"2001:db8::2\", 128, 4660, 1, p)\n emit(hex_encode(pkt))\n return 0\n}\n");
+    assert_eq!(built[0], "60000000000c3a4020010db800000000000000000000000120010db800000000000000000000000280004d481234000161626364");
+}
